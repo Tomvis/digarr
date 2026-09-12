@@ -304,6 +304,43 @@ describe('discover()', () => {
     expect(names).toContain('Grouper')
   })
 
+  it('keeps AI recs whose reasoning names an unrelated top artist (legitimate comparison)', async () => {
+    // digarr's own prompt asks the model to "explain why they match this
+    // listener's taste", so good reasoning names the artists being compared
+    // against. Gating on the mention alone rejected 18 of 18 real
+    // recommendations and made the AI source report "No artists returned".
+    const metalProfile: TasteProfile = {
+      ...profile,
+      topArtists: [
+        { name: 'Metallica', mbid: 'mbid-metallica', playCount: 900, source: 'listenbrainz' },
+        { name: 'Emperor', mbid: 'mbid-emperor', playCount: 700, source: 'listenbrainz' },
+      ],
+    }
+    const ai = {
+      getRecommendations: vi.fn().mockResolvedValue([
+        {
+          artistName: 'Gojira',
+          reasoning:
+            'French progressive metal band known for percussive riffing. Fans of Metallica will find the groove familiar.',
+          confidence: 0.9,
+          genres: ['progressive metal'],
+        },
+        {
+          artistName: 'Dissection',
+          reasoning: 'Melodic black metal in the vein of Emperor, with harmonised tremolo leads.',
+          confidence: 0.88,
+          genres: ['black metal'],
+        },
+      ]),
+    }
+
+    const results = await discover(metalProfile, { ai }, 10)
+    const names = results.map((r) => r.name)
+
+    expect(names).toContain('Gojira')
+    expect(names).toContain('Dissection')
+  })
+
   it('does not filter AI recs that legitimately share short name fragments', async () => {
     const narrowProfile: TasteProfile = {
       ...profile,

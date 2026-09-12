@@ -28,8 +28,23 @@ function hasNameConfusion(recName: string, topArtistNames: string[]): boolean {
 }
 
 /**
- * Detect when AI reasoning explicitly mentions a different top artist by name.
+ * Detect when AI reasoning explicitly mentions a different top artist by name
+ * AND the recommended name is confusably close to that artist.
  * E.g. reasoning for "Digital Underground" literally says "Velvet Underground".
+ *
+ * Both halves are required. Mentioning a top artist is NOT on its own a signal
+ * of confusion: the prompt asks the model to "explain why they match this
+ * listener's taste", so a good reasoning string routinely names the artists
+ * being compared against ("fans of Metallica", "shares Be'lakor's melodicism").
+ * Gating on the mention alone rejected every recommendation -- measured 18 of 18
+ * on a real profile, with Gojira/Metallica, Insomnium/Be'lakor and
+ * Dissection/Emperor among the casualties -- so the AI source contributed
+ * nothing while still costing a request, and reported "No artists returned".
+ *
+ * Requiring name proximity keeps the original intent (the model output one
+ * artist while describing another, similarly-named one) and drops the false
+ * positives, since a genuine comparison names an artist that looks nothing like
+ * the recommendation.
  */
 function reasoningMentionsTopArtist(
   reasoning: string,
@@ -42,7 +57,29 @@ function reasoningMentionsTopArtist(
     const topNorm = normalizeName(topName)
     if (recNorm === topNorm) continue
     if (topNorm.length < 5) continue // avoid matching short common words
-    if (reaNorm.includes(topNorm)) return true
+    if (!reaNorm.includes(topNorm)) continue
+    // Mentioned. Only treat it as confusion when the two names are also
+    // confusable: one contains the other, or they share a distinctive word.
+    // Containment alone is not enough -- the canonical case, "Digital
+    // Underground" described as "Velvet Underground", shares only the token
+    // "underground" and neither name contains the other.
+    if (recNorm.includes(topNorm) || topNorm.includes(recNorm)) return true
+    if (sharesDistinctiveWord(recNorm, topNorm)) return true
+  }
+  return false
+}
+
+/**
+ * True when two normalized names share a word of 5+ characters. Long shared
+ * words ("underground", "empire") are what make two names confusable; short
+ * ones ("the", "of", "fire") are common filler and would reintroduce false
+ * positives.
+ */
+function sharesDistinctiveWord(a: string, b: string): boolean {
+  const words = (s: string) => new Set(s.split(/[^a-z0-9]+/).filter((w) => w.length >= 5))
+  const bWords = words(b)
+  for (const w of words(a)) {
+    if (bWords.has(w)) return true
   }
   return false
 }
