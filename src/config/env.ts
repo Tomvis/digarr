@@ -114,6 +114,13 @@ export const envConfig = {
   oidcClientId: env('OIDC_CLIENT_ID'),
   oidcClientSecret: env('OIDC_CLIENT_SECRET'),
   oidcScopes: env('OIDC_SCOPES'),
+  // Comma-separated hostnames whose OIDC discovery is allowed to resolve to a
+  // private/internal IP. Empty by default, so the SSRF guard in
+  // core/auth/oidc.ts still rejects every private issuer unless an operator
+  // names that exact host. Intended for a self-hosted IdP (authentik, Keycloak,
+  // Authelia) reached over split-horizon DNS, where the issuer legitimately
+  // resolves to RFC1918 from inside the network.
+  oidcAllowPrivateIssuerHosts: env('OIDC_ALLOW_PRIVATE_ISSUER_HOSTS'),
 
   // Deezer OAuth
   deezerAppId: env('DEEZER_APP_ID'),

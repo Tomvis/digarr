@@ -152,6 +152,19 @@ Enable OIDC by setting:
 - `OIDC_CLIENT_ID` - registered client id
 - `OIDC_CLIENT_SECRET` - registered client secret
 - `ALLOWED_ORIGIN` - required, used to build the redirect URI
+- `OIDC_ALLOW_PRIVATE_ISSUER_HOSTS` - optional, see below
+
+Discovery requests go through an SSRF-guarded fetch that resolves the issuer
+hostname and refuses any address in a private or otherwise internal range, then
+pins the connection to the address it resolved. A self-hosted IdP reached over
+split-horizon DNS trips this guard legitimately: the issuer really does resolve
+to, say, `10.0.0.253` from inside the network. List those hostnames in
+`OIDC_ALLOW_PRIVATE_ISSUER_HOSTS` (comma-separated) to exempt them.
+
+Matching is on the exact hostname, case-insensitive, with no wildcard support,
+so `auth.example.lan` does not exempt `evil.auth.example.lan`. The allowlist is
+empty by default and relaxes only the rejection - the request is still pinned to
+the resolved address with the original `Host` and SNI preserved.
 
 Users click "Sign in with OIDC" on the login screen, redirect to the IdP, and
 come back to `/api/v1/auth/oidc/callback`. After a successful callback, Digarr

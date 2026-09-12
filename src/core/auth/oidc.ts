@@ -3,6 +3,7 @@ import * as dns from 'node:dns/promises'
 import { isIP } from 'node:net'
 import type { Configuration } from 'openid-client'
 import * as oidcClient from 'openid-client'
+import { envConfig } from '@/config/env'
 import {
   errMsg,
   formatUrlHostname,
@@ -11,11 +12,34 @@ import {
   normalizeIp,
 } from '@/core/validation'
 
+/**
+ * Hostnames an operator has explicitly allowed to resolve to a private IP,
+ * from `OIDC_ALLOW_PRIVATE_ISSUER_HOSTS`. Parsed once at module load.
+ *
+ * The default is empty, so the SSRF guard below is unchanged for everyone who
+ * does not set the variable. This exists for a self-hosted IdP behind
+ * split-horizon DNS, where the issuer resolves to RFC1918 from inside the
+ * network and the generic "private IP" heuristic produces a false positive.
+ * Matching is on the exact hostname, case-insensitive, with no wildcards: an
+ * attacker who controls a DNS record still cannot reach an internal address
+ * unless that precise host was named by the operator.
+ */
+const allowedPrivateIssuerHosts: ReadonlySet<string> = new Set(
+  (envConfig.oidcAllowPrivateIssuerHosts ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0),
+)
+
+function isAllowedPrivateIssuerHost(hostname: string): boolean {
+  return allowedPrivateIssuerHosts.has(hostname.trim().toLowerCase())
+}
+
 const ipPinningFetch: oidcClient.CustomFetch = async (url, options) => {
   const parsedUrl = new URL(url)
   const hostname = getLookupHostname(parsedUrl)
   const { address } = await dns.lookup(hostname)
-  if (isPrivateIp(address)) {
+  if (isPrivateIp(address) && !isAllowedPrivateIssuerHost(hostname)) {
     throw new Error('OIDC issuer resolves to a private/internal IP')
   }
 
