@@ -13,6 +13,58 @@ describe('GeminiProvider', () => {
 
   afterEach(() => fetchSpy.mockReset())
 
+  it('strips maxItems from responseSchema (every served Gemini model 400s on it)', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      recommendations: [
+                        {
+                          artistName: 'Boards of Canada',
+                          reasoning: 'Similar textures.',
+                          confidence: 0.9,
+                          genres: ['electronic'],
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    )
+
+    await new GeminiProvider('key', 'gemini-3.6-flash').getRecommendations(sampleProfile)
+
+    const call = fetchSpy.mock.calls[0] as [string | URL | Request, RequestInit | undefined]
+    const body = JSON.parse(String(call[1]?.body))
+    const schema = body.generationConfig.responseSchema
+
+    // Recursively assert no maxItems survives anywhere in the sent schema.
+    const findMaxItems = (node: unknown): boolean => {
+      if (Array.isArray(node)) return node.some(findMaxItems)
+      if (node && typeof node === 'object') {
+        return Object.entries(node as Record<string, unknown>).some(
+          ([k, v]) => k === 'maxItems' || findMaxItems(v),
+        )
+      }
+      return false
+    }
+    expect(findMaxItems(schema)).toBe(false)
+
+    // The shape-defining fields must survive the strip.
+    expect(schema.properties.recommendations.type).toBe('array')
+    expect(schema.properties.recommendations.items.properties.artistName.type).toBe('string')
+    expect(schema.required).toEqual(['recommendations'])
+  })
+
   it('sends prompt to Gemini generateContent endpoint', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(

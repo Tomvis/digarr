@@ -25,6 +25,18 @@ const GEMINI_DROP_KEYS = new Set([
   'default',
   'const',
   'examples',
+  // `maxItems` on the top-level `recommendations` array (an array of OBJECTS)
+  // is rejected by every currently-served Gemini model -- 3.5/3.6/3.7/3.8-flash
+  // all answer `400 INVALID_ARGUMENT`, which fails the whole discover stage with
+  // "[discover] AI source failed". It is positional, not blanket: `maxItems` on
+  // the nested `genres` array (an array of STRINGS) is accepted, and `maxItems`
+  // alone in a trivial schema is accepted. gemini-2.5-flash, which this
+  // integration was evidently written against, took the original schema but is
+  // now retired for new API keys, so there is no model left that works without
+  // this. Dropped recursively rather than positionally: the bound is not lost,
+  // because AiRecommendationArraySchema (.max(50)) and the genres array
+  // (.max(25)) still validate every response after it is parsed.
+  'maxItems',
 ])
 function sanitizeGeminiSchema(input: unknown): unknown {
   if (Array.isArray(input)) return input.map((v) => sanitizeGeminiSchema(v))
