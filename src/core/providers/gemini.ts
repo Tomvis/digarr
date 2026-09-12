@@ -12,6 +12,15 @@ import type { AiUsage, RecommendationProvider } from './types'
 const DEFAULT_MODEL = 'gemini-3-flash-preview'
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 const DEFAULT_TIMEOUT_SECONDS = 60
+// Headroom for a full 15-20 artist response. The old 4096 was not enough once
+// thinking tokens were counted against it (see thinkingConfig below); a complete
+// 18-recommendation body measures ~2500 output tokens, so this leaves ~6x room
+// without being an open cheque -- the request still stops rather than running on.
+const MAX_OUTPUT_TOKENS = 16384
+// 0 disables Gemini 3.x thinking. Every currently-served Gemini model accepts
+// this field; if a future model requires a non-zero budget, raise it here rather
+// than removing it, or the truncation bug returns.
+const THINKING_BUDGET = 0
 
 // Gemini's responseSchema is a subset of JSON Schema and rejects fields like
 // `$schema`, `additionalProperties`, `exclusiveMinimum`, etc. Strip the ones
@@ -83,7 +92,17 @@ export class GeminiProvider implements RecommendationProvider {
             generationConfig: {
               responseMimeType: 'application/json',
               responseSchema: sanitizeGeminiSchema(getAiRecommendationsJsonSchema()),
-              maxOutputTokens: 4096,
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              // Gemini 3.x bills *thinking* against maxOutputTokens. Measured on
+              // 3.6-flash at the old 4096 cap, a trivial prompt spent 2669 tokens
+              // on thoughts and only 1381 on output; a real taste profile then
+              // truncates mid-JSON and the parser reports "Malformed JSON array
+              // in AI response". Picking one artist list from a profile does not
+              // need chain-of-thought, so the budget is spent on the answer.
+              // Measured effect on the same prompt: 4110 total tokens and a
+              // truncated body becomes 2566 total, finishReason STOP, 18 complete
+              // recommendations -- both cheaper and correct.
+              thinkingConfig: { thinkingBudget: THINKING_BUDGET },
             },
           }),
           signal: controller.signal,

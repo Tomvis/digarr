@@ -63,6 +63,11 @@ describe('GeminiProvider', () => {
     expect(schema.properties.recommendations.type).toBe('array')
     expect(schema.properties.recommendations.items.properties.artistName.type).toBe('string')
     expect(schema.required).toEqual(['recommendations'])
+
+    // Thinking is disabled and the output cap leaves room for a full response:
+    // Gemini 3.x bills thoughts against maxOutputTokens, and 4096 truncated.
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
+    expect(body.generationConfig.maxOutputTokens).toBe(16384)
   })
 
   it('sends prompt to Gemini generateContent endpoint', async () => {
