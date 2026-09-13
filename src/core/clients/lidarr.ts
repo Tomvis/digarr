@@ -230,6 +230,17 @@ export function createLidarrClient(
     })
   }
 
+  /**
+   * Remove an artist from Lidarr. Used to reverse an approval digarr made.
+   * `deleteFiles` is false in every current caller: undo should unwind the
+   * monitoring decision, never destroy media already on disk.
+   */
+  async function removeArtist(artistId: number, options: { deleteFiles: boolean }): Promise<void> {
+    await http.delete(
+      `/api/v1/artist/${artistId}?deleteFiles=${options.deleteFiles}&addImportListExclusion=false`,
+    )
+  }
+
   async function getAlbums(artistId: number): Promise<LidarrAlbum[]> {
     const raw = await http.get<Record<string, unknown>[]>(`/api/v1/album?artistId=${artistId}`)
     // Strip to only the fields we need - Lidarr album responses include
@@ -316,6 +327,7 @@ export function createLidarrClient(
     findArtistByMbid,
     lookupArtist,
     addArtist,
+    removeArtist,
     getAlbums,
     getWantedMissing,
     setAlbumsMonitored,

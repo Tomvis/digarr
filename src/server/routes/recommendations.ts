@@ -499,6 +499,67 @@ async function buildAddOptions(
   }
 }
 
+type OwnedRecommendation = NonNullable<Awaited<ReturnType<AppDependencies['getRecommendation']>>>
+
+type LidarrRemovalSkipReason = 'not_added_by_digarr' | 'has_files' | 'removal_failed'
+
+type RevertResult = {
+  status: 'pending'
+  lidarrArtistRemoved: boolean
+  lidarrRemovalSkippedReason?: LidarrRemovalSkipReason
+}
+
+// Reverses an approval: reverts the row to 'pending' and, when digarr made
+// the original Lidarr add and the artist has no downloaded files, removes it
+// from Lidarr too. Reverting the row is the user's explicit instruction, so
+// it always happens - the Lidarr outcome is reported back, never enforced.
+async function revertRecommendationToPending(
+  deps: AppDependencies,
+  id: number,
+  rec: OwnedRecommendation,
+): Promise<RevertResult> {
+  const lidarrArtistId = rec.lidarrArtistId
+  let lidarrArtistRemoved = false
+  let lidarrRemovalSkippedReason: LidarrRemovalSkipReason | undefined
+
+  if (lidarrArtistId == null) {
+    lidarrRemovalSkippedReason = 'not_added_by_digarr'
+  } else {
+    try {
+      const hasFiles = await deps.lidarrArtistHasFiles(lidarrArtistId)
+      if (hasFiles) {
+        lidarrRemovalSkippedReason = 'has_files'
+      } else {
+        try {
+          await deps.lidarrRemoveArtist(lidarrArtistId, { deleteFiles: false })
+          lidarrArtistRemoved = true
+        } catch {
+          lidarrRemovalSkippedReason = 'removal_failed'
+        }
+      }
+    } catch {
+      // Could not even determine whether the artist has files - do not risk
+      // removing it blind.
+      lidarrRemovalSkippedReason = 'removal_failed'
+    }
+  }
+
+  await deps.updateRecommendationStatus(id, 'pending', {
+    actedOnAt: null,
+    lidarrError: null,
+    targetActions: null,
+    // Only forget the artist id once Lidarr confirms it's gone - otherwise
+    // the row would forget an artist that still exists.
+    ...(lidarrArtistRemoved ? { lidarrArtistId: null } : {}),
+  })
+
+  return {
+    status: 'pending',
+    lidarrArtistRemoved,
+    ...(lidarrRemovalSkippedReason ? { lidarrRemovalSkippedReason } : {}),
+  }
+}
+
 export function recommendationRoutes(deps: AppDependencies) {
   const router = new Hono<HonoEnv>()
 
@@ -768,7 +829,11 @@ export function recommendationRoutes(deps: AppDependencies) {
 
       const loaded = await loadOwnedRecommendation(c, id)
       if (loaded instanceof Response) return loaded
-      const { userId } = loaded
+      const { rec, userId } = loaded
+
+      if (status === 'pending') {
+        return c.json(await revertRecommendationToPending(deps, id, rec))
+      }
 
       if (status === 'rejected') {
         const validated = rejectStatusSchema.safeParse(body)

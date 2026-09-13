@@ -327,7 +327,7 @@ Locale notes:
 |--------|------|------|-------------|
 | GET | `/api/v1/recommendations` | Yes | List recommendations (paginated, filterable) |
 | GET | `/api/v1/recommendations/:id` | Yes | Get single recommendation with artist data |
-| PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or restore a recommendation |
+| PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or revert a recommendation to `pending`. Reverting undoes an approval: it always reverts the row, and also removes the Lidarr artist digarr added when it can do so safely (see below) |
 | POST | `/api/v1/recommendations/bulk` | Yes | Bulk approve/reject (reject accepts an optional shared `reason` + `permanent` block) |
 | GET | `/api/v1/recommendations/feedback-summary` | Yes | Genre approval rates (top 20), scoped to the calling user's own feedback |
 | GET | `/api/v1/recommendations/popular-albums/availability` | Yes | Which popularity sources are reachable for the caller; backs the popular-album approve option. Returns `{ available, spotify, lastfm }` (booleans). |
@@ -376,9 +376,25 @@ Approve response (status `approved`):
     "failures": [{ "id": "lidarr-2", "name": "Lidarr Backup", "error": "connection refused" }] }
 }
 ```
-- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (Digarr never deletes an artist from a target that took it).
+- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (approving never deletes an artist from a target that took it - only an explicit revert, below, does).
 - `targetActions` is the full merged map persisted on the rec; `targetSummary` describes only the targets attempted by *this* request, so clients can report partial outcomes at submit time.
 - To retry just the failed targets, re-`PATCH` once per failed `targetId` (this preserves the successful targets' actions and will not regress the rec to `add_failed` if others already succeeded).
+
+Revert request (status `pending`) body:
+```json
+{ "status": "pending" }
+```
+Revert response:
+```json
+{
+  "status": "pending",
+  "lidarrArtistRemoved": true,
+  "lidarrRemovalSkippedReason": "has_files"
+}
+```
+- The row **always** reverts to `pending` - this is the user's explicit instruction, so it is never blocked by a Lidarr failure. `actedOnAt`, `lidarrError`, and `targetActions` are cleared.
+- Digarr additionally attempts to remove the Lidarr artist it added, but only when `lidarrArtistId` is set on the rec **and** the artist has no downloaded files (checked in Lidarr); the removal never deletes files (`deleteFiles: false` always). `lidarrArtistId` is cleared only when removal actually succeeds - a failed removal keeps it, so the row does not forget an artist that still exists in Lidarr.
+- `lidarrRemovalSkippedReason` is present (and `lidarrArtistRemoved` is `false`) whenever removal was skipped or failed: `not_added_by_digarr` (no `lidarrArtistId` on the rec), `has_files` (the artist has downloaded albums), or `removal_failed` (Lidarr call errored). It is omitted when `lidarrArtistRemoved` is `true`.
 
 ## Artist Blocks
 

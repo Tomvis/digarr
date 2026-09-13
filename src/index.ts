@@ -810,6 +810,26 @@ async function getEnabledTargetsForResolvedUser(
   return targets
 }
 
+// Undo path for a reversed approval (PATCH .../recommendations/:id with
+// status='pending'). Recommendations only remember lidarrArtistId, not which
+// target performed the add, so - mirroring the approve flow's own
+// single-target fallback when no explicit lidarrTargetId is given - this
+// resolves the first enabled Lidarr target rather than one scoped to a
+// specific user.
+async function getLidarrClientForRemoval() {
+  const allTargets = await getAllTargets(db)
+  const lidarrTarget = allTargets.find(
+    (t) =>
+      t.type === 'lidarr' &&
+      t.enabled &&
+      typeof t.config?.url === 'string' &&
+      typeof t.config?.apiKey === 'string',
+  )
+  if (!lidarrTarget) return null
+  const config = lidarrTarget.config as { url: string; apiKey: string; skipTlsVerify?: boolean }
+  return createLidarrClient(config.url, config.apiKey, config.skipTlsVerify ?? false)
+}
+
 // Shared subscription query facade (used both by routes and scheduler)
 const subscriptionQueriesImpl = {
   createSubscription: (data: Parameters<typeof createSubscription>[1]) =>
@@ -1300,6 +1320,17 @@ const app = createApp({
   updateRecommendationStatus: (id, status, extra) =>
     updateRecommendationStatus(db, id, status, extra),
   rejectRecommendation: (params) => rejectRecommendation(db, params),
+  lidarrRemoveArtist: async (artistId, options) => {
+    const client = await getLidarrClientForRemoval()
+    if (!client) throw new Error('No enabled Lidarr target configured')
+    await client.removeArtist(artistId, options)
+  },
+  lidarrArtistHasFiles: async (artistId) => {
+    const client = await getLidarrClientForRemoval()
+    if (!client) return false
+    const albums = await client.getAlbums(artistId)
+    return albums.some((album) => (album.statistics?.trackFileCount ?? 0) > 0)
+  },
   listArtistBlocks: (params) => listArtistBlocksQuery(db, params),
   removeArtistBlock: (params) => removeArtistBlockQuery(db, params),
   addArtistBlock: (params) =>

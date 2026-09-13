@@ -145,9 +145,13 @@ export async function getRecommendation(
 }
 
 export type StatusUpdateExtra = {
-  lidarrArtistId?: number
-  lidarrError?: string
-  targetActions?: Record<string, unknown>
+  lidarrArtistId?: number | null
+  lidarrError?: string | null
+  targetActions?: Record<string, unknown> | null
+  // Explicit override for actedOnAt. Every approve/reject caller wants "now"
+  // (the default, applied when this key is omitted); reverting to 'pending'
+  // wants it cleared back to null since the row is no longer acted-on.
+  actedOnAt?: Date | null
 }
 
 export async function updateRecommendationStatus(
@@ -156,9 +160,10 @@ export async function updateRecommendationStatus(
   status: string,
   extra: StatusUpdateExtra = {},
 ): Promise<void> {
+  const { actedOnAt, ...rest } = extra
   await db
     .update(recommendations)
-    .set({ status, actedOnAt: new Date(), ...extra })
+    .set({ status, actedOnAt: actedOnAt !== undefined ? actedOnAt : new Date(), ...rest })
     .where(eq(recommendations.id, id))
 }
 
