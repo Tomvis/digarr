@@ -811,14 +811,20 @@ async function getEnabledTargetsForResolvedUser(
 }
 
 // Undo path for a reversed approval (PATCH .../recommendations/:id with
-// status='pending'). Recommendations only remember lidarrArtistId, not which
-// target performed the add, so - mirroring the approve flow's own
-// single-target fallback when no explicit lidarrTargetId is given - this
-// resolves the first enabled Lidarr target rather than one scoped to a
-// specific user.
-async function getLidarrClientForRemoval() {
-  const allTargets = await getAllTargets(db)
-  const lidarrTarget = allTargets.find(
+// status='pending' and removeLidarrArtist=true). Recommendations only remember
+// lidarrArtistId, not which target performed the add, so - mirroring the
+// approve flow's own single-target fallback when no explicit lidarrTargetId is
+// given - this resolves the most recently created enabled Lidarr target
+// belonging to that user (getTargetsByUser orders newest-first).
+//
+// Scoped to the user on purpose, matching approve. A Lidarr artist id is only
+// meaningful inside the instance that issued it, so resolving system-wide
+// could issue the DELETE against another user's Lidarr, where the same id is
+// a different artist. No userId means no target, exactly as approve behaves.
+async function getLidarrClientForRemoval(userId: number | undefined) {
+  if (userId == null) return null
+  const userTargets = await getTargetsByUser(db, userId)
+  const lidarrTarget = userTargets.find(
     (t) =>
       t.type === 'lidarr' &&
       t.enabled &&
@@ -1320,13 +1326,13 @@ const app = createApp({
   updateRecommendationStatus: (id, status, extra) =>
     updateRecommendationStatus(db, id, status, extra),
   rejectRecommendation: (params) => rejectRecommendation(db, params),
-  lidarrRemoveArtist: async (artistId, options) => {
-    const client = await getLidarrClientForRemoval()
+  lidarrRemoveArtist: async ({ userId, artistId, deleteFiles }) => {
+    const client = await getLidarrClientForRemoval(userId)
     if (!client) throw new Error('No enabled Lidarr target configured')
-    await client.removeArtist(artistId, options)
+    await client.removeArtist(artistId, { deleteFiles })
   },
-  lidarrArtistHasFiles: async (artistId) => {
-    const client = await getLidarrClientForRemoval()
+  lidarrArtistHasFiles: async ({ userId, artistId }) => {
+    const client = await getLidarrClientForRemoval(userId)
     if (!client) return false
     const albums = await client.getAlbums(artistId)
     return albums.some((album) => (album.statistics?.trackFileCount ?? 0) > 0)

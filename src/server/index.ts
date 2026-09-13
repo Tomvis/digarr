@@ -15,6 +15,7 @@ import { csrfGuard } from './middleware/csrf'
 import { requestLogger } from './middleware/logger'
 import { proxyAuthMiddleware } from './middleware/proxy-auth'
 import { rateLimiter } from './middleware/rate-limit'
+import { apiWriteScopeGuard } from './middleware/scope-guard'
 import { setupGuard } from './middleware/setup-guard'
 import { adminRoutes } from './routes/admin'
 import { albumBlocksRoutes } from './routes/album-blocks'
@@ -188,6 +189,12 @@ export function createApp(deps: AppDependencies) {
     }),
   )
   app.use('*', csrfGuard)
+  // Fail-closed write gate for API keys. Global on purpose: a per-route
+  // annotation is one `git grep` away from being forgotten on the next
+  // mutating route, and an unenforced `read` key is indistinguishable from a
+  // `write` one. Only api-key auth is evaluated; every other auth method
+  // passes straight through (see middleware/scope-guard.ts).
+  app.use('*', apiWriteScopeGuard)
   app.use('*', setupGuard(deps.isSetupComplete))
   app.use('*', maintenanceMiddleware)
 

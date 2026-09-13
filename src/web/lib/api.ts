@@ -315,11 +315,16 @@ export type ApprovalTargetSummary = {
   failures: Array<{ id: string; name: string; error?: string | null }>
   warnings?: string[]
 }
+/** Why an unapprove left the Lidarr artist in place. Mirrors the server enum. */
+export type LidarrRemovalSkipReason = 'not_added_by_digarr' | 'has_files' | 'removal_failed'
 export type ApprovalResponse = {
   status: string
   targetActions?: Record<string, unknown>
   targetSummary?: ApprovalTargetSummary
   lidarrError?: string | null
+  // Present on the unapprove (status='pending') response only.
+  lidarrArtistRemoved?: boolean
+  lidarrRemovalSkippedReason?: LidarrRemovalSkipReason
 }
 export const updateRecommendation = (id: number, body: Record<string, unknown>) =>
   fetchApi<ApprovalResponse>(`/recommendations/${id}`, {

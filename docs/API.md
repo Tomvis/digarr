@@ -382,7 +382,7 @@ Approve response (status `approved`):
 
 Revert request (status `pending`) body:
 ```json
-{ "status": "pending" }
+{ "status": "pending", "removeLidarrArtist": true }
 ```
 Revert response:
 ```json
@@ -393,8 +393,9 @@ Revert response:
 }
 ```
 - The row **always** reverts to `pending` - this is the user's explicit instruction, so it is never blocked by a Lidarr failure. `actedOnAt`, `lidarrError`, and `targetActions` are cleared.
-- Digarr additionally attempts to remove the Lidarr artist it added, but only when `lidarrArtistId` is set on the rec **and** the artist has no downloaded files (checked in Lidarr); the removal never deletes files (`deleteFiles: false` always). `lidarrArtistId` is cleared only when removal actually succeeds - a failed removal keeps it, so the row does not forget an artist that still exists in Lidarr.
-- `lidarrRemovalSkippedReason` is present (and `lidarrArtistRemoved` is `false`) whenever removal was skipped or failed: `not_added_by_digarr` (no `lidarrArtistId` on the rec), `has_files` (the artist has downloaded albums), or `removal_failed` (Lidarr call errored). It is omitted when `lidarrArtistRemoved` is `true`.
+- `removeLidarrArtist` defaults to `false` and is the **only** thing that makes Digarr touch Lidarr. A bare `{ "status": "pending" }` reverts the row and leaves Lidarr completely alone - that is what restoring a rejected recommendation does. Send `true` only to unapprove (reverse an approval).
+- With `removeLidarrArtist: true`, Digarr attempts to remove the Lidarr artist it added, but only when `lidarrArtistId` is set on the rec **and** the artist has no downloaded files (checked in Lidarr); the removal never deletes files (`deleteFiles: false` always). The target is resolved against the recommendation's own user, the same way approval resolves targets. `lidarrArtistId` is cleared only when removal actually succeeds - a failed removal keeps it, so the row does not forget an artist that still exists in Lidarr.
+- `lidarrRemovalSkippedReason` is present (and `lidarrArtistRemoved` is `false`) whenever an attempted removal was skipped or failed: `not_added_by_digarr` (no `lidarrArtistId` on the rec), `has_files` (the artist has downloaded albums), or `removal_failed` (Lidarr call errored). It is omitted when `lidarrArtistRemoved` is `true`, and also when `removeLidarrArtist` was `false` - nothing was attempted, so there is no reason to report.
 
 ## Artist Blocks
 

@@ -18,7 +18,9 @@ const SECRET_BYTES = 32
 const SCOPE_RANK: Record<ApiKeyScope, number> = { read: 0, write: 1, admin: 2 }
 
 function isScope(value: string): value is ApiKeyScope {
-  return value in SCOPE_RANK
+  // hasOwn, not `in`: `in` walks the prototype chain, so `isScope('toString')`
+  // would be true and a bogus scope string would type-narrow to ApiKeyScope.
+  return Object.hasOwn(SCOPE_RANK, value)
 }
 
 /**
@@ -51,8 +53,11 @@ export function parseApiKey(token: string): { prefix: string; secret: string } |
   const separator = body.indexOf('_')
   if (separator <= 0) return null
   const prefix = body.slice(0, separator)
-  // Split on the FIRST separator only: base64url excludes '_' but a malformed
-  // or future token must not silently lose secret material to a greedy split.
+  // Split on the FIRST separator only. The secret is base64url, which DOES
+  // contain '_' (RFC 4648 section 5 substitutes it for '/'), so a greedy split
+  // would be wrong. What makes the first '_' the true boundary is the prefix:
+  // it is hex, so it can never contain one. Change the prefix encoding and
+  // this parse has to change with it.
   const secret = body.slice(separator + 1)
   if (!prefix || !secret) return null
   return { prefix, secret }

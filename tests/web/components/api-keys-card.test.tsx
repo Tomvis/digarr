@@ -80,6 +80,27 @@ describe('ApiKeysCard', () => {
     expect(screen.getByText(/not be shown again|won't be shown again/i)).toBeInTheDocument()
   })
 
+  it('cannot create a second key while an uncopied token is still revealed', async () => {
+    // The secret is unrecoverable, so a second create that overwrote the panel
+    // would destroy it with no warning.
+    const token = 'dgr_ab12cd34_secretsecretsecret'
+    vi.mocked(createApiKey).mockResolvedValue({ key: { ...KEY, id: 2 }, token } as never)
+    renderCard(<ApiKeysCard />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /create api key/i }))
+    await userEvent.type(screen.getByLabelText(/name/i), 'new key')
+    await userEvent.click(screen.getByRole('button', { name: /^create$/i }))
+    await waitFor(() => expect(screen.getByText(token)).toBeInTheDocument())
+
+    const createButton = screen.getByRole('button', { name: /create api key/i })
+    expect(createButton).toBeDisabled()
+
+    // Dismissing the reveal panel releases the block.
+    await userEvent.click(screen.getByRole('button', { name: /done/i }))
+    await waitFor(() => expect(screen.queryByText(token)).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /create api key/i })).toBeEnabled()
+  })
+
   it('never renders a revoked key as usable', async () => {
     vi.mocked(listApiKeys).mockResolvedValue({
       items: [{ ...KEY, revokedAt: new Date().toISOString() }],

@@ -62,6 +62,41 @@ describe('POST /api/v1/api-keys', () => {
     expect(res.status).toBe(400)
   })
 
+  it('rejects an expiry that is already in the past', async () => {
+    // Otherwise the response is a 201 carrying a plaintext secret for a key
+    // that fails every request it is ever used on.
+    const create = vi.fn(async () => row())
+    const { app } = createTestApp({ apiKeyStore: { create } as never })
+    const res = await app.request('/api/v1/api-keys', {
+      method: 'POST',
+      headers: AUTH,
+      body: JSON.stringify({
+        name: 'dead on arrival',
+        scopes: ['read'],
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: 'validation_failed' })
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('accepts an expiry in the future', async () => {
+    const create = vi.fn(async () => row())
+    const { app } = createTestApp({ apiKeyStore: { create } as never })
+    const res = await app.request('/api/v1/api-keys', {
+      method: 'POST',
+      headers: AUTH,
+      body: JSON.stringify({
+        name: 'valid',
+        scopes: ['read'],
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    })
+    expect(res.status).toBe(201)
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: expect.any(Date) }))
+  })
+
   it('rejects an empty scope list', async () => {
     const { app } = createTestApp()
     const res = await app.request('/api/v1/api-keys', {

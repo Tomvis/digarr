@@ -388,6 +388,13 @@ export const ja = {
   'discover.undo': '元に戻す',
   'discover.undoFailed': '元に戻すことができませんでした',
   'discover.undone': '元に戻す',
+  'discover.undoneLidarrRemoved': '元に戻しました。アーティストを Lidarr から削除しました。',
+  'discover.undoneLidarrNotAdded':
+    '元に戻しました。削除する Lidarr のアーティストはありませんでした。',
+  'discover.undoneLidarrHasFiles':
+    '元に戻しました。すでにダウンロード済みのファイルがあるため、Lidarr のアーティストは残しました。',
+  'discover.undoneLidarrRemovalFailed':
+    '元に戻しました。Lidarr のアーティストを削除できませんでした。',
   'discover.viewGrid': 'グリッド表示',
   'discover.viewList': 'リスト表示',
   'discover.viewStack': 'スタック表示',
@@ -1598,6 +1605,7 @@ export const ja = {
   'librarySync.message.syncingSource': '{0} を同期中...',
   'errors.auth.invalidCredentials': '認証情報が無効です',
   'errors.auth.notAuthenticated': '認証されていません',
+  'errors.auth.insufficientScope': 'この API キーにはこの操作の権限がありません',
   'errors.auth.passwordIncorrect': '現在のパスワードが正しくありません',
   'errors.auth.usernameTaken': 'そのユーザー名はすでに使われています',
   'errors.auth.emailTaken': 'メールアドレスは既に使用されています',

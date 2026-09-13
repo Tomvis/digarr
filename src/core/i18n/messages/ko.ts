@@ -384,6 +384,12 @@ export const ko = {
   'discover.undo': '실행 취소',
   'discover.undoFailed': '실행취소 실패',
   'discover.undone': '실행 취소됨',
+  'discover.undoneLidarrRemoved': '실행 취소되었습니다. Lidarr에서 아티스트를 제거했습니다.',
+  'discover.undoneLidarrNotAdded': '실행 취소되었습니다. 제거할 Lidarr 아티스트가 없습니다.',
+  'discover.undoneLidarrHasFiles':
+    '실행 취소되었습니다. 이미 다운로드된 파일이 있어 Lidarr 아티스트를 유지했습니다.',
+  'discover.undoneLidarrRemovalFailed':
+    '실행 취소되었습니다. Lidarr 아티스트를 제거하지 못했습니다.',
   'discover.viewGrid': '격자 보기',
   'discover.viewList': '목록 보기',
   'discover.viewStack': '스택 보기',
@@ -1574,6 +1580,7 @@ export const ko = {
   'librarySync.message.syncingSource': '{0} 동기화 중...',
   'errors.auth.invalidCredentials': '잘못된 자격 증명입니다',
   'errors.auth.notAuthenticated': '인증되지 않았습니다',
+  'errors.auth.insufficientScope': '이 API 키에는 이 작업에 대한 권한이 없습니다',
   'errors.auth.passwordIncorrect': '현재 비밀번호가 올바르지 않습니다',
   'errors.auth.usernameTaken': '이미 사용 중인 사용자 이름입니다',
   'errors.auth.emailTaken': '이미 사용 중인 이메일입니다',

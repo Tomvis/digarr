@@ -158,7 +158,7 @@ Any signed-in user can create long-lived API keys via `POST /api/v1/api-keys`,
 for third-party integrations (for example Music Assistant) that should not
 share a browser session or a bearer token that expires in 30 days.
 
-A key looks like `dgr_<prefix><secret>` (the `dgr_` prefix identifies it as an
+A key looks like `dgr_<prefix>_<secret>` (the `dgr_` prefix identifies it as an
 API key rather than a session token). Send it the same way as a bearer
 session, `Authorization: Bearer <token>` - never as a `?token=` query
 parameter. Only pipeline SSE and the preview-audio proxy accept query-string
@@ -173,8 +173,17 @@ the life of the key:
 - `write` - implies `read`
 - `admin` - implies `write` and `read`
 
+Enforcement is global and fail-closed: every non-safe method (anything other
+than `GET`, `HEAD`, `OPTIONS`) on an `/api/v1/` path requires the `write`
+scope, and `admin`-gated routes additionally require the `admin` scope. A key
+that lacks the scope gets `403` with `type: /problems/insufficient-scope`. The
+gate is mounted once, next to the CSRF guard, rather than annotated per route,
+so a mutating route added later is covered the moment it exists instead of
+being silently unenforced until someone remembers it.
+
 Scopes only ever narrow what a key can do; they never grant anything beyond
-what the authenticated user could already do through a session. A scope is
+what the authenticated user could already do through a session. Session,
+cookie and proxy auth are unscoped and unaffected by the gate. A scope is
 meaningless without an underlying user account, and deleting the user revokes
 every key it owns along with everything else the user owns.
 

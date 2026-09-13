@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reportApprovalOutcome } from '@/web/lib/approval'
+import { reportApprovalOutcome, undoOutcomeMessage } from '@/web/lib/approval'
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -80,5 +80,34 @@ describe('reportApprovalOutcome', () => {
 
   it('returns true for a plain approve with no targets', () => {
     expect(reportApprovalOutcome({ status: 'approved' }, t)).toBe(true)
+  })
+})
+
+describe('undoOutcomeMessage', () => {
+  it('says the artist was removed when it was', () => {
+    expect(undoOutcomeMessage({ status: 'pending', lidarrArtistRemoved: true })).toBe(
+      'discover.undoneLidarrRemoved',
+    )
+  })
+
+  it.each([
+    ['not_added_by_digarr', 'discover.undoneLidarrNotAdded'],
+    ['has_files', 'discover.undoneLidarrHasFiles'],
+    ['removal_failed', 'discover.undoneLidarrRemovalFailed'],
+  ] as const)('reports %s rather than implying a clean reversal', (reason, expected) => {
+    expect(
+      undoOutcomeMessage({
+        status: 'pending',
+        lidarrArtistRemoved: false,
+        lidarrRemovalSkippedReason: reason,
+      }),
+    ).toBe(expected)
+  })
+
+  it('makes no Lidarr claim when no removal was attempted', () => {
+    expect(undoOutcomeMessage({ status: 'pending' })).toBe('discover.undone')
+    expect(undoOutcomeMessage({ status: 'pending', lidarrArtistRemoved: false })).toBe(
+      'discover.undone',
+    )
   })
 })

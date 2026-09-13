@@ -58,7 +58,8 @@ export function ApiKeysCard() {
   async function handleCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const trimmedName = name.trim()
-    if (!trimmedName || scopes.length === 0) return
+    // `createdToken` guard: never overwrite a revealed, unrecoverable secret.
+    if (!trimmedName || scopes.length === 0 || createdToken) return
     setCreating(true)
     try {
       const result = await createApiKey({ name: trimmedName, scopes })
@@ -253,7 +254,19 @@ export function ApiKeysCard() {
         </form>
       ) : (
         <div className="flex justify-end">
-          <Button size="sm" variant="outline" onClick={() => setShowCreateForm(true)}>
+          {/*
+            Blocked while a freshly minted token is still on screen. Creating
+            again would overwrite `createdToken`, and the secret it replaces is
+            unrecoverable by design -- an uncopied key would be silently lost.
+            Dismissing the reveal panel ("Done") re-enables this.
+          */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowCreateForm(true)}
+            disabled={createdToken !== null}
+            title={createdToken !== null ? t('apiKeys.tokenWarning') : undefined}
+          >
             {t('apiKeys.createButton')}
           </Button>
         </div>

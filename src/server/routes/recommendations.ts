@@ -509,38 +509,53 @@ type RevertResult = {
   lidarrRemovalSkippedReason?: LidarrRemovalSkipReason
 }
 
-// Reverses an approval: reverts the row to 'pending' and, when digarr made
-// the original Lidarr add and the artist has no downloaded files, removes it
-// from Lidarr too. Reverting the row is the user's explicit instruction, so
-// it always happens - the Lidarr outcome is reported back, never enforced.
+// Reverts the row to 'pending' and, ONLY when the caller explicitly asked for
+// it (`removeLidarrArtist: true`), additionally removes the Lidarr artist
+// digarr added - guarded on digarr having made the add and the artist having
+// no downloaded files. Reverting the row is the user's explicit instruction,
+// so it always happens; the Lidarr outcome is reported back, never enforced.
+//
+// The removal is a flag rather than something `status: 'pending'` implies:
+// restoring a rejected recommendation reverts to the same status and must
+// leave Lidarr strictly alone.
+//
+// Lidarr artist ids are per-instance, so the target is resolved against the
+// recommendation's OWN user (never system-wide) - the same id means a
+// different artist in someone else's Lidarr.
 async function revertRecommendationToPending(
   deps: AppDependencies,
   id: number,
   rec: OwnedRecommendation,
+  options: { removeLidarrArtist: boolean; userId: number | undefined },
 ): Promise<RevertResult> {
   const lidarrArtistId = rec.lidarrArtistId
   let lidarrArtistRemoved = false
   let lidarrRemovalSkippedReason: LidarrRemovalSkipReason | undefined
 
-  if (lidarrArtistId == null) {
-    lidarrRemovalSkippedReason = 'not_added_by_digarr'
-  } else {
-    try {
-      const hasFiles = await deps.lidarrArtistHasFiles(lidarrArtistId)
-      if (hasFiles) {
-        lidarrRemovalSkippedReason = 'has_files'
-      } else {
-        try {
-          await deps.lidarrRemoveArtist(lidarrArtistId, { deleteFiles: false })
-          lidarrArtistRemoved = true
-        } catch {
-          lidarrRemovalSkippedReason = 'removal_failed'
+  // Without the flag nothing is attempted, so there is no skip reason to
+  // report either - the row simply reverts.
+  if (options.removeLidarrArtist) {
+    if (lidarrArtistId == null) {
+      lidarrRemovalSkippedReason = 'not_added_by_digarr'
+    } else {
+      const userId = rec.userId ?? options.userId
+      try {
+        const hasFiles = await deps.lidarrArtistHasFiles({ userId, artistId: lidarrArtistId })
+        if (hasFiles) {
+          lidarrRemovalSkippedReason = 'has_files'
+        } else {
+          try {
+            await deps.lidarrRemoveArtist({ userId, artistId: lidarrArtistId, deleteFiles: false })
+            lidarrArtistRemoved = true
+          } catch {
+            lidarrRemovalSkippedReason = 'removal_failed'
+          }
         }
+      } catch {
+        // Could not even determine whether the artist has files - do not risk
+        // removing it blind.
+        lidarrRemovalSkippedReason = 'removal_failed'
       }
-    } catch {
-      // Could not even determine whether the artist has files - do not risk
-      // removing it blind.
-      lidarrRemovalSkippedReason = 'removal_failed'
     }
   }
 
@@ -667,6 +682,7 @@ export function recommendationRoutes(deps: AppDependencies) {
         qualityProfileId: qpOverride,
         metadataProfileId: mpOverride,
         rootFolderId: rfOverride,
+        removeLidarrArtist,
       } = body
 
       const approvalMode: ApprovalMode = rawApprovalMode ?? 'single_target'
@@ -832,7 +848,9 @@ export function recommendationRoutes(deps: AppDependencies) {
       const { rec, userId } = loaded
 
       if (status === 'pending') {
-        return c.json(await revertRecommendationToPending(deps, id, rec))
+        return c.json(
+          await revertRecommendationToPending(deps, id, rec, { removeLidarrArtist, userId }),
+        )
       }
 
       if (status === 'rejected') {

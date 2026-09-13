@@ -389,6 +389,12 @@ export const it = {
   'discover.undo': 'Annulla',
   'discover.undoFailed': 'Annullamento non riuscito',
   'discover.undone': 'Annullato',
+  'discover.undoneLidarrRemoved': "Annullato. L'artista è stato rimosso da Lidarr.",
+  'discover.undoneLidarrNotAdded': "Annullato. Non c'era alcun artista Lidarr da rimuovere.",
+  'discover.undoneLidarrHasFiles':
+    "Annullato. L'artista Lidarr è stato mantenuto perché ha già file scaricati.",
+  'discover.undoneLidarrRemovalFailed':
+    "Annullato. Non è stato possibile rimuovere l'artista Lidarr.",
   'discover.viewGrid': 'Vista griglia',
   'discover.viewList': 'Vista elenco',
   'discover.viewStack': 'Vista a pila',
@@ -1621,6 +1627,8 @@ export const it = {
   'librarySync.message.syncingSource': 'Sincronizzazione di {0}...',
   'errors.auth.invalidCredentials': 'Credenziali non valide',
   'errors.auth.notAuthenticated': 'Non autenticato',
+  'errors.auth.insufficientScope':
+    "Questa chiave API non dispone dell'autorizzazione per questa azione",
   'errors.auth.passwordIncorrect': 'La password attuale non e corretta',
   'errors.auth.usernameTaken': 'Nome utente gia in uso',
   'errors.auth.emailTaken': 'Email già in uso',

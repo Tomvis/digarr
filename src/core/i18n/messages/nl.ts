@@ -387,6 +387,13 @@ export const nl = {
   'discover.undo': 'Ongedaan maken',
   'discover.undoFailed': 'Ongedaan maken is mislukt',
   'discover.undone': 'Ongedaan gemaakt',
+  'discover.undoneLidarrRemoved': 'Ongedaan gemaakt. De artiest is uit Lidarr verwijderd.',
+  'discover.undoneLidarrNotAdded':
+    'Ongedaan gemaakt. Er was geen artiest in Lidarr om te verwijderen.',
+  'discover.undoneLidarrHasFiles':
+    'Ongedaan gemaakt. De artiest in Lidarr is behouden omdat er al bestanden zijn gedownload.',
+  'discover.undoneLidarrRemovalFailed':
+    'Ongedaan gemaakt. De artiest kon niet uit Lidarr worden verwijderd.',
   'discover.viewGrid': 'Rasterweergave',
   'discover.viewList': 'Lijstweergave',
   'discover.viewStack': 'Stapelweergave',
@@ -1611,6 +1618,7 @@ export const nl = {
   'librarySync.message.syncingSource': '{0} wordt gesynchroniseerd...',
   'errors.auth.invalidCredentials': 'Ongeldige inloggegevens',
   'errors.auth.notAuthenticated': 'Niet aangemeld',
+  'errors.auth.insufficientScope': 'Deze API-sleutel heeft geen toestemming voor deze actie',
   'errors.auth.passwordIncorrect': 'Huidig wachtwoord is onjuist',
   'errors.auth.usernameTaken': 'Gebruikersnaam al in gebruik',
   'errors.auth.emailTaken': 'E-mail al in gebruik',

@@ -38,7 +38,7 @@ import {
   triggerPipeline,
   updateRecommendation,
 } from '../lib/api'
-import { reportApprovalOutcome } from '../lib/approval'
+import { reportApprovalOutcome, undoOutcomeMessage } from '../lib/approval'
 import { useI18n } from '../lib/i18n'
 import { usePreviewContext } from '../lib/preview-context'
 
@@ -713,8 +713,14 @@ export function DiscoverPage() {
     const entry = undoEntry
     setUndoEntry(null)
     try {
-      await updateRecommendation(entry.id, { status: entry.prevStatus })
-      toast.success(t('discover.undone'))
+      // Undoing an approval is the one place that should reverse the Lidarr
+      // add as well, so it asks for it explicitly. Any other revert (e.g.
+      // restoring a rejected rec) leaves Lidarr alone by omitting the flag.
+      const res = await updateRecommendation(entry.id, {
+        status: entry.prevStatus,
+        ...(entry.prevStatus === 'pending' ? { removeLidarrArtist: true } : {}),
+      })
+      toast.success(t(undoOutcomeMessage(res)))
       refetch()
     } catch {
       toast.error(t('discover.undoFailed'))

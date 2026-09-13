@@ -389,6 +389,13 @@ export const de = {
   'discover.undo': 'Rückgängig machen',
   'discover.undoFailed': 'Rückgängig machen fehlgeschlagen',
   'discover.undone': 'Rückgängig gemacht',
+  'discover.undoneLidarrRemoved': 'Rückgängig gemacht. Der Künstler wurde aus Lidarr entfernt.',
+  'discover.undoneLidarrNotAdded':
+    'Rückgängig gemacht. Es gab keinen Künstler in Lidarr zu entfernen.',
+  'discover.undoneLidarrHasFiles':
+    'Rückgängig gemacht. Der Künstler in Lidarr wurde behalten, weil bereits Dateien heruntergeladen wurden.',
+  'discover.undoneLidarrRemovalFailed':
+    'Rückgängig gemacht. Der Künstler konnte nicht aus Lidarr entfernt werden.',
   'discover.viewGrid': 'Rasteransicht',
   'discover.viewList': 'Listenansicht',
   'discover.viewStack': 'Stapelansicht',
@@ -1631,6 +1638,7 @@ export const de = {
   'librarySync.message.syncingSource': '{0} wird synchronisiert...',
   'errors.auth.invalidCredentials': 'Ungültige Anmeldedaten',
   'errors.auth.notAuthenticated': 'Nicht authentifiziert',
+  'errors.auth.insufficientScope': 'Dieser API-Schlüssel hat keine Berechtigung für diese Aktion',
   'errors.auth.passwordIncorrect': 'Aktuelles Passwort ist falsch',
   'errors.auth.usernameTaken': 'Benutzername bereits vergeben',
   'errors.auth.emailTaken': 'E-Mail wird bereits verwendet',

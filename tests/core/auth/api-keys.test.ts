@@ -81,6 +81,15 @@ describe('scopeSatisfies', () => {
     expect(scopeSatisfies(['nonsense'], 'read')).toBe(false)
     expect(scopeSatisfies(['nonsense', 'write'], 'read')).toBe(true)
   })
+
+  it('does not treat Object.prototype members as scopes', () => {
+    // `value in SCOPE_RANK` walks the prototype chain, so these would all be
+    // "known" scopes. They must not be, in an auth primitive.
+    for (const inherited of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+      expect(scopeSatisfies([inherited], 'read')).toBe(false)
+      expect(parseScopes([inherited])).toEqual([])
+    }
+  })
 })
 
 describe('parseScopes', () => {

@@ -383,6 +383,11 @@ export const en = {
   'discover.undo': 'Undo',
   'discover.undoFailed': 'Undo failed',
   'discover.undone': 'Undone',
+  'discover.undoneLidarrRemoved': 'Undone. The artist was removed from Lidarr.',
+  'discover.undoneLidarrNotAdded': 'Undone. There was no Lidarr artist to remove.',
+  'discover.undoneLidarrHasFiles':
+    'Undone. The Lidarr artist was kept because it already has downloaded files.',
+  'discover.undoneLidarrRemovalFailed': 'Undone. The Lidarr artist could not be removed.',
   'discover.viewGrid': 'Grid view',
   'discover.viewList': 'List view',
   'discover.viewStack': 'Stack view',
@@ -1667,6 +1672,7 @@ export const en = {
   // these against the active locale and falls back to the problem `title`.
   'errors.auth.invalidCredentials': 'Invalid credentials',
   'errors.auth.notAuthenticated': 'Not authenticated',
+  'errors.auth.insufficientScope': 'This API key does not have permission for this action',
   'errors.auth.passwordIncorrect': 'Current password is incorrect',
   'errors.auth.usernameTaken': 'Username already taken',
   'errors.auth.emailTaken': 'Email already in use',
