@@ -1308,3 +1308,36 @@ export const listAlbumBlocks = (): Promise<{ items: BlockedAlbumApi[] }> =>
 
 export const deleteAlbumBlock = (releaseGroupMbid: string): Promise<void> =>
   fetchApi(`/album-blocks/${releaseGroupMbid}`, { method: 'DELETE' })
+
+// API Keys (self-service; session-auth only, each user manages their own)
+
+export type ApiKey = {
+  id: number
+  userId: number
+  name: string
+  prefix: string
+  scopes: string[]
+  createdAt: string
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+}
+
+export async function listApiKeys(): Promise<{ items: ApiKey[] }> {
+  return fetchApi('/api-keys')
+}
+
+export async function createApiKey(body: {
+  name: string
+  scopes: string[]
+  expiresAt?: string | null
+}): Promise<{ key: ApiKey; token: string }> {
+  return fetchApi('/api-keys', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function revokeApiKey(id: number): Promise<void> {
+  await fetchApi(`/api-keys/${id}`, { method: 'DELETE' })
+}
