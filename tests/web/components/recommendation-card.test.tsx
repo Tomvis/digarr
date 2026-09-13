@@ -152,7 +152,7 @@ describe('RecommendationCard', () => {
       />,
     )
     fireEvent.click(screen.getByText('Approve'))
-    expect(onApprove).toHaveBeenCalledWith(42)
+    expect(onApprove).toHaveBeenCalledWith(42, 'pending')
   })
 
   it('reject button calls onReject with correct id', () => {
@@ -164,7 +164,38 @@ describe('RecommendationCard', () => {
       />,
     )
     fireEvent.click(screen.getByText('Reject'))
-    expect(onReject).toHaveBeenCalledWith(7)
+    expect(onReject).toHaveBeenCalledWith(7, 'pending')
+  })
+
+  // The approve/reject controls render for 'approved' rows too, not only
+  // 'pending' ones. Passing the row's real status is what keeps undo from
+  // treating "un-approve this already-approved row" as an approval reversal
+  // that may delete the Lidarr artist.
+  it.each([
+    ['Approve', () => onApprove],
+    ['Reject', () => onReject],
+  ])('%s on an approved row reports its real status, not the pending default', (label, handler) => {
+    withPreview(
+      <RecommendationCard
+        recommendation={makeRec({ id: 5, status: 'approved' })}
+        onApprove={onApprove}
+        onReject={onReject}
+      />,
+    )
+    fireEvent.click(screen.getByText(label))
+    expect(handler()).toHaveBeenCalledWith(5, 'approved')
+  })
+
+  it('Restore on a rejected row reports its real status', () => {
+    withPreview(
+      <RecommendationCard
+        recommendation={makeRec({ id: 9, status: 'rejected' })}
+        onApprove={onApprove}
+        onReject={onReject}
+      />,
+    )
+    fireEvent.click(screen.getByText('Restore'))
+    expect(onApprove).toHaveBeenCalledWith(9, 'rejected')
   })
 
   it('click handler calls onClick with correct id', () => {

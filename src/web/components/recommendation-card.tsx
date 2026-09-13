@@ -45,8 +45,14 @@ export type Recommendation = {
 
 type RecommendationCardProps = {
   recommendation: Recommendation
-  onApprove: (id: number) => void
-  onReject: (id: number) => void
+  // `prevStatus` is the row's status BEFORE the action. Undo restores it
+  // verbatim, and for an approve it also decides whether the undo is an
+  // unapprove that may remove the Lidarr artist - so every call site must pass
+  // `rec.status` rather than let the handler's 'pending' default stand in. The
+  // approve/reject controls render for approved rows too (see `isPending`
+  // below), where that default is both wrong and destructive.
+  onApprove: (id: number, prevStatus?: string) => void
+  onReject: (id: number, prevStatus?: string) => void
   onClick?: (id: number) => void
   isSelected?: boolean
   expanded?: boolean
@@ -251,13 +257,16 @@ import { canApproveArtistToTarget, TargetIcon, targetActionLabel } from './targe
 
 function ApproveDropdown({
   recId,
+  status,
   targets,
   onApprove,
   onApproveToTarget,
 }: {
   recId: number
+  /** The row's current status, forwarded to onApprove as prevStatus. */
+  status: string
   targets: Array<{ id: number; type: string; name: string }>
-  onApprove: (id: number) => void
+  onApprove: (id: number, prevStatus?: string) => void
   onApproveToTarget?: (recId: number, targetId: string) => void
 }) {
   const { t } = useI18n()
@@ -275,7 +284,7 @@ function ApproveDropdown({
           className="text-approve border-approve/40 hover:bg-approve/10 hover:text-approve rounded-r-none"
           onClick={(e) => {
             e.stopPropagation()
-            onApprove(recId)
+            onApprove(recId, status)
           }}
         >
           {t('recommendation.approve')}
@@ -332,8 +341,8 @@ function ActionButtons({
   bulkMode: boolean
   isPending: boolean
   isApproved: boolean
-  onApprove: (id: number) => void
-  onReject: (id: number) => void
+  onApprove: (id: number, prevStatus?: string) => void
+  onReject: (id: number, prevStatus?: string) => void
   approveNode?: React.ReactNode
   targets?: Array<{ id: number; type: string; name: string }>
   onApproveToTarget?: (recId: number, targetId: string) => void
@@ -359,7 +368,7 @@ function ActionButtons({
           className="text-reject border-reject/40 hover:bg-reject/10 hover:text-reject"
           onClick={(e) => {
             stop(e)
-            onReject(rec.id)
+            onReject(rec.id, rec.status)
           }}
         >
           {t('recommendation.reject')}
@@ -368,6 +377,7 @@ function ActionButtons({
           (actionableTargets.length > 1 ? (
             <ApproveDropdown
               recId={rec.id}
+              status={rec.status}
               targets={actionableTargets}
               onApprove={onApprove}
               onApproveToTarget={onApproveToTarget}
@@ -394,7 +404,7 @@ function ActionButtons({
               className="text-approve border-approve/40 hover:bg-approve/10 hover:text-approve"
               onClick={(e) => {
                 stop(e)
-                onApprove(rec.id)
+                onApprove(rec.id, rec.status)
               }}
             >
               {t('recommendation.approve')}
@@ -412,7 +422,7 @@ function ActionButtons({
           className="text-reject border-reject/40 hover:bg-reject/10 hover:text-reject"
           onClick={(e) => {
             stop(e)
-            onReject(rec.id)
+            onReject(rec.id, rec.status)
           }}
         >
           {t('recommendation.reject')}
@@ -429,7 +439,7 @@ function ActionButtons({
           className="text-muted border-border/60 hover:bg-surface hover:text-text"
           onClick={(e) => {
             stop(e)
-            onApprove(rec.id)
+            onApprove(rec.id, rec.status)
           }}
         >
           {t('recommendation.restore')}
@@ -640,7 +650,7 @@ export function RecommendationCard({
             className="hidden md:group-hover:flex absolute left-0 top-0 bottom-0 z-10 items-center justify-center w-10 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-150 bg-transparent border-none p-0"
             onClick={(e) => {
               e.stopPropagation()
-              onReject(rec.id)
+              onReject(rec.id, rec.status)
             }}
             aria-label={t('recommendation.reject')}
           >
@@ -667,7 +677,7 @@ export function RecommendationCard({
             className="hidden md:group-hover:flex absolute right-0 top-0 bottom-0 z-10 items-center justify-center w-10 translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-150 bg-transparent border-none p-0"
             onClick={(e) => {
               e.stopPropagation()
-              onApprove(rec.id)
+              onApprove(rec.id, rec.status)
             }}
             aria-label={t('recommendation.approve')}
           >

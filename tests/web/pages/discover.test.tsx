@@ -409,6 +409,37 @@ describe('DiscoverPage', () => {
     })
   })
 
+  it('undoing an approve clicked on an already-approved row never removes the Lidarr artist', async () => {
+    // The card renders approve/reject for status 'approved', not just
+    // 'pending' (recommendation-card.tsx isPending). Clicking through that
+    // control used to record prevStatus 'pending' via the handler default, and
+    // undo would then read it as an unapprove and delete the Lidarr artist.
+    setupMockApi([makeRec({ status: 'approved' })])
+    // Two Lidarr targets, so discover hands the card no `approveNode` and the
+    // card's OWN approve control renders - the path that fed the default in.
+    mockListTargets.mockResolvedValue([
+      { id: 1, type: 'lidarr', name: 'Main Lidarr', config: {}, enabled: true, owned: true },
+      { id: 2, type: 'lidarr', name: 'Alt Lidarr', config: {}, enabled: true, owned: true },
+    ])
+    mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'approved' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    // Restores the row's real status, and carries no removal flag.
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'approved' })
+    })
+  })
+
   it('keyboard reject carries the row status, so undo restores it and skips Lidarr', async () => {
     // The `r` shortcut acts on any row in the view, not just pending ones, so
     // it must pass the real status instead of the 'pending' default.
