@@ -43,7 +43,7 @@ function unsafeRequest(headers: Record<string, string> = {}, path = '/api/v1/tes
 }
 
 describe('csrf middleware policy', () => {
-  it.each<AuthMethod>(['session-bearer', 'legacy-bearer'])(
+  it.each<AuthMethod>(['session-bearer', 'legacy-bearer', 'api-key'])(
     'allows verified %s auth without browser headers',
     async (authMethod) => {
       const res = await createGuardApp(authMethod).request(unsafeRequest())

@@ -241,6 +241,8 @@ export function settingsRoutes(deps: AppDependencies) {
       deps.getUserById,
       c.get('authSkipped'),
       c.get('legacyTokenAuth'),
+      c.get('authMethod'),
+      c.get('apiKeyScopes'),
     )
     const response = await buildSettingsResponse(deps, userId, isAdmin)
     if (!response) {
@@ -311,6 +313,8 @@ export function settingsRoutes(deps: AppDependencies) {
       deps.getUserById,
       c.get('authSkipped'),
       c.get('legacyTokenAuth'),
+      c.get('authMethod'),
+      c.get('apiKeyScopes'),
     )
     const storedSettings =
       Object.hasOwn(sanitized, 'preferences') || Object.hasOwn(sanitized, 'skipTlsVerify')
@@ -437,6 +441,8 @@ export function settingsRoutes(deps: AppDependencies) {
       deps.getUserById,
       c.get('authSkipped'),
       c.get('legacyTokenAuth'),
+      c.get('authMethod'),
+      c.get('apiKeyScopes'),
     )
     if (!isAdmin) {
       return problem(
@@ -682,6 +688,8 @@ export function settingsRoutes(deps: AppDependencies) {
         deps.getUserById,
         c.get('authSkipped'),
         c.get('legacyTokenAuth'),
+        c.get('authMethod'),
+        c.get('apiKeyScopes'),
       ))
     ) {
       return problem(

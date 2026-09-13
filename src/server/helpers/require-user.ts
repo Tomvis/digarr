@@ -24,11 +24,16 @@ export function requireUser(c: Context<HonoEnv>): RequireUserResult {
   return { ok: true, userId }
 }
 
-/** Caller is authenticated by a real session. Rejects legacy-token auth (userId=1). */
+/**
+ * Caller is authenticated by a real session. Rejects legacy-token auth
+ * (userId=1) and API key auth: keys are scope-limited credentials, not a
+ * stand-in for a session, and must not satisfy checks that mean "a real
+ * session" (e.g. the key-management routes, or a key could mint another key).
+ */
 export function requireSessionUser(c: Context<HonoEnv>): RequireUserResult {
   const auth = requireUser(c)
   if (!auth.ok) return auth
-  if (c.get('legacyTokenAuth')) {
+  if (c.get('legacyTokenAuth') || c.get('authMethod') === 'api-key') {
     return { ok: false, response: sessionAuthRequired(c) }
   }
   return auth
@@ -44,7 +49,14 @@ export async function requireAdmin(
   }
   const auth = requireUser(c)
   if (!auth.ok) return auth
-  const isAdmin = await resolveAdmin(auth.userId, getUserById, false, c.get('legacyTokenAuth'))
+  const isAdmin = await resolveAdmin(
+    auth.userId,
+    getUserById,
+    false,
+    c.get('legacyTokenAuth'),
+    c.get('authMethod'),
+    c.get('apiKeyScopes'),
+  )
   if (!isAdmin) {
     return { ok: false, response: adminRequired(c) }
   }
