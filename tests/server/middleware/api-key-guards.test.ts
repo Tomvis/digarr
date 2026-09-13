@@ -76,10 +76,22 @@ describe('adminGuard with api keys', () => {
     expect((await app.request('/a')).status).toBe(403)
   })
 
-  it('resolveAdmin agrees with adminGuard for a scoped key', async () => {
-    expect(await resolveAdmin(1, adminUser, false, false, 'api-key', ['write'])).toBe(false)
-    expect(await resolveAdmin(1, adminUser, false, false, 'api-key', ['admin'])).toBe(true)
-  })
+  it.each([
+    ['write scope only', ['write'], 403, false],
+    ['admin scope', ['admin'], 200, true],
+  ] as const)(
+    'adminGuard and resolveAdmin agree for %s',
+    async (_case, scopes, expectedStatus, expectedIsAdmin) => {
+      const app = appAs('api-key', [...scopes], (a) => {
+        a.use('/a', adminGuard(adminUser))
+        a.get('/a', (c) => c.json({ ok: true }))
+      })
+      expect((await app.request('/a')).status).toBe(expectedStatus)
+      expect(await resolveAdmin(1, adminUser, false, false, 'api-key', [...scopes])).toBe(
+        expectedIsAdmin,
+      )
+    },
+  )
 })
 
 describe('requireSessionUser', () => {
