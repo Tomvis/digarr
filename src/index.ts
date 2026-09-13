@@ -619,24 +619,45 @@ const albumCoverage = createAlbumCoverageService({
   mbClient: createMusicBrainzClient(),
 })
 
-const runPipeline = async (userId?: number) => {
+/**
+ * Cron entry point for the scheduled scan.
+ *
+ * There is exactly one scheduled job ('main-pipeline'), and it used to invoke
+ * the pipeline with no userId, which fell back to the admin. Recommendations are
+ * per-user, and `users_single_admin` allows only one admin, so on a multi-user
+ * install every scheduled scan produced results for that one account and no
+ * other user could ever get an automatic scan -- setting a schedule as a
+ * non-admin either writes to a store the scheduler does not read, or re-registers
+ * this same single slot and still runs as the admin.
+ *
+ * Run for every user instead, through orchestrator.enqueue rather than
+ * orchestrator.run. run() throws 'Pipeline already running' when re-entered, so
+ * looping over it would drop every user behind the first, and would lose the
+ * whole scheduled sweep if a manual scan happened to be in flight when cron
+ * fired. enqueue starts immediately when idle, queues per user otherwise, and
+ * de-duplicates a user already running or already queued -- the orchestrator
+ * then drains the queue one run at a time, which is the same path the UI uses.
+ */
+const runPipelineForAllUsers = async () => {
   const currentSettings = await getSettings(db)
   if (!currentSettings) return
-  // Default to admin user when not provided (cron-triggered runs)
-  let resolvedUserId = userId
-  if (resolvedUserId === undefined) {
-    const allUsers = await listUsers(db)
-    const admin = allUsers.find((u) => u.isAdmin) ?? allUsers[0]
-    resolvedUserId = admin?.id
+  const users = await listUsers(db)
+  for (const user of users) {
+    try {
+      const result = orchestrator.enqueue({
+        db: storeDb,
+        settings: currentSettings,
+        providerRegistry,
+        librarySync: librarySyncOrchestrator,
+        userId: user.id,
+      })
+      console.log(
+        `[scheduler] pipeline for user ${user.id}: ${result.status} (position ${result.position})`,
+      )
+    } catch (err: unknown) {
+      console.error(`[scheduler] Scheduled pipeline failed for user ${user.id}:`, errMsg(err))
+    }
   }
-  if (resolvedUserId === undefined) return
-  await orchestrator.run({
-    db: storeDb,
-    settings: currentSettings,
-    providerRegistry,
-    librarySync: librarySyncOrchestrator,
-    userId: resolvedUserId,
-  })
 }
 
 async function buildDiscoveryModePipelineDeps(userId: number) {
@@ -1297,7 +1318,7 @@ const app = createApp({
       console.log('Scheduler stopped')
       return
     }
-    scheduler.schedule('main-pipeline', cron, runPipeline)
+    scheduler.schedule('main-pipeline', cron, runPipelineForAllUsers)
     console.log(`Scheduler restarted with cron: ${cron}`)
   },
   restartPlaylistScheduler,
@@ -1564,7 +1585,7 @@ const server = serve({ fetch: app.fetch, port })
     const prefs = mergePreferences(settings?.preferences)
     const cron = prefs.scheduleCron
     if (cron) {
-      scheduler.schedule('main-pipeline', cron, runPipeline)
+      scheduler.schedule('main-pipeline', cron, runPipelineForAllUsers)
       console.log(`Scheduler started with cron: ${cron}`)
     }
 
