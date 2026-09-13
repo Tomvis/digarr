@@ -225,6 +225,16 @@ export function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependenc
       })),
       getJobsForSubscription: vi.fn(async () => []),
     },
+    apiKeyStore: {
+      create: vi.fn(async () => {
+        throw new Error('apiKeyStore.create not stubbed')
+      }),
+      verify: vi.fn(async () => null),
+      listForUser: vi.fn(async () => []),
+      listAll: vi.fn(async () => []),
+      revoke: vi.fn(async () => false),
+      touchLastUsed: vi.fn(async () => {}),
+    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

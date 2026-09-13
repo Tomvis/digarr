@@ -35,6 +35,7 @@ import type { Cursor } from '@/server/helpers/pagination-cursor'
 
 type SubscriptionRow = typeof subscriptions.$inferSelect
 
+import type { ApiKeyStore } from '@/db/queries/api-keys'
 import type { TargetInsert, TargetRow, TargetUpdate } from '@/db/queries/targets'
 import type { UserBootstrapOptions, UserPublic } from '@/db/queries/users'
 import type { PlaylistDeps } from './routes/playlists'
@@ -264,6 +265,15 @@ export interface OptionalRouteDeps {
   search?: SearchDeps
 }
 
+// ---- API keys ----
+
+// A single store, rather than flat per-function deps like the rest of this
+// file: the same object also becomes authGuard's `apiKeys` option, so there
+// is one wiring path instead of two (routes + guard separately).
+export interface ApiKeyDeps {
+  apiKeyStore: ApiKeyStore
+}
+
 // Full app dependencies. Intersecting the per-domain slices keeps the
 // structural shape identical so existing route factories that take
 // `AppDependencies` keep compiling without changes.
@@ -279,4 +289,5 @@ export type AppDependencies = DbDeps &
   SlskdDeps &
   DashboardDeps &
   DiscoveryDeps &
-  OptionalRouteDeps
+  OptionalRouteDeps &
+  ApiKeyDeps

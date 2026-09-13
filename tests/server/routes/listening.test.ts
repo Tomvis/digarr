@@ -153,6 +153,7 @@ function makeDeps(
     },
     jobRecorder: {} as AppDependencies['jobRecorder'],
     jobQueries: {} as AppDependencies['jobQueries'],
+    apiKeyStore: {} as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

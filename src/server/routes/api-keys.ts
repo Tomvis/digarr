@@ -1,0 +1,61 @@
+import { Hono } from 'hono'
+import { generateApiKey, parseScopes } from '@/core/auth/api-keys'
+import type { ApiKeyStore } from '@/db/queries/api-keys'
+import { problem } from '@/server/helpers/problem'
+import { requireSessionUser } from '@/server/helpers/require-user'
+import { apiKeyIdParamSchema, createApiKeySchema } from '@/server/schemas/api-keys'
+import { zJson, zParam } from '@/server/schemas/validator'
+import type { HonoEnv } from '@/server/types'
+
+export type ApiKeyRouteDeps = {
+  apiKeyStore: ApiKeyStore
+}
+
+export function apiKeyRoutes(deps: ApiKeyRouteDeps) {
+  const router = new Hono<HonoEnv>()
+
+  // Session auth only, on every route below. An API key must never be able to
+  // mint, list or revoke an API key -- that would make any leaked key
+  // self-perpetuating and let a `write` key escalate itself to `admin`.
+
+  router.get('/api/v1/api-keys', async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    return c.json({ items: await deps.apiKeyStore.listForUser(auth.userId) })
+  })
+
+  router.post('/api/v1/api-keys', zJson(createApiKeySchema), async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const { name, scopes, expiresAt } = c.req.valid('json')
+
+    const { token, prefix, keyHash } = generateApiKey()
+    const key = await deps.apiKeyStore.create({
+      userId: auth.userId,
+      name,
+      prefix,
+      keyHash,
+      scopes: parseScopes(scopes),
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+    })
+
+    // The only time the plaintext is ever returned. It is not recoverable
+    // afterwards -- only its SHA-256 digest is stored.
+    return c.json({ key, token }, 201)
+  })
+
+  router.delete('/api/v1/api-keys/:id', zParam(apiKeyIdParamSchema), async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const { id } = c.req.valid('param')
+    const revoked = await deps.apiKeyStore.revoke({ id, userId: auth.userId })
+    if (!revoked) {
+      // 404 rather than 403: a key belonging to someone else must not be
+      // distinguishable from one that does not exist.
+      return problem(c, 'not-found', 'API key not found', 404)
+    }
+    return c.body(null, 204)
+  })
+
+  return router
+}

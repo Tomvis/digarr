@@ -19,6 +19,7 @@ import { setupGuard } from './middleware/setup-guard'
 import { adminRoutes } from './routes/admin'
 import { albumBlocksRoutes } from './routes/album-blocks'
 import { analyticsRoutes } from './routes/analytics'
+import { apiKeyRoutes } from './routes/api-keys'
 import { artistBlocksRoutes } from './routes/artist-blocks'
 import { artistRoutes } from './routes/artists'
 import { authRoutes } from './routes/auth'
@@ -183,6 +184,7 @@ export function createApp(deps: AppDependencies) {
     authGuard({
       hasUsers: async () => (await deps.getUserCount()) > 0,
       isSetupComplete: deps.isSetupComplete,
+      apiKeys: deps.apiKeyStore,
     }),
   )
   app.use('*', csrfGuard)
@@ -296,6 +298,7 @@ export function createApp(deps: AppDependencies) {
     rateLimiter({ windowMs: 60_000, max: 5, keyPrefix: 'oauth' }),
   )
   app.route('/', authRoutes(deps))
+  app.route('/', apiKeyRoutes(deps))
   app.route('/', oauthRoutes(deps))
   app.route('/', healthRoutes({ db: deps.db }))
   app.route('/', setupRoutes(deps))

@@ -75,6 +75,7 @@ function makeDeps(
       markStuck: vi.fn().mockResolvedValue(0),
     },
     jobQueries: {} as unknown as AppDependencies['jobQueries'],
+    apiKeyStore: {} as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

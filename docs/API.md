@@ -142,6 +142,25 @@ Notes:
 - `PATCH /api/v1/auth/me/preferences` also rejects legacy token auth with `403`; preference writes require a session-authenticated user
 - `GET /api/v1/auth/status` returns `required: true` as soon as setup is complete, even if no users exist yet, so the frontend can force registration/login instead of treating the app as public
 
+### API Keys
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/api-keys` | Session only | List your own API keys. Never returns secrets. |
+| POST | `/api/v1/api-keys` | Session only | Create an API key. Returns the plaintext token once. |
+| DELETE | `/api/v1/api-keys/:id` | Session only | Revoke one of your own API keys. |
+
+Notes:
+- Session auth only: an API key cannot manage API keys, session-authenticated
+  callers only. This is deliberate - it stops a leaked key from minting itself
+  a replacement, and stops a `write` key from escalating itself to `admin`.
+  Legacy `DIGARR_AUTH_TOKEN` auth is also rejected, the same as every other
+  session-only route.
+- `POST /api/v1/api-keys` body: `{ "name": string, "scopes": ("read"|"write"|"admin")[], "expiresAt"?: string | null }`. `scopes` must be non-empty and contain only known scopes; unknown scopes return `400`.
+- The response token (`dgr_<prefix>_<secret>`) is returned exactly once, at creation, and is not recoverable afterward - only its SHA-256 digest is stored. Send it as `Authorization: Bearer <token>` on later requests.
+- `DELETE /api/v1/api-keys/:id` returns `404`, not `403`, for a key owned by another user, so ownership cannot be probed by status code.
+- See [API keys](AUTHENTICATION.md#api-keys-optional) for scope semantics and the full auth model.
+
 ### OIDC / OAuth
 
 | Method | Path | Auth | Description |

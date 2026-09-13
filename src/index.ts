@@ -99,6 +99,7 @@ import {
   listAlbumBlocks as listAlbumBlocksQuery,
   removeAlbumBlock as removeAlbumBlockQuery,
 } from './db/queries/album-blocks'
+import { apiKeyQueries } from './db/queries/api-keys'
 import {
   addBlock as addArtistBlockQuery,
   getBlockedMbids as getBlockedArtistMbids,
@@ -245,6 +246,8 @@ console.log('Database migrations applied')
 
 // Wire up DB-backed session store after migrations are applied.
 setSessionStore(sessionQueries(db))
+
+const apiKeyStore = apiKeyQueries(db)
 
 // Read library sync interval once; used by both the orchestrator's stale
 // check and the background scheduler. Runtime changes require a restart.
@@ -1280,6 +1283,7 @@ const discoveryModeRegistry = createDefaultDiscoveryModeRegistry()
 const app = createApp({
   db,
   storeDb,
+  apiKeyStore,
   orchestrator,
   scheduler,
   providerRegistry,
