@@ -47,3 +47,7 @@ deploy/docker/secrets/*
 
 # Disposable agent handoff docs
 .handoff/
+
+# Agent scratch: git worktrees and subagent-driven-development workspaces
+.worktrees/
+.superpowers/
