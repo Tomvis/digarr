@@ -2,7 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getCookie } from 'hono/cookie'
 import { createMiddleware } from 'hono/factory'
 import { envConfig } from '@/config/env'
+import { isApiKeyToken, parseApiKey } from '@/core/auth/api-keys'
 import { getSession } from '@/core/sessions'
+import { API_KEY_TOUCH_THROTTLE_MS, type ApiKeyStore } from '@/db/queries/api-keys'
 import { notAuthenticated } from '@/server/helpers/auth-problems'
 import { problem } from '@/server/helpers/problem'
 import { SESSION_COOKIE_NAME } from '@/server/middleware/session-cookie'
@@ -51,9 +53,14 @@ const OPTIONAL_AUTH_PATHS = new Set([
 // Only SSE/audio flows are allowed to use query-param auth tokens.
 const QUERY_TOKEN_PATHS = new Set(['/api/v1/pipeline/events', '/api/v1/preview/audio'])
 
+// Last successful `last_used_at` write per API key id, so a burst of requests
+// from the same key only touches the DB once per throttle window.
+const lastTouchedAt = new Map<number, number>()
+
 export function authGuard(options: {
   hasUsers: () => Promise<boolean>
   isSetupComplete: () => Promise<boolean>
+  apiKeys?: ApiKeyStore
 }) {
   return createMiddleware<HonoEnv>(async (c, next) => {
     const publicPath =
@@ -87,6 +94,38 @@ export function authGuard(options: {
         const cookieToken = getCookie(c, SESSION_COOKIE_NAME)
         if (cookieToken) credential = { token: cookieToken, source: 'cookie' }
       }
+    }
+
+    // API key auth. Recognised by prefix so it costs no session lookup, and
+    // never from a query parameter: only SSE/audio accept ?token=, and a
+    // long-lived credential has no business in a URL.
+    if (
+      options.apiKeys &&
+      credential?.token &&
+      credential.source === 'bearer' &&
+      isApiKeyToken(credential.token)
+    ) {
+      const parsed = parseApiKey(credential.token)
+      const verified = parsed ? await options.apiKeys.verify(parsed.prefix, parsed.secret) : null
+      if (verified) {
+        c.set('userId', verified.userId)
+        c.set('authMethod', 'api-key')
+        c.set('apiKeyId', verified.id)
+        c.set('apiKeyScopes', verified.scopes)
+
+        const now = Date.now()
+        const previous = lastTouchedAt.get(verified.id) ?? 0
+        if (now - previous >= API_KEY_TOUCH_THROTTLE_MS) {
+          lastTouchedAt.set(verified.id, now)
+          // Fire and forget: a read must not become a write on the hot path.
+          void options.apiKeys.touchLastUsed(verified.id).catch(() => {})
+        }
+        return next()
+      }
+      // A presented-but-invalid api key falls through to the 401 below. It must
+      // NOT fall back to the legacy token: that would let a revoked key keep
+      // working whenever DIGARR_AUTH_TOKEN happens to be configured.
+      return notAuthenticated(c)
     }
 
     // Try session token first

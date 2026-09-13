@@ -123,6 +123,9 @@ vi.mock('@/web/lib/api', () => ({
   }),
   listJobs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   updateUserPreferences: vi.fn().mockResolvedValue({ success: true }),
+  listApiKeys: vi.fn().mockResolvedValue({ items: [] }),
+  createApiKey: vi.fn(),
+  revokeApiKey: vi.fn(),
 }))
 
 vi.mock('sonner', () => ({

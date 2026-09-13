@@ -343,6 +343,154 @@ describe('DiscoverPage', () => {
     })
   })
 
+  it('undoing an approval asks for the Lidarr removal and reports what happened', async () => {
+    setupMockApi()
+    mockApproveRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
+    mockUpdateRecommendation.mockResolvedValue({
+      status: 'pending',
+      lidarrArtistRemoved: false,
+      lidarrRemovalSkippedReason: 'has_files',
+    } as never)
+    const success = vi.spyOn(toast, 'success')
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+    // biome-ignore lint/style/noNonNullAssertion: at least one approve button exists
+    fireEvent.click(screen.getAllByText('Approve')[0]!)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    // Undo is THE unapprove path, so it opts into the Lidarr removal explicitly.
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, {
+        status: 'pending',
+        removeLidarrArtist: true,
+      })
+    })
+    // ...and the toast says the artist is still there rather than "Undone".
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledWith(
+        'Undone. The Lidarr artist was kept because it already has downloaded files.',
+      )
+    })
+  })
+
+  it('undoing a rejection never asks for a Lidarr removal', async () => {
+    // The trap: rejecting a PENDING rec also records prevStatus 'pending', so
+    // keying the removal off the status alone made the app's most common undo
+    // delete the Lidarr artist of any pending row that still carried one.
+    // Only the recorded action can tell the two apart.
+    setupMockApi()
+    mockUpdateRecommendation.mockResolvedValue({ status: 'pending' } as never)
+    const success = vi.spyOn(toast, 'success')
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+
+    // "Reject" exact text (not the "Rejected" tab)
+    fireEvent.click(screen.getByText('Reject'))
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'pending' })
+    })
+    // ...and the toast stays a plain "Undone" rather than claiming there was
+    // no Lidarr artist to remove.
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledWith('Undone')
+    })
+  })
+
+  it('undoing an approve clicked on an already-approved row never removes the Lidarr artist', async () => {
+    // The card renders approve/reject for status 'approved', not just
+    // 'pending' (recommendation-card.tsx isPending). Clicking through that
+    // control used to record prevStatus 'pending' via the handler default, and
+    // undo would then read it as an unapprove and delete the Lidarr artist.
+    setupMockApi([makeRec({ status: 'approved' })])
+    // Two Lidarr targets, so discover hands the card no `approveNode` and the
+    // card's OWN approve control renders - the path that fed the default in.
+    mockListTargets.mockResolvedValue([
+      { id: 1, type: 'lidarr', name: 'Main Lidarr', config: {}, enabled: true, owned: true },
+      { id: 2, type: 'lidarr', name: 'Alt Lidarr', config: {}, enabled: true, owned: true },
+    ])
+    mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'approved' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    // Restores the row's real status, and carries no removal flag.
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'approved' })
+    })
+  })
+
+  it('keyboard reject carries the row status, so undo restores it and skips Lidarr', async () => {
+    // The `r` shortcut acts on any row in the view, not just pending ones, so
+    // it must pass the real status instead of the 'pending' default.
+    setupMockApi([makeRec({ status: 'added_to_lidarr' })])
+    mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
+
+    renderWithQuery(<DiscoverPage />)
+    fireEvent.click(await screen.findByText('Test Artist'))
+    fireEvent.keyDown(window, { key: 'r' })
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'added_to_lidarr' })
+    })
+  })
+
+  it('restoring a rejected recommendation never asks for a Lidarr removal', async () => {
+    // The regression: restore reuses the approve handler and PATCHes
+    // status='pending'. It must not inherit unapprove's destructive side effect.
+    mockGetRecommendations.mockImplementation((params) => {
+      const p = params as Record<string, string> | undefined
+      return Promise.resolve(
+        (p?.status === 'rejected'
+          ? makeRes([makeRec({ status: 'rejected' })])
+          : { items: [], total: 0 }) as unknown as { items: unknown[]; total: number },
+      )
+    })
+    ;(getWarmStatuses as ReturnType<typeof vi.fn>).mockResolvedValue({ statuses: {} })
+    mockListTargets.mockResolvedValue([])
+    mockUpdateRecommendation.mockResolvedValue({
+      status: 'pending',
+      lidarrArtistRemoved: false,
+    } as never)
+
+    renderWithQuery(<DiscoverPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Rejected/i }))
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'pending' })
+    })
+  })
+
   it('offers popular albums from the approve dropdown', async () => {
     setupMockApi()
     renderWithQuery(<DiscoverPage />)

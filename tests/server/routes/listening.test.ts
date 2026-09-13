@@ -109,6 +109,8 @@ function makeDeps(
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
     rejectRecommendation: vi.fn(async () => 1),
+    lidarrRemoveArtist: vi.fn(async () => {}),
+    lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
     removeArtistBlock: vi.fn(async () => true),
     addArtistBlock: vi.fn(async () => {}),
@@ -153,6 +155,7 @@ function makeDeps(
     },
     jobRecorder: {} as AppDependencies['jobRecorder'],
     jobQueries: {} as AppDependencies['jobQueries'],
+    apiKeyStore: {} as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

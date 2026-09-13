@@ -142,6 +142,25 @@ Notes:
 - `PATCH /api/v1/auth/me/preferences` also rejects legacy token auth with `403`; preference writes require a session-authenticated user
 - `GET /api/v1/auth/status` returns `required: true` as soon as setup is complete, even if no users exist yet, so the frontend can force registration/login instead of treating the app as public
 
+### API Keys
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/api-keys` | Session only | List your own API keys. Never returns secrets. |
+| POST | `/api/v1/api-keys` | Session only | Create an API key. Returns the plaintext token once. |
+| DELETE | `/api/v1/api-keys/:id` | Session only | Revoke one of your own API keys. |
+
+Notes:
+- Session auth only: an API key cannot manage API keys, session-authenticated
+  callers only. This is deliberate - it stops a leaked key from minting itself
+  a replacement, and stops a `write` key from escalating itself to `admin`.
+  Legacy `DIGARR_AUTH_TOKEN` auth is also rejected, the same as every other
+  session-only route.
+- `POST /api/v1/api-keys` body: `{ "name": string, "scopes": ("read"|"write"|"admin")[], "expiresAt"?: string | null }`. `scopes` must be non-empty and contain only known scopes; unknown scopes return `400`.
+- The response token (`dgr_<prefix>_<secret>`) is returned exactly once, at creation, and is not recoverable afterward - only its SHA-256 digest is stored. Send it as `Authorization: Bearer <token>` on later requests.
+- `DELETE /api/v1/api-keys/:id` returns `404`, not `403`, for a key owned by another user, so ownership cannot be probed by status code.
+- See [API keys](AUTHENTICATION.md#api-keys-optional) for scope semantics and the full auth model.
+
 ### OIDC / OAuth
 
 | Method | Path | Auth | Description |
@@ -308,7 +327,7 @@ Locale notes:
 |--------|------|------|-------------|
 | GET | `/api/v1/recommendations` | Yes | List recommendations (paginated, filterable) |
 | GET | `/api/v1/recommendations/:id` | Yes | Get single recommendation with artist data |
-| PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or restore a recommendation |
+| PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or revert a recommendation to `pending`. Reverting undoes an approval: it always reverts the row, and also removes the Lidarr artist digarr added when it can do so safely (see below) |
 | POST | `/api/v1/recommendations/bulk` | Yes | Bulk approve/reject (reject accepts an optional shared `reason` + `permanent` block) |
 | GET | `/api/v1/recommendations/feedback-summary` | Yes | Genre approval rates (top 20), scoped to the calling user's own feedback |
 | GET | `/api/v1/recommendations/popular-albums/availability` | Yes | Which popularity sources are reachable for the caller; backs the popular-album approve option. Returns `{ available, spotify, lastfm }` (booleans). |
@@ -357,9 +376,26 @@ Approve response (status `approved`):
     "failures": [{ "id": "lidarr-2", "name": "Lidarr Backup", "error": "connection refused" }] }
 }
 ```
-- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (Digarr never deletes an artist from a target that took it).
+- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (approving never deletes an artist from a target that took it - only an explicit revert, below, does).
 - `targetActions` is the full merged map persisted on the rec; `targetSummary` describes only the targets attempted by *this* request, so clients can report partial outcomes at submit time.
 - To retry just the failed targets, re-`PATCH` once per failed `targetId` (this preserves the successful targets' actions and will not regress the rec to `add_failed` if others already succeeded).
+
+Revert request (status `pending`) body:
+```json
+{ "status": "pending", "removeLidarrArtist": true }
+```
+Revert response:
+```json
+{
+  "status": "pending",
+  "lidarrArtistRemoved": true,
+  "lidarrRemovalSkippedReason": "has_files"
+}
+```
+- The row **always** reverts to `pending` - this is the user's explicit instruction, so it is never blocked by a Lidarr failure. `actedOnAt`, `lidarrError`, and `targetActions` are cleared.
+- `removeLidarrArtist` defaults to `false` and is the **only** thing that makes Digarr touch Lidarr. A bare `{ "status": "pending" }` reverts the row and leaves Lidarr completely alone - that is what restoring a rejected recommendation does. Send `true` only to unapprove (reverse an approval).
+- With `removeLidarrArtist: true`, Digarr attempts to remove the Lidarr artist it added, but only when `lidarrArtistId` is set on the rec **and** the artist has no downloaded files (checked in Lidarr); the removal never deletes files (`deleteFiles: false` always). The target is resolved against the recommendation's own user, the same way approval resolves targets. `lidarrArtistId` is cleared only when removal actually succeeds - a failed removal keeps it, so the row does not forget an artist that still exists in Lidarr.
+- `lidarrRemovalSkippedReason` is present (and `lidarrArtistRemoved` is `false`) whenever an attempted removal was skipped or failed: `not_added_by_digarr` (no `lidarrArtistId` on the rec), `has_files` (the artist has downloaded albums), or `removal_failed` (Lidarr call errored). It is omitted when `lidarrArtistRemoved` is `true`, and also when `removeLidarrArtist` was `false` - nothing was attempted, so there is no reason to report.
 
 ## Artist Blocks
 

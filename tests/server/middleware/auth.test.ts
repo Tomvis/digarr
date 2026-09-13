@@ -31,6 +31,8 @@ function makeDeps(overrides: Partial<import('@/server').AppDependencies> = {}) {
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
     rejectRecommendation: vi.fn(async () => 1),
+    lidarrRemoveArtist: vi.fn(async () => {}),
+    lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
     removeArtistBlock: vi.fn(async () => true),
     addArtistBlock: vi.fn(async () => {}),
@@ -131,6 +133,16 @@ function makeDeps(overrides: Partial<import('@/server').AppDependencies> = {}) {
       }),
       getJobsForSubscription: vi.fn().mockResolvedValue([]),
     },
+    apiKeyStore: {
+      create: vi.fn(async () => {
+        throw new Error('apiKeyStore.create not stubbed')
+      }),
+      verify: vi.fn(async () => null),
+      listForUser: vi.fn(async () => []),
+      listAll: vi.fn(async () => []),
+      revoke: vi.fn(async () => false),
+      touchLastUsed: vi.fn(async () => {}),
+    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   } satisfies AppDependencies
 }

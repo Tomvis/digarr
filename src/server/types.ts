@@ -9,6 +9,7 @@ export type AuthMethod =
   | 'session-query'
   | 'legacy-bearer'
   | 'legacy-query'
+  | 'api-key'
   | 'proxy'
 
 export type HonoEnv = {
@@ -17,6 +18,10 @@ export type HonoEnv = {
     authMethod?: AuthMethod
     proxyAuth?: boolean
     legacyTokenAuth?: boolean
+    /** Id of the API key that authenticated this request, when authMethod is 'api-key'. */
+    apiKeyId?: number
+    /** Scopes granted to that key. Absent for every other auth method, which are unscoped. */
+    apiKeyScopes?: string[]
     /** True when auth middleware determined no auth is configured (no users, no legacy token). */
     authSkipped?: boolean
   }

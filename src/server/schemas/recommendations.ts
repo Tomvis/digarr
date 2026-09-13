@@ -24,6 +24,12 @@ export const updateRecommendationSchema = z.object({
   qualityProfileId: z.number().int().optional(),
   metadataProfileId: z.number().int().optional(),
   rootFolderId: z.number().int().optional(),
+  // Unapprove-only. Removing the Lidarr artist digarr added is a destructive
+  // side effect, so it is an explicit opt-in and never implied by
+  // `status: 'pending'` alone -- "restore this rejected recommendation" and
+  // "undo that approval" both revert the row and only one of them should
+  // touch Lidarr.
+  removeLidarrArtist: z.boolean().default(false),
   // Reject-only fields. Strict refinement applied via rejectStatusSchema below.
   reason: z.enum(REJECTION_REASONS).optional(),
   reasonText: z.string().max(400).optional(),

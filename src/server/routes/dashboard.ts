@@ -31,6 +31,8 @@ export function dashboardRoutes(deps: AppDependencies) {
       deps.getUserById,
       c.get('authSkipped'),
       c.get('legacyTokenAuth'),
+      c.get('authMethod'),
+      c.get('apiKeyScopes'),
     )
 
     const activity = await deps.dashboardQueries.getRecentActivity(userId, isAdmin, limit)

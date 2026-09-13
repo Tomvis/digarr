@@ -405,6 +405,30 @@ export const sessions = pgTable(
   }),
 )
 
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: integer('id').primaryKey().generatedByDefaultAsIdentity(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    // Public lookup handle carried in the token. Unique because it is the
+    // index we resolve on before the constant-time hash comparison.
+    prefix: text('prefix').notNull(),
+    keyHash: text('key_hash').notNull(),
+    scopes: text('scopes').array().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => ({
+    prefixUnique: uniqueIndex('api_keys_prefix_unique').on(table.prefix),
+    userIdx: index('api_keys_user_idx').on(table.userId),
+  }),
+)
+
 export const artistMetadata = pgTable('artist_metadata', {
   id: integer('id').primaryKey().generatedByDefaultAsIdentity(),
   name: text('name').notNull(),

@@ -9,6 +9,7 @@ import type { NotificationChannel, NotificationEvent } from '@/core/notification
 import { errMsg } from '@/core/validation'
 import { DEFAULT_PREFERENCES, type Preferences } from '@/db/schema'
 import { AdministrationTab } from '../components/admin/administration-tab'
+import { ApiKeysCard } from '../components/api-keys-card'
 import { setAudiodbProxyFlag } from '../components/artist-thumb'
 import { BlockedAlbumsTab } from '../components/blocked-albums-tab'
 import { BlockedArtistsTab } from '../components/blocked-artists-tab'
@@ -3691,6 +3692,8 @@ function AccountTab() {
           </Button>
         </form>
       </section>
+
+      <ApiKeysCard />
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-text uppercase tracking-wide">

@@ -35,6 +35,7 @@ import type { Cursor } from '@/server/helpers/pagination-cursor'
 
 type SubscriptionRow = typeof subscriptions.$inferSelect
 
+import type { ApiKeyStore } from '@/db/queries/api-keys'
 import type { TargetInsert, TargetRow, TargetUpdate } from '@/db/queries/targets'
 import type { UserBootstrapOptions, UserPublic } from '@/db/queries/users'
 import type { PlaylistDeps } from './routes/playlists'
@@ -132,6 +133,25 @@ export interface RecommendationDeps {
   rejectRecommendation: (
     params: import('@/db/queries/recommendations').RejectRecommendationParams,
   ) => Promise<number | null>
+  // Reverse (unapprove) support: remove the Lidarr artist digarr added when an
+  // approval is explicitly reversed. deleteFiles is always false from every
+  // caller - undo unwinds the monitoring decision, it never destroys media
+  // already on disk.
+  //
+  // `userId` is the recommendation's owner and is REQUIRED to resolve the
+  // right Lidarr: artist ids are per-instance, so running the removal against
+  // a target belonging to someone else would delete an unrelated artist.
+  // Undefined userId (no owner resolvable) means no target, exactly as the
+  // approve path treats it.
+  lidarrRemoveArtist: (params: {
+    userId: number | undefined
+    artistId: number
+    deleteFiles: boolean
+  }) => Promise<void>
+  lidarrArtistHasFiles: (params: {
+    userId: number | undefined
+    artistId: number
+  }) => Promise<boolean>
   bulkUpdateStatus: (ids: number[], status: string) => Promise<void>
   filterOwnedIds: (ids: number[], userId: number | undefined) => Promise<number[]>
   listBatches: (opts?: { limit?: number; cursor?: Cursor | null }) => Promise<BatchRow[]>
@@ -264,6 +284,15 @@ export interface OptionalRouteDeps {
   search?: SearchDeps
 }
 
+// ---- API keys ----
+
+// A single store, rather than flat per-function deps like the rest of this
+// file: the same object also becomes authGuard's `apiKeys` option, so there
+// is one wiring path instead of two (routes + guard separately).
+export interface ApiKeyDeps {
+  apiKeyStore: ApiKeyStore
+}
+
 // Full app dependencies. Intersecting the per-domain slices keeps the
 // structural shape identical so existing route factories that take
 // `AppDependencies` keep compiling without changes.
@@ -279,4 +308,5 @@ export type AppDependencies = DbDeps &
   SlskdDeps &
   DashboardDeps &
   DiscoveryDeps &
-  OptionalRouteDeps
+  OptionalRouteDeps &
+  ApiKeyDeps

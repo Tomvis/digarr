@@ -99,6 +99,7 @@ import {
   listAlbumBlocks as listAlbumBlocksQuery,
   removeAlbumBlock as removeAlbumBlockQuery,
 } from './db/queries/album-blocks'
+import { apiKeyQueries } from './db/queries/api-keys'
 import {
   addBlock as addArtistBlockQuery,
   getBlockedMbids as getBlockedArtistMbids,
@@ -245,6 +246,8 @@ console.log('Database migrations applied')
 
 // Wire up DB-backed session store after migrations are applied.
 setSessionStore(sessionQueries(db))
+
+const apiKeyStore = apiKeyQueries(db)
 
 // Read library sync interval once; used by both the orchestrator's stale
 // check and the background scheduler. Runtime changes require a restart.
@@ -807,6 +810,32 @@ async function getEnabledTargetsForResolvedUser(
   return targets
 }
 
+// Undo path for a reversed approval (PATCH .../recommendations/:id with
+// status='pending' and removeLidarrArtist=true). Recommendations only remember
+// lidarrArtistId, not which target performed the add, so - mirroring the
+// approve flow's own single-target fallback when no explicit lidarrTargetId is
+// given - this resolves the most recently created enabled Lidarr target
+// belonging to that user (getTargetsByUser orders newest-first).
+//
+// Scoped to the user on purpose, matching approve. A Lidarr artist id is only
+// meaningful inside the instance that issued it, so resolving system-wide
+// could issue the DELETE against another user's Lidarr, where the same id is
+// a different artist. No userId means no target, exactly as approve behaves.
+async function getLidarrClientForRemoval(userId: number | undefined) {
+  if (userId == null) return null
+  const userTargets = await getTargetsByUser(db, userId)
+  const lidarrTarget = userTargets.find(
+    (t) =>
+      t.type === 'lidarr' &&
+      t.enabled &&
+      typeof t.config?.url === 'string' &&
+      typeof t.config?.apiKey === 'string',
+  )
+  if (!lidarrTarget) return null
+  const config = lidarrTarget.config as { url: string; apiKey: string; skipTlsVerify?: boolean }
+  return createLidarrClient(config.url, config.apiKey, config.skipTlsVerify ?? false)
+}
+
 // Shared subscription query facade (used both by routes and scheduler)
 const subscriptionQueriesImpl = {
   createSubscription: (data: Parameters<typeof createSubscription>[1]) =>
@@ -1280,6 +1309,7 @@ const discoveryModeRegistry = createDefaultDiscoveryModeRegistry()
 const app = createApp({
   db,
   storeDb,
+  apiKeyStore,
   orchestrator,
   scheduler,
   providerRegistry,
@@ -1296,6 +1326,17 @@ const app = createApp({
   updateRecommendationStatus: (id, status, extra) =>
     updateRecommendationStatus(db, id, status, extra),
   rejectRecommendation: (params) => rejectRecommendation(db, params),
+  lidarrRemoveArtist: async ({ userId, artistId, deleteFiles }) => {
+    const client = await getLidarrClientForRemoval(userId)
+    if (!client) throw new Error('No enabled Lidarr target configured')
+    await client.removeArtist(artistId, { deleteFiles })
+  },
+  lidarrArtistHasFiles: async ({ userId, artistId }) => {
+    const client = await getLidarrClientForRemoval(userId)
+    if (!client) return false
+    const albums = await client.getAlbums(artistId)
+    return albums.some((album) => (album.statistics?.trackFileCount ?? 0) > 0)
+  },
   listArtistBlocks: (params) => listArtistBlocksQuery(db, params),
   removeArtistBlock: (params) => removeArtistBlockQuery(db, params),
   addArtistBlock: (params) =>

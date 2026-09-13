@@ -152,6 +152,59 @@ Registration is closed by default after the first user has been created. To
 open registration in a fresh install or internal deployment, set
 `DIGARR_DISABLE_REGISTRATION=false`.
 
+## API keys (optional)
+
+Any signed-in user can create long-lived API keys via `POST /api/v1/api-keys`,
+for third-party integrations (for example Music Assistant) that should not
+share a browser session or a bearer token that expires in 30 days.
+
+A key looks like `dgr_<prefix>_<secret>` (the `dgr_` prefix identifies it as an
+API key rather than a session token). Send it the same way as a bearer
+session, `Authorization: Bearer <token>` - never as a `?token=` query
+parameter. Only pipeline SSE and the preview-audio proxy accept query-string
+tokens at all, and API keys are excluded from that allowance because a
+long-lived credential has no business appearing in a URL, a server log, or
+browser history.
+
+Keys carry one of three ordered scopes, each granted at creation and fixed for
+the life of the key:
+
+- `read` - read-only access
+- `write` - implies `read`
+- `admin` - implies `write` and `read`
+
+Enforcement is global and fail-closed: every non-safe method (anything other
+than `GET`, `HEAD`, `OPTIONS`) on an `/api/v1/` path requires the `write`
+scope, and `admin`-gated routes additionally require the `admin` scope. A key
+that lacks the scope gets `403` with `type: /problems/insufficient-scope`. The
+gate is mounted once, next to the CSRF guard, rather than annotated per route,
+so a mutating route added later is covered the moment it exists instead of
+being silently unenforced until someone remembers it.
+
+Scopes only ever narrow what a key can do; they never grant anything beyond
+what the authenticated user could already do through a session. Session,
+cookie and proxy auth are unscoped and unaffected by the gate. A scope is
+meaningless without an underlying user account, and deleting the user revokes
+every key it owns along with everything else the user owns.
+
+Creating, listing, and revoking API keys (`GET`/`POST /api/v1/api-keys`,
+`DELETE /api/v1/api-keys/:id`) requires session authentication - cookie or
+bearer session - and explicitly rejects both API-key auth and the deprecated
+`DIGARR_AUTH_TOKEN`. This is not an oversight: if a key could manage keys, a
+leaked `write` key could mint itself a new `admin` key and escalate its own
+privileges. Key management is therefore a strictly session-only surface, the
+same restriction already applied to changing your password or email.
+
+The plaintext token is shown exactly once, in the response to
+`POST /api/v1/api-keys`, and cannot be retrieved again afterward. Only its
+SHA-256 digest is ever stored; losing the plaintext means revoking the key and
+creating a new one, the same as losing a password.
+
+Revoking a key (`DELETE /api/v1/api-keys/:id`) takes effect immediately: the
+next request presenting that key fails authentication rather than waiting on a
+cache or token expiry. Revoking a key that belongs to another user returns
+`404`, not `403`, so ownership cannot be probed by status code.
+
 ## OIDC (optional)
 
 Enable OIDC by setting:
