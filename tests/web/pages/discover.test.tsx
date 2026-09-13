@@ -377,6 +377,58 @@ describe('DiscoverPage', () => {
     })
   })
 
+  it('undoing a rejection never asks for a Lidarr removal', async () => {
+    // The trap: rejecting a PENDING rec also records prevStatus 'pending', so
+    // keying the removal off the status alone made the app's most common undo
+    // delete the Lidarr artist of any pending row that still carried one.
+    // Only the recorded action can tell the two apart.
+    setupMockApi()
+    mockUpdateRecommendation.mockResolvedValue({ status: 'pending' } as never)
+    const success = vi.spyOn(toast, 'success')
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    })
+
+    // "Reject" exact text (not the "Rejected" tab)
+    fireEvent.click(screen.getByText('Reject'))
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'pending' })
+    })
+    // ...and the toast stays a plain "Undone" rather than claiming there was
+    // no Lidarr artist to remove.
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledWith('Undone')
+    })
+  })
+
+  it('keyboard reject carries the row status, so undo restores it and skips Lidarr', async () => {
+    // The `r` shortcut acts on any row in the view, not just pending ones, so
+    // it must pass the real status instead of the 'pending' default.
+    setupMockApi([makeRec({ status: 'added_to_lidarr' })])
+    mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
+
+    renderWithQuery(<DiscoverPage />)
+    fireEvent.click(await screen.findByText('Test Artist'))
+    fireEvent.keyDown(window, { key: 'r' })
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'added_to_lidarr' })
+    })
+  })
+
   it('restoring a rejected recommendation never asks for a Lidarr removal', async () => {
     // The regression: restore reuses the approve handler and PATCHes
     // status='pending'. It must not inherit unapprove's destructive side effect.

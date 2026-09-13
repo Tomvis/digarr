@@ -697,7 +697,11 @@ export function DiscoverPage() {
 
   // Undo toast
 
-  type UndoEntry = { id: number; prevStatus: string }
+  // `action` is what the user DID; `prevStatus` is what the row was before it.
+  // They are not interchangeable: rejecting a pending recommendation also has
+  // prevStatus 'pending', so only `action` can tell an unapprove apart from
+  // undoing a rejection.
+  type UndoEntry = { id: number; prevStatus: string; action: 'approve' | 'reject' }
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -713,12 +717,17 @@ export function DiscoverPage() {
     const entry = undoEntry
     setUndoEntry(null)
     try {
-      // Undoing an approval is the one place that should reverse the Lidarr
-      // add as well, so it asks for it explicitly. Any other revert (e.g.
-      // restoring a rejected rec) leaves Lidarr alone by omitting the flag.
+      // Undoing an APPROVE back to 'pending' is the only unapprove, and the
+      // only thing that may reverse the Lidarr add. Undoing a reject is not an
+      // approval reversal even though it reverts to the same status, and a
+      // pending row can still carry a lidarrArtistId (a restore-from-rejected,
+      // or a removal that failed or was skipped), so keying off the status
+      // alone would delete an artist nobody asked to remove. Undoing back to
+      // any other status (an approved-tab retry) is not an unapprove either.
+      const isUnapprove = entry.action === 'approve' && entry.prevStatus === 'pending'
       const res = await updateRecommendation(entry.id, {
         status: entry.prevStatus,
-        ...(entry.prevStatus === 'pending' ? { removeLidarrArtist: true } : {}),
+        ...(isUnapprove ? { removeLidarrArtist: true } : {}),
       })
       toast.success(t(undoOutcomeMessage(res)))
       refetch()
@@ -772,7 +781,7 @@ export function DiscoverPage() {
           monitorOption: option,
           selectedAlbumIds,
         })
-        if (reportApprovalOutcome(res, t)) showUndo({ id, prevStatus })
+        if (reportApprovalOutcome(res, t)) showUndo({ id, prevStatus, action: 'approve' })
         refetch()
       } catch (err) {
         toast.error(approveErrorMessage(err, t('dashboard.approveFailed'), t))
@@ -801,7 +810,7 @@ export function DiscoverPage() {
           res = await updateRecommendation(id, { status: newStatus })
         }
         if (filter !== 'rejected') {
-          if (reportApprovalOutcome(res, t)) showUndo({ id, prevStatus })
+          if (reportApprovalOutcome(res, t)) showUndo({ id, prevStatus, action: 'approve' })
         } else {
           toast.success(t('discover.restoredToPending'))
         }
@@ -838,7 +847,7 @@ export function DiscoverPage() {
         if (payload?.reasonText) body.reasonText = payload.reasonText
         if (payload?.permanent) body.permanent = true
         await updateRecommendation(id, body)
-        showUndo({ id, prevStatus })
+        showUndo({ id, prevStatus, action: 'reject' })
         refetch()
       } catch {
         toast.error(t('discover.rejectFailed'))
@@ -1068,6 +1077,13 @@ export function DiscoverPage() {
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
 
+  // The a/r shortcuts act on any row in the current view, not just pending
+  // ones, so they must pass the row's real status rather than letting
+  // handleApprove/handleReject fall back to 'pending' - undo restores
+  // prevStatus verbatim. Falls back to the default when the row is not found.
+  const selectedRowStatus = () =>
+    itemsRef.current.find((rec) => rec.id === selectedIdRef.current)?.status
+
   useKeyboardShortcuts(
     {
       j: () => {
@@ -1093,10 +1109,12 @@ export function DiscoverPage() {
         if (prevItem) setSelectedId(prevItem.id)
       },
       a: () => {
-        if (selectedIdRef.current != null) handleApprove(selectedIdRef.current)
+        const id = selectedIdRef.current
+        if (id != null) handleApprove(id, selectedRowStatus())
       },
       r: () => {
-        if (selectedIdRef.current != null) handleReject(selectedIdRef.current)
+        const id = selectedIdRef.current
+        if (id != null) handleReject(id, selectedRowStatus())
       },
       d: () => {
         if (selectedIdRef.current != null) handleCardClick(selectedIdRef.current)
