@@ -6,6 +6,8 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ## Unreleased
 
+## v1.16.0 - 2026-09-14
+
 ### Added
 
 - **Playlists can now be pushed to Navidrome, Plex, and Jellyfin, and each playlist picks its own targets.** The Navidrome, Jellyfin, and Plex playlist targets existed on the server but were missing from the Add Target dropdown, and a playlist had no way to choose a destination, so generated playlists were never pushed anywhere. All three types can now be created in Settings > Targets, and the playlist form lists the playlist-capable targets you own so you can attach one or more. Reported in [discussion #644](https://github.com/iuliandita/digarr/discussions/644).
@@ -15,6 +17,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 - Admin promotion and user deletion now work with existing user data. Admins can assign targets to ordinary users, so their approvals reach the configured destination. First-user setup remains protected against concurrent signups. [#634](https://github.com/iuliandita/digarr/issues/634).
 - **Approving an artist with the "New releases" monitor option now works instead of always failing.** Digarr sent its own name for the option, `new`, straight through to Lidarr, whose monitor list has no such value -- so Lidarr rejected the request outright and the recommendation landed in `add_failed` with nothing in the interface explaining why. Every other monitor option happened to be translated somewhere along the way; this one was not. It now maps to Lidarr's equivalent, `future`. The same setting is available for auto-approval, where the failure was quieter and larger: an instance configured to auto-approve with "New releases" failed on every artist it tried to add, on every scan, with no click involved. Reported in [#611](https://github.com/iuliandita/digarr/issues/611).
 - **The `:stable` channel now updates itself.** Promotion to `:stable` was a manual step, and it did not happen: the channel served v1.12.0 from 2026-07-19 while v1.13.0, v1.14.0, v1.15.0 and v1.15.1 shipped past it. The documented rule -- a release reaches `:stable` once it has been live seven days and nothing newer has superseded it -- is now enforced by a daily job rather than by memory, so `:stable` follows the newest eligible release on its own. `:stable` has also been moved to v1.15.1, which is three minor versions ahead of where it was stuck; anyone tracking that tag crosses those migrations on the next pull.
+- **Logging out or switching accounts no longer leaves the previous user's data on screen.** The query cache is a module-level singleton, so a new session reused the old account's cached settings and recommendations until a browser refresh. It is now cleared on logout, on a 401, and after login, and the clear is broadcast to any other open tabs, which previously kept the old account's data until a 401 or a refocus. Reported in [#648](https://github.com/iuliandita/digarr/issues/648).
 
 ## v1.15.1 - 2026-08-17
 
