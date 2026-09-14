@@ -1,7 +1,7 @@
 import type { AiRecommendation, TasteProfile } from '@/core/types'
 import { errMsg } from '@/core/validation'
 import { buildRecommendationPrompt, parseRecommendationResponse } from './prompt'
-import { fetchWithRetry } from './retry'
+import { fetchWithRetry, overallTimeoutMsFor } from './retry'
 import { timeoutSecondsWithDefaultToMs } from './timeout'
 import type { AiUsage, RecommendationProvider } from './types'
 
@@ -37,8 +37,12 @@ export class OllamaProvider implements RecommendationProvider {
     this.lastUsage = null
     const prompt = buildRecommendationPrompt(profile)
 
+    // this.timeoutMs is the budget for ONE attempt. The controller below is the
+    // whole-call deadline -- it must outlast the retry loop, or the first slow
+    // attempt eats the budget and p-retry bails on the abort without ever
+    // retrying. It also stays armed while the body is read, below.
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), overallTimeoutMsFor(this.timeoutMs))
     try {
       const response = await fetchWithRetry(
         `${this.baseUrl}/api/chat`,
@@ -53,7 +57,7 @@ export class OllamaProvider implements RecommendationProvider {
           }),
           signal: controller.signal,
         },
-        { providerLabel: 'ollama' },
+        { providerLabel: 'ollama', attemptTimeoutMs: this.timeoutMs },
       )
 
       const data = (await response.json()) as OllamaChatResponse

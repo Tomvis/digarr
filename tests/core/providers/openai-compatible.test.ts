@@ -200,28 +200,71 @@ describe('OpenAICompatibleProvider', () => {
     expect(results[0]?.artistName).toBe('Burial')
   })
 
-  it('aborts getRecommendations when configured timeout elapses', async () => {
+  const stallUntilAborted = (_url: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const abortErr = new Error('aborted')
+      abortErr.name = 'AbortError'
+      init?.signal?.addEventListener('abort', () => reject(abortErr))
+    })
+
+  it('retries an attempt that hits the configured timeout', async () => {
+    // The configured timeout bounds ONE attempt, not the whole retry loop --
+    // otherwise a single slow upstream eats the budget and p-retry bails on the
+    // abort without ever retrying.
     vi.useFakeTimers()
     const provider = new OpenAICompatibleProvider(TEST_BASE_URL, 'model', null, 1)
+    fetchSpy.mockImplementationOnce(stallUntilAborted)
     fetchSpy.mockImplementationOnce(
-      (_url: RequestInfo | URL, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          const abortErr = new Error('aborted')
-          abortErr.name = 'AbortError'
-          init?.signal?.addEventListener('abort', () => reject(abortErr))
-        }),
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    recommendations: [
+                      {
+                        artistName: 'Burial',
+                        reasoning: 'Similar textures.',
+                        confidence: 0.9,
+                        genres: ['electronic'],
+                      },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+        ),
     )
 
     try {
+      const pending = provider.getRecommendations(sampleProfile)
+      await vi.advanceTimersByTimeAsync(5000)
+      await expect(pending).resolves.toHaveLength(1)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports the whole-call budget when the overall deadline elapses', async () => {
+    vi.useFakeTimers()
+    const provider = new OpenAICompatibleProvider(TEST_BASE_URL, 'model', null, 1)
+    fetchSpy.mockImplementation(stallUntilAborted)
+
+    try {
       const rejection = provider.getRecommendations(sampleProfile).catch((error: unknown) => error)
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(20_000)
       const error = await rejection
 
       expect(error).toBeInstanceOf(Error)
+      // 4 attempts x 1s plus 1+2+4s of backoff -- NOT the 1s per-attempt value,
+      // which would misreport an 11s wait as a 1s one.
       expect((error as Error).message).toBe(
-        'OpenAI-Compatible recommendation request timed out after 1 second',
+        'OpenAI-Compatible recommendation request timed out after 11 seconds',
       )
-      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(1)
     } finally {
       vi.useRealTimers()
     }

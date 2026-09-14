@@ -194,24 +194,73 @@ describe('GeminiProvider', () => {
     ).rejects.toThrow()
   })
 
-  it('aborts getRecommendations when configured timeout elapses', async () => {
+  const stallUntilAborted = (_url: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const abortErr = new Error('aborted')
+      abortErr.name = 'AbortError'
+      init?.signal?.addEventListener('abort', () => reject(abortErr))
+    })
+
+  const recommendationResponse = () =>
+    new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    recommendations: [
+                      {
+                        artistName: 'Boards of Canada',
+                        reasoning: 'Similar textures.',
+                        confidence: 0.9,
+                        genres: ['electronic'],
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    )
+
+  it('retries an attempt that hits the configured timeout', async () => {
+    // The configured timeout bounds ONE attempt. It used to span the whole
+    // retry loop, so a single slow upstream consumed the entire budget and
+    // p-retry bailed on the abort without ever retrying -- which is how a
+    // transient Gemini 503 became "The operation was aborted." and a silently
+    // AI-less discovery run.
     vi.useFakeTimers()
     const provider = new GeminiProvider('test-key', 'gemini-3-flash-preview', 1)
-    fetchSpy.mockImplementationOnce(
-      (_url: RequestInfo | URL, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          const abortErr = new Error('aborted')
-          abortErr.name = 'AbortError'
-          init?.signal?.addEventListener('abort', () => reject(abortErr))
-        }),
-    )
+    fetchSpy.mockImplementationOnce(stallUntilAborted)
+    fetchSpy.mockImplementationOnce(async () => recommendationResponse())
 
     try {
       const pending = provider.getRecommendations(sampleProfile)
-      const rejection = expect(pending).rejects.toThrow(/abort/i)
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(5000)
+      await expect(pending).resolves.toHaveLength(1)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up once the overall deadline elapses', async () => {
+    vi.useFakeTimers()
+    const provider = new GeminiProvider('test-key', 'gemini-3-flash-preview', 1)
+    fetchSpy.mockImplementation(stallUntilAborted)
+
+    try {
+      const pending = provider.getRecommendations(sampleProfile)
+      const rejection = expect(pending).rejects.toThrow()
+      // 1s per attempt, 4 attempts, 1+2+4s of backoff: overallTimeoutMsFor(1000).
+      await vi.advanceTimersByTimeAsync(20_000)
       await rejection
-      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      // More than one call is the whole point: the retries now actually run.
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(1)
     } finally {
       vi.useRealTimers()
     }

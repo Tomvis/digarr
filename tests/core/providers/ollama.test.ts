@@ -220,25 +220,61 @@ describe('OllamaProvider', () => {
   })
 
   describe('timeout', () => {
-    test('aborts getRecommendations when configured timeout elapses', async () => {
+    const stallUntilAborted = (_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const abortErr = new Error('aborted')
+        abortErr.name = 'AbortError'
+        init?.signal?.addEventListener('abort', () => reject(abortErr))
+      })
+
+    test('retries an attempt that hits the configured timeout', async () => {
+      // The configured timeout bounds ONE attempt, not the whole retry loop --
+      // otherwise a single slow upstream eats the budget and p-retry bails on
+      // the abort without ever retrying.
       vi.useFakeTimers()
       const short = new OllamaProvider('llama3', TEST_BASE_URL, 1)
+      fetchSpy.mockImplementationOnce(stallUntilAborted)
       fetchSpy.mockImplementationOnce(
-        (_url: RequestInfo | URL, init?: RequestInit) =>
-          new Promise<Response>((_resolve, reject) => {
-            const signal = init?.signal
-            const abortErr = new Error('aborted')
-            abortErr.name = 'AbortError'
-            signal?.addEventListener('abort', () => reject(abortErr))
-          }),
+        async () =>
+          new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  recommendations: [
+                    {
+                      artistName: 'Boards of Canada',
+                      reasoning: 'Similar textures.',
+                      confidence: 0.9,
+                      genres: ['electronic'],
+                    },
+                  ],
+                }),
+              },
+            }),
+          ),
       )
 
       try {
         const pending = short.getRecommendations(sampleProfile)
-        const rejection = expect(pending).rejects.toThrow(/abort/i)
-        await vi.advanceTimersByTimeAsync(1000)
+        await vi.advanceTimersByTimeAsync(5000)
+        await expect(pending).resolves.toHaveLength(1)
+        expect(fetchSpy).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    test('gives up once the overall deadline elapses', async () => {
+      vi.useFakeTimers()
+      const short = new OllamaProvider('llama3', TEST_BASE_URL, 1)
+      fetchSpy.mockImplementation(stallUntilAborted)
+
+      try {
+        const pending = short.getRecommendations(sampleProfile)
+        const rejection = expect(pending).rejects.toThrow()
+        await vi.advanceTimersByTimeAsync(20_000)
         await rejection
-        expect(fetchSpy).toHaveBeenCalledTimes(1)
+        expect(fetchSpy.mock.calls.length).toBeGreaterThan(1)
       } finally {
         vi.useRealTimers()
       }

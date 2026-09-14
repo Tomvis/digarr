@@ -5,7 +5,7 @@ import {
   parseRecommendationResponse,
   unwrapRecommendationArrayPayload,
 } from './prompt'
-import { fetchWithRetry } from './retry'
+import { fetchWithRetry, overallTimeoutMsFor } from './retry'
 import { timeoutSecondsWithDefaultToMs } from './timeout'
 import type { AiUsage, RecommendationProvider } from './types'
 
@@ -52,8 +52,13 @@ export class OpenAICompatibleProvider implements RecommendationProvider {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`
 
+    // this.timeoutMs is the budget for ONE attempt. The controller below is the
+    // whole-call deadline -- it must outlast the retry loop, or the first slow
+    // attempt eats the budget and p-retry bails on the abort without ever
+    // retrying. It also stays armed while the body is read, below.
+    const overallTimeoutMs = overallTimeoutMsFor(this.timeoutMs)
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), overallTimeoutMs)
     try {
       const res = await fetchWithRetry(
         this.chatCompletionsUrl,
@@ -70,7 +75,7 @@ export class OpenAICompatibleProvider implements RecommendationProvider {
           }),
           signal: controller.signal,
         },
-        { providerLabel: 'openai-compatible' },
+        { providerLabel: 'openai-compatible', attemptTimeoutMs: this.timeoutMs },
       )
 
       const data = (await res.json()) as {
@@ -90,7 +95,9 @@ export class OpenAICompatibleProvider implements RecommendationProvider {
       return parseRecommendationResponse(unwrapRecommendationArrayPayload(text))
     } catch (err: unknown) {
       if (controller.signal.aborted) {
-        throw new Error(timeoutMessage('recommendation request', this.timeoutMs))
+        // The controller is the whole-call deadline, so report that budget --
+        // this.timeoutMs is only what ONE attempt was allowed.
+        throw new Error(timeoutMessage('recommendation request', overallTimeoutMs))
       }
       throw err
     } finally {

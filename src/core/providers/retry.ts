@@ -13,6 +13,14 @@ export type RetriableFetchOptions = {
   /** Upper bound on per-attempt delay. */
   maxTimeout?: number
   /**
+   * Per-attempt timeout in ms. Each attempt gets its own clock and a timed-out
+   * attempt is retried like any other transient failure. Without this the only
+   * abort source is the caller's own signal, and because that signal spans the
+   * whole loop, one slow attempt swallows the entire budget and every remaining
+   * retry is skipped -- see the abort attribution below.
+   */
+  attemptTimeoutMs?: number
+  /**
    * Optional label recorded in the returned metadata so callers can include
    * provider context in job logs without re-implementing the retry accounting.
    */
@@ -36,6 +44,13 @@ const DEFAULTS: Required<Pick<RetriableFetchOptions, 'retries' | 'factor' | 'min
  * the retry loop stops immediately — there is nothing the retry can do about a
  * bad API key or a malformed request.
  *
+ * Two clocks, and the difference is the whole point. `options.attemptTimeoutMs`
+ * bounds ONE attempt and a timed-out attempt is retried. `init.signal` is the
+ * caller's own deadline for the whole call, it is never retried, and it stays
+ * the caller's to hold so it still covers reading the body off the `Response`
+ * this returns. Callers that want both should arm their signal with
+ * `overallTimeoutMsFor(attemptTimeoutMs)`.
+ *
  * Returns the successful `Response`; the caller still owns body parsing and
  * downstream error mapping.
  */
@@ -48,49 +63,98 @@ export async function fetchWithRetry(
   const factor = options.factor ?? DEFAULTS.factor
   const minTimeout = options.minTimeout ?? DEFAULTS.minTimeout
   const maxTimeout = options.maxTimeout
+  const attemptTimeoutMs = options.attemptTimeoutMs
+  const callerSignal = init.signal ?? undefined
 
   return pRetry(
     async () => {
-      let res: Response
+      // A fresh controller per attempt. Combining it with the caller's signal
+      // rather than replacing it keeps cancellation working, and leaves the
+      // caller's signal live for the body read that happens after we return.
+      const attemptController = attemptTimeoutMs != null ? new AbortController() : undefined
+      const attemptTimer =
+        attemptController && attemptTimeoutMs != null
+          ? setTimeout(() => attemptController.abort(), attemptTimeoutMs)
+          : undefined
+      const signal = attemptController
+        ? callerSignal
+          ? AbortSignal.any([callerSignal, attemptController.signal])
+          : attemptController.signal
+        : init.signal
+
       try {
-        res = await fetch(url, init)
-      } catch (err) {
-        // Caller-side AbortController (timeout/cancellation) must not loop;
-        // re-raise as AbortError so p-retry bails immediately.
-        if (isAbortError(err)) {
-          throw new AbortError((err as Error).message || 'aborted')
+        let res: Response
+        try {
+          res = await fetch(url, { ...init, signal })
+        } catch (err) {
+          // Abort attribution decides retry vs. bail. Our own per-attempt timer
+          // means this attempt is dead but the next one may not be; anything
+          // else is the caller cancelling or their deadline expiring, which no
+          // retry can fix. The caller wins a simultaneous abort.
+          if (isAbortError(err)) {
+            if (attemptController?.signal.aborted && !callerSignal?.aborted) {
+              throw new Error(`attempt timed out after ${attemptTimeoutMs}ms`)
+            }
+            throw new AbortError((err as Error).message || 'aborted')
+          }
+          // Transient network errors bubble up and p-retry will retry them.
+          throw err instanceof Error ? err : new Error(String(err))
         }
-        // Transient network errors bubble up and p-retry will retry them.
-        throw err instanceof Error ? err : new Error(String(err))
-      }
 
-      if (res.status === 429) {
-        const retryAfter = parseRetryAfter(res.headers.get('retry-after'))
-        if (retryAfter && retryAfter > 0) {
-          // Consume any pending body to avoid leaked connections.
-          await res.arrayBuffer().catch(() => undefined)
-          await delay(Math.min(retryAfter * 1000, maxTimeout ?? retryAfter * 1000))
-        }
-        throw new Error(`rate limited (${res.status})`)
+        return await handleResponse(res, maxTimeout)
+      } finally {
+        clearTimeout(attemptTimer)
       }
-
-      if (res.status >= 500 && res.status <= 599) {
-        const snippet = await errorBodySnippet(res)
-        throw new Error(`upstream ${res.status}${snippet ? `: ${snippet}` : ''}`)
-      }
-
-      if (!res.ok) {
-        // 4xx (not 429): give up, but keep the body - a bare status code
-        // ("client error 404") gives users nothing to act on, while provider
-        // bodies name the missing model or malformed field.
-        const snippet = await errorBodySnippet(res)
-        throw new AbortError(`client error ${res.status}${snippet ? `: ${snippet}` : ''}`)
-      }
-
-      return res
     },
     { retries, factor, minTimeout, ...(maxTimeout ? { maxTimeout } : {}) },
   )
+}
+
+/**
+ * Whole-loop budget for a given per-attempt timeout: every attempt plus the
+ * exponential backoff between them. Callers arm their own AbortController with
+ * this so a provider that stalls on every single attempt still terminates.
+ */
+export function overallTimeoutMsFor(
+  attemptTimeoutMs: number,
+  retries: number = DEFAULTS.retries,
+  minTimeout: number = DEFAULTS.minTimeout,
+  factor: number = DEFAULTS.factor,
+): number {
+  let backoff = 0
+  for (let i = 0; i < retries; i++) backoff += minTimeout * factor ** i
+  return attemptTimeoutMs * (retries + 1) + backoff
+}
+
+/**
+ * Map one settled `Response` onto the retry contract: 5xx and 429 throw plain
+ * Errors (retriable), other 4xx throw AbortError (terminal).
+ */
+async function handleResponse(res: Response, maxTimeout: number | undefined): Promise<Response> {
+  if (res.status === 429) {
+    const retryAfter = parseRetryAfter(res.headers.get('retry-after'))
+    if (retryAfter && retryAfter > 0) {
+      // Consume any pending body to avoid leaked connections.
+      await res.arrayBuffer().catch(() => undefined)
+      await delay(Math.min(retryAfter * 1000, maxTimeout ?? retryAfter * 1000))
+    }
+    throw new Error(`rate limited (${res.status})`)
+  }
+
+  if (res.status >= 500 && res.status <= 599) {
+    const snippet = await errorBodySnippet(res)
+    throw new Error(`upstream ${res.status}${snippet ? `: ${snippet}` : ''}`)
+  }
+
+  if (!res.ok) {
+    // 4xx (not 429): give up, but keep the body - a bare status code
+    // ("client error 404") gives users nothing to act on, while provider
+    // bodies name the missing model or malformed field.
+    const snippet = await errorBodySnippet(res)
+    throw new AbortError(`client error ${res.status}${snippet ? `: ${snippet}` : ''}`)
+  }
+
+  return res
 }
 
 /**

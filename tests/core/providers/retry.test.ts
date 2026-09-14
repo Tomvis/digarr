@@ -1,6 +1,16 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { fetchWithRetry, redactSecrets } from '@/core/providers/retry'
+import { fetchWithRetry, overallTimeoutMsFor, redactSecrets } from '@/core/providers/retry'
+
+// A fetch that never settles on its own: it rejects the way a real `fetch` does
+// when the signal it was handed is aborted, and otherwise hangs. That is what
+// makes "which clock aborted this?" observable.
+const stallUntilAborted = (_url: unknown, init?: RequestInit): Promise<Response> =>
+  new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }))
+    })
+  })
 
 describe('fetchWithRetry', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
@@ -109,6 +119,72 @@ describe('fetchWithRetry', () => {
     expect(message).toContain('[redacted]')
   })
 
+  test('retries an attempt that hits the per-attempt timeout', async () => {
+    // The production bug: a slow upstream 5xx consumed the whole budget on one
+    // attempt, so the retries the policy promised never ran. Each attempt must
+    // get its own clock.
+    fetchSpy.mockImplementationOnce(stallUntilAborted)
+    fetchSpy.mockImplementationOnce(async () => new Response('ok', { status: 200 }))
+
+    const res = await fetchWithRetry(
+      'https://example.com',
+      {},
+      { minTimeout: 1, retries: 2, attemptTimeoutMs: 40 },
+    )
+    expect(res.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test('surfaces the per-attempt timeout when every attempt stalls', async () => {
+    fetchSpy.mockImplementation(stallUntilAborted)
+    await expect(
+      fetchWithRetry(
+        'https://example.com',
+        {},
+        { minTimeout: 1, retries: 1, attemptTimeoutMs: 40 },
+      ),
+    ).rejects.toThrow(/attempt timed out after 40ms/)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test("a caller's own abort ends the loop immediately", async () => {
+    // The caller's controller is the overall deadline (and stays armed while the
+    // caller reads the body). Its expiry is not retriable.
+    const controller = new AbortController()
+    fetchSpy.mockImplementation(stallUntilAborted)
+    setTimeout(() => controller.abort(), 20)
+    await expect(
+      fetchWithRetry(
+        'https://example.com',
+        { signal: controller.signal },
+        { minTimeout: 1, retries: 5, attemptTimeoutMs: 10_000 },
+      ),
+    ).rejects.toThrow(/aborted/)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('a caller abort still wins when no per-attempt timeout is configured', async () => {
+    const controller = new AbortController()
+    fetchSpy.mockImplementation(stallUntilAborted)
+    setTimeout(() => controller.abort(), 20)
+    await expect(
+      fetchWithRetry(
+        'https://example.com',
+        { signal: controller.signal },
+        { minTimeout: 1, retries: 5 },
+      ),
+    ).rejects.toThrow(/aborted/)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('passes the caller signal through untouched when no per-attempt timeout is set', async () => {
+    const controller = new AbortController()
+    fetchSpy.mockResolvedValueOnce(new Response('ok', { status: 200 }))
+    await fetchWithRetry('https://example.com', { signal: controller.signal }, { minTimeout: 1 })
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit
+    expect(init.signal).toBe(controller.signal)
+  })
+
   test('collapses whitespace and truncates long error bodies', async () => {
     const longBody = `line one\nline two   spaced\n${'x'.repeat(500)}`
     fetchSpy.mockResolvedValueOnce(new Response(longBody, { status: 400 }))
@@ -141,5 +217,16 @@ describe('redactSecrets', () => {
     const text =
       'artist 123e4567-e89b-12d3-a456-426614174000 at commit 27b89b2225b3a1e8c0f4d5e6a7b8c9d0e1f2a3b4'
     expect(redactSecrets(text)).toBe(text)
+  })
+})
+
+describe('overallTimeoutMsFor', () => {
+  test('budgets every attempt plus the backoff between them', () => {
+    // 4 attempts x 60s, plus 1s + 2s + 4s of exponential backoff.
+    expect(overallTimeoutMsFor(60_000, 3, 1000, 2)).toBe(60_000 * 4 + 7000)
+  })
+
+  test('a zero-retry budget is exactly one attempt', () => {
+    expect(overallTimeoutMsFor(5000, 0)).toBe(5000)
   })
 })
