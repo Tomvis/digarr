@@ -21,3 +21,11 @@ export const createApiKeySchema = z
     path: ['expiresAt'],
     message: 'expiresAt must be in the future',
   })
+  // Duplicates carry no privilege or data consequence (parseScopes dedupes
+  // downstream), but accepting and storing a nonsense payload like
+  // ["read","read"] is a smell a client should get 400'd for, not silently
+  // laundered.
+  .refine((v) => new Set(v.scopes).size === v.scopes.length, {
+    path: ['scopes'],
+    message: 'scopes must not contain duplicates',
+  })

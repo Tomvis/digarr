@@ -107,6 +107,18 @@ describe('POST /api/v1/api-keys', () => {
     expect(res.status).toBe(400)
   })
 
+  it('rejects duplicate scopes', async () => {
+    const create = vi.fn(async () => row())
+    const { app } = createTestApp({ apiKeyStore: { create } as never })
+    const res = await app.request('/api/v1/api-keys', {
+      method: 'POST',
+      headers: AUTH,
+      body: JSON.stringify({ name: 'bad', scopes: ['read', 'read'] }),
+    })
+    expect(res.status).toBe(400)
+    expect(create).not.toHaveBeenCalled()
+  })
+
   it('cannot be called with an API key, only a session', async () => {
     // No need to touch the `getSession` mock: a `dgr_`-prefixed bearer token is
     // recognised as an API key by authGuard and authenticated on that branch
