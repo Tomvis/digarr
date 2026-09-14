@@ -157,8 +157,11 @@ Notes:
   a replacement, and stops a `write` key from escalating itself to `admin`.
   Legacy `DIGARR_AUTH_TOKEN` auth is also rejected, the same as every other
   session-only route. This applies to `GET /api/v1/api-keys/all` too: an
-  `admin`-scoped API key is refused there like any other, since the
-  session-only check runs before the admin check.
+  `admin`-scoped API key is refused there like any other. Both the
+  session-only check and the admin check must pass (order between the two
+  doesn't matter); it is specifically the session-only check that stops the
+  key, since an admin's own `admin`-scoped key would otherwise satisfy the
+  admin check on its own.
 - `GET /api/v1/api-keys/all` is read-only: an admin can see that another
   user's key exists (id, owner, name, scopes, timestamps) but there is no
   admin-initiated way to revoke it - only the owner can, via `DELETE

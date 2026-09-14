@@ -186,12 +186,14 @@ describe('GET /api/v1/api-keys/all', () => {
     expect(body.items.map((k: { userId: number }) => k.userId)).toEqual([1, 2])
   })
 
-  it('refuses an admin-scoped API key -- session auth only, escalation guard', async () => {
+  it('refuses an admin-scoped API key even though it would satisfy requireAdmin alone', async () => {
     // Same shape as the POST escalation test above: a `dgr_`-prefixed bearer
     // token is recognised and authenticated as an API key entirely within
     // authGuard, never falling through to a session lookup. The key carries
-    // `admin` scope and belongs to an admin user, and must still be refused:
-    // `requireSessionUser` runs before the admin check on this route.
+    // `admin` scope and belongs to an admin user, so `requireAdmin` alone
+    // would let it through -- it is specifically the presence of the
+    // `requireSessionUser` gate (order relative to `requireAdmin` doesn't
+    // matter) that refuses it here.
     const listAll = vi.fn(async () => [row()])
     const { app } = createTestApp({
       apiKeyStore: {
