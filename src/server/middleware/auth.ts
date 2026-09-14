@@ -118,7 +118,9 @@ export function authGuard(options: {
         if (now - previous >= API_KEY_TOUCH_THROTTLE_MS) {
           lastTouchedAt.set(verified.id, now)
           // Fire and forget: a read must not become a write on the hot path.
-          void options.apiKeys.touchLastUsed(verified.id).catch(() => {})
+          void options.apiKeys.touchLastUsed(verified.id).catch((err: unknown) => {
+            console.warn(`[auth] failed to update last_used_at for api key ${verified.id}:`, err)
+          })
         }
         return next()
       }

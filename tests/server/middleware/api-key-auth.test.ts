@@ -76,6 +76,30 @@ describe('authGuard api-key branch', () => {
     expect(touch).toHaveBeenCalledTimes(1)
   })
 
+  it('logs a warning when the last-used write fails, instead of swallowing it', async () => {
+    const { token } = generateApiKey()
+    const verify = vi.fn(async () => ({ id: 123, userId: 2, scopes: ['read'] }))
+    const touch = vi.fn(async () => {
+      throw new Error('db unavailable')
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const app = appWith(verify, touch)
+      const res = await app.request('/api/v1/recommendations', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      expect(res.status).toBe(200)
+      // The touch failure is fire-and-forget; give its rejection a tick to settle.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('last_used_at'),
+        expect.any(Error),
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('does not consult the session store for a dgr_ token', async () => {
     const { token } = generateApiKey()
     const verify = vi.fn(async () => ({ id: 1, userId: 1, scopes: ['read'] }))
