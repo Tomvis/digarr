@@ -94,20 +94,36 @@ export function apiKeyQueries(db: Database) {
       return db.select(LIST_COLUMNS).from(apiKeys).where(eq(apiKeys.userId, userId))
     },
 
+    /**
+     * Every key, across every user. Backs the admin-only
+     * `GET /api/v1/api-keys/all` route -- never exposed to a non-admin, and
+     * never reachable via API-key auth even with the `admin` scope (session
+     * auth only, same as every other route in `routes/api-keys.ts`).
+     */
     async listAll(): Promise<ApiKeyRow[]> {
       return db.select(LIST_COLUMNS).from(apiKeys)
     },
 
-    /** `userId: null` means an admin acting on any key. */
-    async revoke(params: { id: number; userId: number | null }): Promise<boolean> {
-      const ownership = params.userId === null ? undefined : eq(apiKeys.userId, params.userId)
+    /**
+     * Always ownership-scoped: only the owning user may revoke a key. There
+     * is no admin override here on purpose -- `listAll` gives admins
+     * read-only visibility across every user's keys (e.g. to spot a stale
+     * one), but acting on someone else's key is a materially different,
+     * more dangerous capability that was never part of the spec ("admins
+     * may list all") and would let an admin silently break another user's
+     * integration with no notice to them. If that capability is ever
+     * genuinely wanted, it should be its own deliberate, audited route.
+     */
+    async revoke(params: { id: number; userId: number }): Promise<boolean> {
       const revoked = await db
         .update(apiKeys)
         .set({ revokedAt: new Date() })
         .where(
-          ownership
-            ? and(eq(apiKeys.id, params.id), isNull(apiKeys.revokedAt), ownership)
-            : and(eq(apiKeys.id, params.id), isNull(apiKeys.revokedAt)),
+          and(
+            eq(apiKeys.id, params.id),
+            isNull(apiKeys.revokedAt),
+            eq(apiKeys.userId, params.userId),
+          ),
         )
         .returning({ id: apiKeys.id })
       return revoked.length === 1

@@ -195,6 +195,14 @@ leaked `write` key could mint itself a new `admin` key and escalate its own
 privileges. Key management is therefore a strictly session-only surface, the
 same restriction already applied to changing your password or email.
 
+An admin may additionally list every user's API keys via
+`GET /api/v1/api-keys/all`, to spot a stale or forgotten one without needing
+database access. That route is both session-only and admin-only - the
+session check runs first, so an `admin`-scoped API key is refused there just
+like any other key - and it is read-only: an admin can see that a key exists
+but has no route to revoke or otherwise act on a key they do not own. Only
+the owner can revoke their own key.
+
 The plaintext token is shown exactly once, in the response to
 `POST /api/v1/api-keys`, and cannot be retrieved again afterward. Only its
 SHA-256 digest is ever stored; losing the plaintext means revoking the key and

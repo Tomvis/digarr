@@ -147,6 +147,7 @@ Notes:
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/v1/api-keys` | Session only | List your own API keys. Never returns secrets. |
+| GET | `/api/v1/api-keys/all` | Session only, Admin | List every user's API keys. Never returns secrets. |
 | POST | `/api/v1/api-keys` | Session only | Create an API key. Returns the plaintext token once. |
 | DELETE | `/api/v1/api-keys/:id` | Session only | Revoke one of your own API keys. |
 
@@ -155,7 +156,13 @@ Notes:
   callers only. This is deliberate - it stops a leaked key from minting itself
   a replacement, and stops a `write` key from escalating itself to `admin`.
   Legacy `DIGARR_AUTH_TOKEN` auth is also rejected, the same as every other
-  session-only route.
+  session-only route. This applies to `GET /api/v1/api-keys/all` too: an
+  `admin`-scoped API key is refused there like any other, since the
+  session-only check runs before the admin check.
+- `GET /api/v1/api-keys/all` is read-only: an admin can see that another
+  user's key exists (id, owner, name, scopes, timestamps) but there is no
+  admin-initiated way to revoke it - only the owner can, via `DELETE
+  /api/v1/api-keys/:id`.
 - `POST /api/v1/api-keys` body: `{ "name": string, "scopes": ("read"|"write"|"admin")[], "expiresAt"?: string | null }`. `scopes` must be non-empty and contain only known scopes; unknown scopes return `400`.
 - The response token (`dgr_<prefix>_<secret>`) is returned exactly once, at creation, and is not recoverable afterward - only its SHA-256 digest is stored. Send it as `Authorization: Bearer <token>` on later requests.
 - `DELETE /api/v1/api-keys/:id` returns `404`, not `403`, for a key owned by another user, so ownership cannot be probed by status code.

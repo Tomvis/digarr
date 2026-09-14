@@ -110,6 +110,10 @@ export function authGuard(options: {
       if (verified) {
         c.set('userId', verified.userId)
         c.set('authMethod', 'api-key')
+        // Not read anywhere yet -- kept deliberately, at essentially no cost,
+        // for a future per-request audit trail (e.g. logging or persisting
+        // which key authorised a mutating request) that needs to name the
+        // specific key rather than just the user it authenticated as.
         c.set('apiKeyId', verified.id)
         c.set('apiKeyScopes', verified.scopes)
 

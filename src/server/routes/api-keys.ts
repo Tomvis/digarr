@@ -2,13 +2,14 @@ import { Hono } from 'hono'
 import { generateApiKey, parseScopes } from '@/core/auth/api-keys'
 import type { ApiKeyStore } from '@/db/queries/api-keys'
 import { problem } from '@/server/helpers/problem'
-import { requireSessionUser } from '@/server/helpers/require-user'
+import { requireAdmin, requireSessionUser } from '@/server/helpers/require-user'
 import { apiKeyIdParamSchema, createApiKeySchema } from '@/server/schemas/api-keys'
 import { zJson, zParam } from '@/server/schemas/validator'
 import type { HonoEnv } from '@/server/types'
 
 export type ApiKeyRouteDeps = {
   apiKeyStore: ApiKeyStore
+  getUserById: (id: number) => Promise<{ isAdmin: boolean } | null>
 }
 
 export function apiKeyRoutes(deps: ApiKeyRouteDeps) {
@@ -16,12 +17,28 @@ export function apiKeyRoutes(deps: ApiKeyRouteDeps) {
 
   // Session auth only, on every route below. An API key must never be able to
   // mint, list or revoke an API key -- that would make any leaked key
-  // self-perpetuating and let a `write` key escalate itself to `admin`.
+  // self-perpetuating and let a `write` key escalate itself to `admin`. This
+  // includes the admin-wide listing below: `requireSessionUser` runs first on
+  // that route too, so even an `admin`-scoped API key is refused before the
+  // admin check ever runs.
 
   router.get('/api/v1/api-keys', async (c) => {
     const auth = requireSessionUser(c)
     if (!auth.ok) return auth.response
     return c.json({ items: await deps.apiKeyStore.listForUser(auth.userId) })
+  })
+
+  // Admin visibility across every user's keys -- e.g. to spot a stale or
+  // forgotten one. Deliberately read-only: an admin can see that a key
+  // exists (id, owner, name, scopes, timestamps) but this never returns a
+  // hash/secret, and there is no admin path to act on someone else's key --
+  // only its owner can revoke it, via DELETE below.
+  router.get('/api/v1/api-keys/all', async (c) => {
+    const sessionAuth = requireSessionUser(c)
+    if (!sessionAuth.ok) return sessionAuth.response
+    const adminAuth = await requireAdmin(c, deps.getUserById)
+    if (!adminAuth.ok) return adminAuth.response
+    return c.json({ items: await deps.apiKeyStore.listAll() })
   })
 
   router.post('/api/v1/api-keys', zJson(createApiKeySchema), async (c) => {

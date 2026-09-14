@@ -87,6 +87,26 @@ describe('apiKeyQueries', () => {
     expect(Object.keys(listed ?? {})).not.toContain('keyHash')
   })
 
+  it('listAll returns keys across every user, never exposing the hash', async () => {
+    const otherId = await createUser('lera')
+    await mint(['read'])
+    await store.create({
+      userId: otherId,
+      name: 'lera-key',
+      prefix: generateApiKey().prefix,
+      keyHash: hashApiKeySecret('other-secret'),
+      scopes: ['write'],
+      expiresAt: null,
+    })
+
+    const all = await store.listAll()
+    expect(all).toHaveLength(2)
+    expect(new Set(all.map((row) => row.userId))).toEqual(new Set([userId, otherId]))
+    for (const row of all) {
+      expect(Object.keys(row)).not.toContain('keyHash')
+    }
+  })
+
   it("will not let one user revoke another user's key", async () => {
     const otherId = await createUser('lera')
     const { row, parsed } = await mint()
