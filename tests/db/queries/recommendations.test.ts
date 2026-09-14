@@ -247,27 +247,38 @@ describe('rejectRecommendation', () => {
   }
 
   function makeRejectTxDb(recRow: RejectedRow | undefined) {
+    // Records which statement kind fired first, so a test can pin the
+    // reject-update / permanent-block-insert order without caring about the
+    // exact SQL shape of either.
+    const callOrder: Array<'update' | 'insert'> = []
+
     const returning = vi.fn().mockResolvedValue(recRow ? [recRow] : [])
     const updateWhere = vi.fn().mockReturnValue({ returning })
     const set = vi.fn().mockReturnValue({ where: updateWhere })
-    const update = vi.fn().mockReturnValue({ set })
+    const update = vi.fn(() => {
+      callOrder.push('update')
+      return { set }
+    })
 
     const insertCalls: Array<{ table: string | undefined; values: Record<string, unknown> }> = []
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
-    const insert = vi.fn((table: unknown) => ({
-      values: vi.fn((vals: Record<string, unknown>) => {
-        insertCalls.push({ table: tableName(table), values: vals })
-        return { onConflictDoUpdate, onConflictDoNothing }
-      }),
-    }))
+    const insert = vi.fn((table: unknown) => {
+      callOrder.push('insert')
+      return {
+        values: vi.fn((vals: Record<string, unknown>) => {
+          insertCalls.push({ table: tableName(table), values: vals })
+          return { onConflictDoUpdate, onConflictDoNothing }
+        }),
+      }
+    })
 
     const tx: { update: typeof update; insert: typeof insert } = { update, insert }
     const db = {
       transaction: vi.fn((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Database
 
-    return { db, insertCalls, update, set, updateWhere, returning }
+    return { db, insertCalls, update, set, updateWhere, returning, callOrder }
   }
 
   it('writes album_blocks (not artist_blocks) on permanent reject of an album-kind rec with a release group', async () => {
@@ -340,6 +351,29 @@ describe('rejectRecommendation', () => {
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('artist_blocks')
     expect(insertCalls.some((c) => c.table === 'album_blocks')).toBe(false)
+  })
+
+  it('rejects (updates status) before writing the permanent block, so a failed block leaves nothing to retry only via a fresh transaction rollback', async () => {
+    // The block insert needs artistId/kind/releaseGroupMbid off the reject
+    // update's RETURNING clause, so the update must fire first. Pinning this
+    // guards against a refactor (e.g. splitting into a separate SELECT-then-
+    // INSERT-then-UPDATE) that would silently change which statement runs
+    // first inside the transaction.
+    const { db, callOrder } = makeRejectTxDb({
+      artistId: 50,
+      kind: 'artist',
+      releaseGroupMbid: null,
+    })
+
+    await rejectRecommendation(db, {
+      recommendationId: 5,
+      userId: 5,
+      reason: 'not_interested',
+      reasonText: null,
+      permanent: true,
+    })
+
+    expect(callOrder).toEqual(['update', 'insert'])
   })
 
   it('writes neither block table on a non-permanent album reject', async () => {
