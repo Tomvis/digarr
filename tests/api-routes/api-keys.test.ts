@@ -160,6 +160,67 @@ describe('GET /api/v1/api-keys', () => {
   })
 })
 
+describe('GET /api/v1/api-keys/all', () => {
+  it('refuses a non-admin session', async () => {
+    const listAll = vi.fn(async () => [row()])
+    const { app } = createTestApp({
+      apiKeyStore: { listAll } as never,
+      getUserById: vi.fn(async () => ({ isAdmin: false })) as never,
+    })
+    const res = await app.request('/api/v1/api-keys/all', { headers: AUTH })
+    expect(res.status).toBe(403)
+    expect(listAll).not.toHaveBeenCalled()
+  })
+
+  it('succeeds for an admin session and lists keys across users', async () => {
+    const listAll = vi.fn(async () => [row(), row({ id: 11, userId: 2 })])
+    const { app } = createTestApp({
+      apiKeyStore: { listAll } as never,
+      getUserById: vi.fn(async () => ({ isAdmin: true })) as never,
+    })
+    const res = await app.request('/api/v1/api-keys/all', { headers: AUTH })
+    expect(res.status).toBe(200)
+    expect(listAll).toHaveBeenCalled()
+    const body = await res.json()
+    expect(body.items).toHaveLength(2)
+    expect(body.items.map((k: { userId: number }) => k.userId)).toEqual([1, 2])
+  })
+
+  it('refuses an admin-scoped API key even though it would satisfy requireAdmin alone', async () => {
+    // Same shape as the POST escalation test above: a `dgr_`-prefixed bearer
+    // token is recognised and authenticated as an API key entirely within
+    // authGuard, never falling through to a session lookup. The key carries
+    // `admin` scope and belongs to an admin user, so `requireAdmin` alone
+    // would let it through -- it is specifically the presence of the
+    // `requireSessionUser` gate (order relative to `requireAdmin` doesn't
+    // matter) that refuses it here.
+    const listAll = vi.fn(async () => [row()])
+    const { app } = createTestApp({
+      apiKeyStore: {
+        verify: vi.fn(async () => ({ id: 5, userId: 1, scopes: ['admin'] })),
+        touchLastUsed: vi.fn(async () => {}),
+        listAll,
+      } as never,
+      getUserById: vi.fn(async () => ({ isAdmin: true })) as never,
+    })
+    const res = await app.request('/api/v1/api-keys/all', {
+      headers: { Authorization: 'Bearer dgr_ab12cd34_secret' },
+    })
+    expect(res.status).toBe(403)
+    expect(listAll).not.toHaveBeenCalled()
+  })
+
+  it('never includes a hash', async () => {
+    const { app } = createTestApp({
+      apiKeyStore: { listAll: vi.fn(async () => [row()]) } as never,
+      getUserById: vi.fn(async () => ({ isAdmin: true })) as never,
+    })
+    const raw = await (await app.request('/api/v1/api-keys/all', { headers: AUTH })).text()
+    expect(raw).not.toContain('keyHash')
+    expect(raw).not.toContain('key_hash')
+  })
+})
+
 describe('DELETE /api/v1/api-keys/:id', () => {
   it("revokes the caller's own key", async () => {
     const revoke = vi.fn(async () => true)
