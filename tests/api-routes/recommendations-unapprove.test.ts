@@ -108,6 +108,33 @@ describe('PATCH /api/v1/recommendations/:id with status=pending', () => {
       })
     })
 
+    it('still reverts the row when checking for files itself fails (cannot determine safely)', async () => {
+      // Distinct from the "removal fails" test above: here the hasFiles check
+      // itself throws, so removeArtist must never be reached (removing blind
+      // would be the exact thing this guard exists to prevent), yet the skip
+      // reason reported is the same 'removal_failed' as an actual removal
+      // failure - both are "could not clear it in Lidarr" from the caller's
+      // point of view.
+      const removeArtist = vi.fn(async () => {})
+      const { app } = createTestApp({
+        getRecommendation: vi.fn(async () =>
+          makeRecommendation({ id: 1, userId: 1, status: 'approved', lidarrArtistId: 42 }),
+        ) as never,
+        lidarrArtistHasFiles: vi.fn(async () => {
+          throw new Error('lidarr unreachable')
+        }),
+        lidarrRemoveArtist: removeArtist,
+      } as never)
+      const res = await patchPending(app, 1, { removeLidarrArtist: true })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        status: 'pending',
+        lidarrArtistRemoved: false,
+        lidarrRemovalSkippedReason: 'removal_failed',
+      })
+      expect(removeArtist).not.toHaveBeenCalled()
+    })
+
     it('falls back to the caller when the recommendation has no owner (legacy row)', async () => {
       const hasFiles = vi.fn(async () => false)
       const removeArtist = vi.fn(async () => {})
