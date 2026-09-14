@@ -353,12 +353,14 @@ describe('rejectRecommendation', () => {
     expect(insertCalls.some((c) => c.table === 'album_blocks')).toBe(false)
   })
 
-  it('rejects (updates status) before writing the permanent block, so a failed block leaves nothing to retry only via a fresh transaction rollback', async () => {
+  it('updates status before writing the permanent block, because the insert consumes the update RETURNING values', async () => {
     // The block insert needs artistId/kind/releaseGroupMbid off the reject
-    // update's RETURNING clause, so the update must fire first. Pinning this
-    // guards against a refactor (e.g. splitting into a separate SELECT-then-
-    // INSERT-then-UPDATE) that would silently change which statement runs
-    // first inside the transaction.
+    // update's RETURNING clause, so the update must fire first - it's a data
+    // dependency, not a failure-safety measure (both statements already run
+    // inside one db.transaction, so either order would be equally atomic).
+    // Pinning the order guards against a refactor (e.g. splitting into a
+    // separate SELECT-then-INSERT-then-UPDATE) that would silently reverse
+    // which statement runs first.
     const { db, callOrder } = makeRejectTxDb({
       artistId: 50,
       kind: 'artist',
