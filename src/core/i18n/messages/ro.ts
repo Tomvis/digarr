@@ -512,6 +512,7 @@ export const ro = {
   'playlistForm.moodPlaceholder': 'drum de noapte',
   'playlistForm.trackCount': 'Număr de piese',
   'playlistForm.scheduleAutomaticGeneration': 'Planifică generarea automată',
+  'playlistForm.targets': 'Destinații',
   'playlistForm.nameRequired': 'Numele este obligatoriu',
   'playlistForm.genreRequired': 'Genul este obligatoriu pentru strategia Focus pe gen',
   'playlistForm.moodRequired': 'Starea este obligatorie pentru strategia Mood Mix',
@@ -1094,7 +1095,8 @@ export const ro = {
   'settings.remove': 'Eliminați',
   'settings.editTarget': 'Editează ținta',
   'settings.saveChanges': 'Salvează modificările',
-  'settings.shared': 'partajat',
+  'errors.user.notFound': 'Utilizatorul nu a fost găsit',
+  'settings.targetUser': 'Utilizator atribuit',
   'settings.linkedTarget': 'Țintă asociată:',
   'settings.selectTargetType': 'Selectați un tip de destinație...',
   'settings.adding': 'Se adaugă...',
@@ -1103,6 +1105,9 @@ export const ro = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Playlist Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Playlist Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Playlist Plex',
+  'settings.targetTypeNavidromePlaylist': 'Playlist Navidrome',
   'settings.slskdModeHelp':
     'slskd poate pune lansările la coadă, dar automatizarea completă necesită o destinație Lidarr conectată.',
   'settings.slskdReleasePolicy':

@@ -53,7 +53,7 @@ import { createDiscogsSource } from './core/plugins/discogs'
 import { createLastFmSource } from './core/plugins/lastfm'
 import { createListenBrainzSource } from './core/plugins/listenbrainz'
 import { SourceRegistry } from './core/plugins/registry'
-import { resolveProviderToken } from './core/provider-auth'
+import { isConnectedToken, resolveProviderToken } from './core/provider-auth'
 import { createDefaultRegistry } from './core/providers/registry'
 import { buildSearchSourceCatalog } from './core/search/catalog'
 import { enrichSearchResultsWithImages } from './core/search/enrich'
@@ -185,6 +185,7 @@ import {
 import {
   createUser,
   deleteUser,
+  FirstUserRequiredError,
   getUserByEmail,
   getUserById,
   getUserByOidcSubject,
@@ -266,14 +267,12 @@ async function getDiscoveryConnectionSnapshot(userId: number) {
     hasListenBrainz: Boolean(
       userConnections?.listenbrainzUsername && userConnections.listenbrainzToken,
     ),
-    hasSpotify: Boolean(
-      spotifyToken?.accessToken && !spotifyToken.accessToken.startsWith('pending:'),
-    ),
+    hasSpotify: isConnectedToken(spotifyToken),
     spotifyScopes: spotifyToken?.scopes?.split(' ').filter(Boolean) ?? [],
     hasLastfm: Boolean(userConnections?.lastfmUsername && userConnections.lastfmApiKey),
     hasDiscogs: Boolean(userConnections?.discogsUsername && userConnections.discogsToken),
-    hasDeezer: Boolean(deezerToken?.accessToken && !deezerToken.accessToken.startsWith('pending:')),
-    hasTidal: Boolean(tidalToken?.accessToken && !tidalToken.accessToken.startsWith('pending:')),
+    hasDeezer: isConnectedToken(deezerToken),
+    hasTidal: isConnectedToken(tidalToken),
     hasLibrarySync,
     hasSubsonic: Boolean(
       userConnections?.subsonicUrl &&
@@ -903,7 +902,7 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
     // Deezer adapter - only if the user has a stored OAuth token
     if (userId !== null && userId !== undefined) {
       const deezerOAuthRow = await getOAuthToken(db, userId, 'deezer')
-      if (deezerOAuthRow && !deezerOAuthRow.accessToken.startsWith('pending:')) {
+      if (isConnectedToken(deezerOAuthRow)) {
         const getToken = () => resolveProviderToken(db, userId, 'deezer')
         adapterRegistry.register(createDeezerAdapter({ getToken }))
       }
@@ -1303,7 +1302,7 @@ const app = createApp({
   restartPlaylistScheduler,
   restartLibraryMaintenanceScheduler,
   restartDigestNotifier,
-  createUser: (data) => createUser(db, data),
+  createUser: (data, options) => createUser(db, data, options),
   getUserByUsername: (username) => getUserByUsername(db, username),
   getUserById: (id) => getUserById(db, id),
   getUserCount: () => getUserCount(db),
@@ -1516,8 +1515,18 @@ const server = serve({ fetch: app.fetch, port })
         const count = await getUserCount(db)
         if (count === 0) {
           const passwordHash = hashPassword(initialPassword)
-          await createUser(db, { username: initialUsername, passwordHash, isAdmin: true })
-          console.log(`Initial admin user "${initialUsername}" created from environment variables`)
+          try {
+            await createUser(
+              db,
+              { username: initialUsername, passwordHash },
+              { bootstrap: 'first-user-only' },
+            )
+            console.log(
+              `Initial admin user "${initialUsername}" created from environment variables`,
+            )
+          } catch (err) {
+            if (!(err instanceof FirstUserRequiredError)) throw err
+          }
         }
       }
     }

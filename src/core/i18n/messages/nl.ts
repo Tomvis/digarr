@@ -511,6 +511,7 @@ export const nl = {
   'playlistForm.moodPlaceholder': 'nachtelijke rit',
   'playlistForm.trackCount': 'Aantal tracks',
   'playlistForm.scheduleAutomaticGeneration': 'Automatisch genereren plannen',
+  'playlistForm.targets': 'Doelen',
   'playlistForm.nameRequired': 'Naam is verplicht',
   'playlistForm.genreRequired': 'Genre is verplicht voor de strategie Genrefocus',
   'playlistForm.moodRequired': 'Sfeer is verplicht voor de strategie Moodmix',
@@ -1085,7 +1086,8 @@ export const nl = {
   'settings.remove': 'Verwijderen',
   'settings.editTarget': 'Doel bewerken',
   'settings.saveChanges': 'Wijzigingen opslaan',
-  'settings.shared': 'gedeeld',
+  'errors.user.notFound': 'Gebruiker niet gevonden',
+  'settings.targetUser': 'Toegewezen gebruiker',
   'settings.linkedTarget': 'Gekoppeld doel:',
   'settings.selectTargetType': 'Selecteer een doeltype...',
   'settings.adding': 'Bezig met toevoegen...',
@@ -1094,6 +1096,9 @@ export const nl = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Emby-afspeellijst',
+  'settings.targetTypeJellyfinPlaylist': 'Jellyfin-afspeellijst',
+  'settings.targetTypePlexPlaylist': 'Plex-afspeellijst',
+  'settings.targetTypeNavidromePlaylist': 'Navidrome-afspeellijst',
   'settings.slskdModeHelp':
     'slskd kan releases in de wachtrij zetten, maar volledige automatisering vereist een gekoppeld Lidarr-doel.',
   'settings.slskdReleasePolicy':

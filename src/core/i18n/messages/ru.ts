@@ -514,6 +514,7 @@ export const ru = {
   'playlistForm.moodPlaceholder': 'ночная поездка',
   'playlistForm.trackCount': 'Количество треков',
   'playlistForm.scheduleAutomaticGeneration': 'Запланировать автоматическую генерацию',
+  'playlistForm.targets': 'Назначения',
   'playlistForm.nameRequired': 'Название обязательно',
   'playlistForm.genreRequired': 'Жанр обязателен для стратегии Фокус на жанре',
   'playlistForm.moodRequired': 'Настроение обязательно для стратегии Mood Mix',
@@ -1096,7 +1097,8 @@ export const ru = {
   'settings.remove': 'Удалить',
   'settings.editTarget': 'Изменить цель',
   'settings.saveChanges': 'Сохранить изменения',
-  'settings.shared': 'общее',
+  'errors.user.notFound': 'Пользователь не найден',
+  'settings.targetUser': 'Назначенный пользователь',
   'settings.linkedTarget': 'Связанная цель:',
   'settings.selectTargetType': 'Выберите тип назначения...',
   'settings.adding': 'Добавление...',
@@ -1105,6 +1107,9 @@ export const ru = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Плейлист Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Плейлист Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Плейлист Plex',
+  'settings.targetTypeNavidromePlaylist': 'Плейлист Navidrome',
   'settings.slskdModeHelp':
     'slskd может ставить релизы в очередь, но для полной автоматизации нужна связанная цель Lidarr.',
   'settings.slskdReleasePolicy':
