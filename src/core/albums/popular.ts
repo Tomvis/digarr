@@ -1,4 +1,5 @@
 import type { MBReleaseGroup } from '@/core/clients/musicbrainz'
+import { normalizeAlbumTitle as normalizeTitle } from '@/core/matching/normalize'
 
 export type PopularAlbumCandidate = {
   title: string
@@ -11,16 +12,6 @@ export type PopularReleaseGroup = MBReleaseGroup & {
 }
 
 const ALBUM_TYPES = new Set(['album'])
-
-function normalizeTitle(title: string): string {
-  return title
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
 
 export function selectPopularReleaseGroups(
   candidates: PopularAlbumCandidate[],
