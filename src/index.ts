@@ -46,6 +46,7 @@ import { waitForGenreWarmers } from './core/pipeline/genre-backfill'
 import { PipelineOrchestrator } from './core/pipeline/orchestrator'
 import type { StoreDb } from './core/pipeline/store'
 import { SubscriptionScheduler } from './core/pipeline/subscription-scheduler'
+import { pushPlaylistToTargets } from './core/playlists/export'
 import { generatePlaylist } from './core/playlists/generator'
 import { PlaylistScheduler } from './core/playlists/scheduler'
 import { buildStrategyDeps } from './core/playlists/strategy-deps'
@@ -91,6 +92,7 @@ import { createNavidromePlaylistTarget } from './core/targets/navidrome-playlist
 import { createPlexPlaylistTarget } from './core/targets/plex-playlist'
 import { createSlskdTarget } from './core/targets/slskd'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
+import type { DestinationTarget } from './core/targets/types'
 import { errMsg } from './core/validation'
 import { closeDb, db, pool } from './db'
 import { runMigrations } from './db/migrate'
@@ -1075,6 +1077,7 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
     })
 
     if (playlist.targetIds.length > 0 && playlist.userId != null) {
+      const userId = playlist.userId
       const settings = await getSettings(db)
       const globalSkipTlsVerify = settings?.skipTlsVerify ?? false
       const targetRows = await getTargetsByUser(db, playlist.userId)
@@ -1086,15 +1089,12 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
         artistMbid: '',
         trackName: track.trackName ?? undefined,
         trackMbid: track.mbid ?? undefined,
+        spotifyUri: track.spotifyUri ?? undefined,
       }))
 
+      const targets: DestinationTarget[] = []
       for (const targetRow of enabledTargetRows) {
-        let target:
-          | ReturnType<typeof createNavidromePlaylistTarget>
-          | ReturnType<typeof createJellyfinPlaylistTarget>
-          | ReturnType<typeof createEmbyPlaylistTarget>
-          | ReturnType<typeof createPlexPlaylistTarget>
-          | null = null
+        let target: DestinationTarget | null = null
 
         if (targetRow.type === 'navidrome-playlist') {
           target = createNavidromePlaylistTarget(targetRow.id, {
@@ -1123,19 +1123,16 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
             url: targetRow.config.url as string,
             token: targetRow.config.token as string,
           })
+        } else if (targetRow.type === 'spotify-playlist') {
+          target = createSpotifyPlaylistTarget(targetRow.id, {
+            getAccessToken: () => resolveProviderToken(db, userId, 'spotify'),
+          })
         }
 
-        if (!target?.createPlaylist) continue
-
-        try {
-          await target.createPlaylist(playlist.name, playlistItems)
-        } catch (err: unknown) {
-          console.error(
-            `[playlists] Failed to push to target ${targetRow.type}(${targetRow.id}):`,
-            err,
-          )
-        }
+        if (target?.createPlaylist) targets.push(target)
       }
+
+      await pushPlaylistToTargets(targets, playlist.name, playlistItems)
     }
 
     console.log(

@@ -39,6 +39,13 @@ route; the callback is not limited). Password change and session replacement
 run as one database transaction under a user-row lock, so a password verified
 before a concurrent reset cannot mint a post-reset session.
 
+OIDC account linking reuses that callback with a server-owned transaction
+purpose. Initiation requires a cookie session and fresh password proof. The
+link callback locks the user and initiating session, rechecks the password
+fingerprint and session validity, and updates only the OIDC subject. It never
+creates an account or session; the unique subject index prevents linking one
+identity to two accounts.
+
 ## Database backend
 
 Digarr runs on PostgreSQL through Drizzle either way, but the backend is chosen
@@ -199,6 +206,7 @@ Albums are a first-class recommendation unit. Key additions:
 
 ## Key invariants
 
+- Library sync replaces a source snapshot only after all source album fetches succeed. A failed fetch retains the previous snapshot and marks the run failed; MusicBrainz reconciliation failures remain separately counted.
 - Config precedence: DB settings (single row, `id=1`) override env vars. Per-user credentials live on the `users` table; global settings are the fallback.
 - Provider, metadata, and playlist-target requests go through
   `createHttpClient()` in `src/core/clients/http.ts` for timeout, retry/backoff,
@@ -206,6 +214,8 @@ Albums are a first-class recommendation unit. Key additions:
   Read-only calls retain the client retry default. Duplicate-producing playlist
   creation and song-add calls pass `retries: 0`; this classification is based on
   endpoint semantics because Subsonic mutations use GET-shaped endpoints.
+- Playlist generation stores its local tracks before pushing to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets. A target error, including a returned failed playlist result, does not stop later selected targets; after all attempts it fails the playlist job for Job History. There is no remote rollback, and the locally generated playlist remains available.
+- Spotify playlist exports retain explicit track URIs, or resolve artist/title pairs with exact matching. Artist-only approvals take up to three artist-matching track search results. Writes use `/me/playlists` and `/playlists/{id}/items`, with at most 100 URIs per request; failures are not retried as duplicate writes.
 - Emby, Jellyfin, and Subsonic source clients each own a media-server request
   queue capped at three concurrent requests and ten starts per second. This is
   an internal load-smoothing policy for self-hosted servers, not a claimed

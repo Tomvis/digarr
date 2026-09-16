@@ -1,6 +1,6 @@
 {
   "name": "digarr",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@biomejs/biome": "^2.5.12",
+    "@biomejs/biome": "^2.5.13",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.102.8",
@@ -43,7 +43,7 @@
     "@types/bun": "^1.4.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.2.7",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^5.0.0",
     "class-variance-authority": "^0.7.1",
@@ -58,7 +58,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0"
   },
   "dependencies": {
@@ -69,11 +69,11 @@
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.7",
-    "openai": "^7.10.0",
+    "openai": "^7.15.0",
     "openid-client": "^6.8.8",
     "p-queue": "^9.3.3",
     "p-retry": "^8.0.1",
     "pg": "^8.23.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   }
 }

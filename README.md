@@ -15,7 +15,7 @@
 **Music discovery for your *arr stack.** Digarr builds a taste profile from your listening sources, asks your AI provider for candidates, scores them, and gives you a review queue. From there you can approve artists into Lidarr or playlist targets, run mood searches, save discovery subscriptions, generate playlists, and browse by genre. The UI and AI-assisted reasoning ship in 15 languages. It is self-hosted, so the data stays with you.
 
 > [!NOTE]
-> **v1.16.0 is out.** Playlists can now be pushed to Navidrome, Plex, and Jellyfin: those playlist-target types existed on the server but were missing from Settings > Targets, and a playlist had no way to choose a destination, so generated playlists were never sent anywhere. All three can now be added as targets, and each playlist picks which of them it pushes to. Also in this release: logging out or switching accounts clears the previous user's data immediately, including in any other open tabs; admin promotion, user deletion, and the "New releases" monitor option for Lidarr approvals all work again; and the `:stable` channel now promotes itself instead of waiting on a manual step. See the [latest release notes](https://github.com/iuliandita/digarr/releases/latest) and [CHANGELOG.md](CHANGELOG.md) for details. If you run into something, [open an issue](https://github.com/iuliandita/digarr/issues).
+> **v1.17.0 is out.** Existing local accounts can link SSO from Account settings, and MusicBrainz lookups can use a self-hosted mirror. Library sync now reads complete Emby libraries and keeps the previous snapshot when album fetching fails. Playlist export failures appear in Job History, and Spotify exports keep the chosen tracks using the current API. See the [release notes](https://github.com/iuliandita/digarr/releases/tag/v1.17.0) and [CHANGELOG.md](CHANGELOG.md) for details.
 >
 > Documentation on `develop` also covers features available in the `:nightly` image but not yet in the latest tagged release. The changelog is the source of truth for released-version availability.
 >
@@ -57,7 +57,9 @@ Type "something like Boards of Canada but darker" or "upbeat 90s pop for a road 
 Run focused discovery flows from Discover -> Discovery Modes (`/discover/modes`) for the shipped modes: ListenBrainz (Artist Radio, User Radio, Tag Radio, Similar Users Quick and Deep), Release Radar, Library Gap-Fill (studio albums you are missing from artists you already track), Similar Artist Web, Artist Relationships (MusicBrainz collaboration/membership/alias graph), Labels (co-label artists via Discogs; needs a connected Discogs account), Charts (artists trending on global or regional charts via Last.fm; needs a connected Last.fm account), Deezer Flow (artists from your personalized Deezer Flow feed; needs a connected Deezer account), Spotify Saved Albums (artists from the albums you saved on Spotify; needs a connected Spotify account), Spotify Followed Artists (the artists you follow on Spotify; needs a connected Spotify account with the `user-follow-read` scope, so existing users must disconnect and reconnect Spotify once to grant it), TIDAL Favorite Artists (experimental, not yet validated against a live TIDAL account -- see [Connecting TIDAL](#connecting-tidal); needs an admin-registered TIDAL app plus your own TIDAL account connected from Settings), and Subsonic Starred (artists similar to the ones you starred on your Subsonic server; needs a connected Subsonic account). Manual runs now preflight invalid Artist Radio seeds before the job is accepted, and each accepted run is recorded in Jobs immediately so fast background failures are visible. Available discovery modes can be saved as subscriptions, and those subscriptions now reuse the same provider/fallback path as the manual run you configured.
 
 ### Auto-Playlists
-Build playlists from approved recommendations and send them to Navidrome, Jellyfin, Emby, Plex, or Spotify, or export them as M3U/XSPF. Add the playlist targets you want in Settings > Targets, then pick which of them each playlist pushes to. The built-in playlist types are Weekly Digest, Genre Focus, Mood Mix, and Rediscover.
+Build playlists from approved recommendations and send them to Navidrome, Jellyfin, Emby, Plex, or Spotify, or export them as M3U/XSPF. Add the playlist targets you want in Settings > Targets, then pick which of them each playlist pushes to. A failed push is recorded in Job History after the other selected targets have been attempted; the locally generated playlist remains available. The built-in playlist types are Weekly Digest, Genre Focus, Mood Mix, and Rediscover.
+
+Spotify exports keep generated Spotify track IDs and their order. Tracks from other sources need an exact artist/title match; unmatched tracks are skipped. Artist-only approvals use up to three matching Spotify search results rather than the removed top-tracks endpoint. Playlist export still requires a working Spotify connection with playlist permissions.
 
 ### Your AI, Your Choice
 Use Anthropic, OpenAI, Google Gemini, Ollama, or any OpenAI-compatible endpoint. Recommendation cards include a short explanation of why an artist made the cut.
@@ -99,7 +101,7 @@ Search across Spotify, Deezer, MusicBrainz, TIDAL, and Bandcamp in one pass. Dig
 - **Top tracks:** Deezer 30-second previews on recommendation cards with MusicBrainz fallback
 - **Decade filtering:** filter recommendations by era, from the 60s through the 20s+
 - **Music previews:** Spotify embeds, Deezer clips, and YouTube on recommendation cards, plus an Audition queue on Discover that plays pending previews back-to-back in score order with previous/next controls in the global preview bar. Spotify uses a persistent controller so autoplay-blocked previews stay on the current item with usable native controls instead of silently advancing
-- **OIDC/SSO and multi-user:** per-user queues, sources, scoring weights, and target configs. Admins assign targets through Settings > Targets > Assigned user; see [user management](docs/AUTHENTICATION.md#users-and-targets).
+- **OIDC/SSO and multi-user:** per-user queues, sources, scoring weights, and target configs. Existing local users can [link an SSO identity](docs/AUTHENTICATION.md#oidc-account-matching) from Settings > Account after confirming their password. Admins assign targets through Settings > Targets > Assigned user; see [user management](docs/AUTHENTICATION.md#users-and-targets).
 - **Swipe-to-approve** on mobile, card-stack mode on desktop
 - **Notifications:** a list of channels of any count and mixed type -- webhook (Discord embeds or raw JSON), ntfy, Telegram, and Apprise (one endpoint fans out to 80+ services). Each channel picks its own events: scan complete, and/or a scheduled digest (a periodic activity roll-up on a cron schedule that survives restarts without double-reporting or dropping a window). An existing single webhook URL is migrated into a webhook channel automatically -- no config change. Channel secrets are encrypted at rest. All delivery flows through one SSRF-guarded transport (DNS-pinned, no redirects, private/link-local/cloud-metadata targets blocked); an admin-only per-channel opt-in relaxes only RFC1918 ranges for that one channel so a self-hosted ntfy/Apprise on your LAN is reachable, while cloud-metadata and link-local stay blocked regardless
 - **16 color themes:** editor classics plus streaming-service-inspired *arr themes, in dark and light variants
@@ -209,6 +211,10 @@ The normal scan finds artists. Album recommendations come from Library Gap-Fill 
 
 Most day-to-day configuration lives in the web UI after initial setup: connections, scoring weights, schedules, preferences, and the saved interface language. If you connect Spotify, Settings > Connections includes an `Import Liked Songs` action to seed recommendations for a faster first scan. Settings also includes `Job History` and `System Health` tabs; Library Health keeps the latest scan snapshot, shows when it last synced, auto-rescans on the configured library-sync interval, and still exposes a manual `Sync Now` action.
 
+If a library source fails to return an artist's albums, the sync is marked failed and keeps the previous source snapshot. Fix the connection or permissions error, then retry the sync to refresh it.
+
+Emby sync fetches artists and each artist's albums in pages of 200. Invalid totals, more than 200,000 reported items, or more than 1,000 pages fail the sync instead of saving a truncated snapshot.
+
 Env-var auto-setup needs initial admin credentials plus an AI provider and model. Listening sources, Lidarr, and Emby can be added later in the UI or supplied during setup. `slskd` targets are added later in Settings > Targets and can be linked to a Lidarr target, so a single approval can add the artist to Lidarr first and then queue the matched Soulseek release. See [`.env.example`](.env.example) for local development fallbacks and [`deploy/docker/.env.example`](deploy/docker/.env.example) for Compose deployments.
 
 The web UI uses an HttpOnly session cookie; bearer sessions remain available
@@ -227,6 +233,19 @@ compatibility details.
 ### Large Lidarr libraries
 
 Lidarr's artist API returns the entire library in a single response with no pagination, so a very large library can take well over a minute to serialize. Digarr allows 120 seconds for that fetch, which covers libraries into the thousands of artists. If library sync still reports a timeout, raise `DIGARR_LIDARR_TIMEOUT_SECONDS` and restart Digarr. The timeout applies only to the full-library fetch; every other Lidarr call keeps a short timeout so an unreachable Lidarr still fails fast.
+
+### MusicBrainz mirrors
+
+To use your own MusicBrainz mirror, set these environment variables and restart Digarr:
+
+```dotenv
+DIGARR_MUSICBRAINZ_URL=http://musicbrainz:5006/ws/2
+DIGARR_MUSICBRAINZ_INTERVAL_MS=100
+```
+
+Replace `musicbrainz` with your mirror's hostname as reachable from Digarr. No mirror is bundled: containers need access to your existing mirror's network; local development can use `localhost` if the mirror runs on the same host. Use the full web-service base URL, including `/ws/2` (and any reverse-proxy path). This applies to all MusicBrainz lookups across users, discovery, library sync, and playlist imports. It is configured through the environment only. The Compose examples load these variables from their `.env` file; for Kubernetes, add them to the app container's environment.
+
+The default remains `https://musicbrainz.org/ws/2` with one request per second. Your mirror can use a shorter interval, including `0` for no delay; requests still run one at a time. Public MusicBrainz hosts require at least `1000` milliseconds. Invalid URLs or intervals prevent startup. URLs must use HTTP or HTTPS without credentials, query parameters, or fragments. Redirects are refused, so point directly at the final endpoint. There is no automatic fallback to the public service if your mirror fails.
 
 ### Local and OpenAI-Compatible AI
 
