@@ -205,6 +205,82 @@ describe('parseRateLimitHeaders', () => {
 // ---------------------------------------------------------------------------
 // The adaptive tiers. Pure function, exact milliseconds.
 // ---------------------------------------------------------------------------
+describe('reserveRatio=0 disables the adaptive tier', () => {
+  // Regression guard for a real operator-facing failure (2026-09-16). The
+  // reserve ratio was set to "0" in compose to switch adaptive throttling off;
+  // `ratioOr` demanded `value > 0`, so the 0 was treated as ABSENT and the 0.4
+  // default silently applied. `docker inspect` showed the variable set and the
+  // logs showed the tier still holding, with nothing connecting the two.
+  // Setting a knob to a valid in-range value must never be indistinguishable
+  // from not setting it at all.
+  const disabled = {
+    maxRph: 1200,
+    baseIntervalMs: 3_000,
+    reserveRatio: 0,
+    floorRatio: 0,
+    breakerThreshold: 5,
+    breakerCooldownMs: 600_000,
+  }
+
+  function snap(remaining: number, limit = 1200, resetInMs = 30_000) {
+    return {
+      limit,
+      remaining,
+      resetAtMs: T0 + resetInMs,
+      zone: null,
+      observedAtMs: T0,
+    }
+  }
+
+  it('accepts 0 as a real value instead of falling back to the default', async () => {
+    const { ratioOr } = await freshModule()
+    expect(ratioOr(0, 0.4)).toBe(0)
+    expect(ratioOr(0.25, 0.4)).toBe(0.25)
+    // Genuinely invalid input must still fall back.
+    expect(ratioOr(undefined, 0.4)).toBe(0.4)
+    expect(ratioOr(-0.1, 0.4)).toBe(0.4)
+    expect(ratioOr(1.5, 0.4)).toBe(0.4)
+    expect(ratioOr(Number.NaN, 0.4)).toBe(0.4)
+  })
+
+  it('returns a zero hold at every budget level that would otherwise throttle', async () => {
+    const { throttleDecision } = await freshModule()
+    // 30% would be low tier and 2% would be floor tier under the default config.
+    for (const remaining of [1200, 600, 480, 360, 120, 24, 1, 0]) {
+      const d = throttleDecision(snap(remaining), T0, disabled)
+      expect(d.tier, `remaining=${remaining}`).toBe('normal')
+      expect(d.holdMs, `remaining=${remaining}`).toBe(0)
+    }
+  })
+
+  it('does not fall into the floor tier on a NEGATIVE remaining', async () => {
+    // Why this short-circuits rather than relying on `fraction >= 0`:
+    // MusicBrainz does emit a negative remaining, and that arithmetic would
+    // skip 'normal' and hold for up to a minute -- precisely the behaviour the
+    // operator switched off.
+    const { throttleDecision } = await freshModule()
+    const d = throttleDecision(snap(-5), T0, disabled)
+    expect(d.tier).toBe('normal')
+    expect(d.holdMs).toBe(0)
+  })
+
+  it('still throttles when the reserve ratio is left at its default', async () => {
+    // Guards the inverse: the disable must not leak into normal operation.
+    // Note 120/1200 is exactly 10% and `fraction >= floorRatio` is inclusive,
+    // so that boundary is the LOW tier -- 24 (2%) is unambiguously below it.
+    const { throttleDecision } = await freshModule()
+    const enabled = { ...disabled, reserveRatio: 0.4, floorRatio: 0.1 }
+
+    const low = throttleDecision(snap(360), T0, enabled)
+    expect(low.tier).toBe('low')
+    expect(low.holdMs).toBeGreaterThan(0)
+
+    const floor = throttleDecision(snap(24), T0, enabled)
+    expect(floor.tier).toBe('floor')
+    expect(floor.holdMs).toBeGreaterThan(0)
+  })
+})
+
 describe('throttleDecision', () => {
   const config = {
     maxRph: 360,

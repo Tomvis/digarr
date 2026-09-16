@@ -216,8 +216,20 @@ function positiveOr(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-function ratioOr(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isFinite(value) && value > 0 && value <= 1 ? value : fallback
+/**
+ * A ratio knob, where **0 is a meaningful value, not a missing one**: it is the
+ * explicit "disable the adaptive tier" sentinel (see `throttleDecision`).
+ *
+ * This previously demanded `value > 0`, which silently swallowed a deliberate
+ * `MUSICBRAINZ_RESERVE_RATIO=0` and fell back to the default -- the operator
+ * saw the variable present in `docker inspect` and the tier still throttling,
+ * with nothing to explain the contradiction. Rejecting out-of-range input is
+ * right; treating a valid in-range value as absent is not.
+ */
+export function ratioOr(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : fallback
 }
 
 function resolveMbRateConfig(): MbRateConfig {
@@ -317,6 +329,15 @@ export function throttleDecision(
   nowMs: number,
   config: MbRateConfig = mbRateConfig,
 ): ThrottleDecision {
+  // reserveRatio 0 disables adaptive throttling outright. Short-circuit rather
+  // than letting `fraction >= 0` fall through: the arithmetic would land on
+  // 'normal' for every ordinary reading anyway, but a NEGATIVE remaining (which
+  // MusicBrainz does emit) would skip past it into the floor tier and hold for
+  // up to a minute -- the exact behaviour the operator switched off.
+  if (config.reserveRatio === 0) {
+    return { tier: 'normal', holdMs: 0, reason: 'adaptive throttling disabled (reserveRatio=0)' }
+  }
+
   const maxLowHoldMs = Math.round((LOW_TIER_MAX_MULTIPLIER - 1) * config.baseIntervalMs)
 
   if (!snapshot) {
