@@ -1086,6 +1086,8 @@ export const fr = {
   'settings.embyDescription': "Serveur multimédia avec historique d'écoute et export de playlists",
   'settings.subsonicDescription':
     'Serveur de musique auto-hébergé (Navidrome, Airsonic) pour la synchronisation de bibliothèque et la découverte',
+  'settings.musicRaterDescription':
+    "Notes de la critique provenant de votre instance music-rater. Fournit des albums acclamés par la critique que vous ne possédez pas et ajuste le score des recommandations d'albums.",
   'settings.discogsDescription': 'Collection et liste de souhaits depuis Discogs.',
   'settings.tidalConnectDescription':
     'Utilisez vos artistes favoris TIDAL comme source de découverte',

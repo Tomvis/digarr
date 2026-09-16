@@ -1087,6 +1087,8 @@ export const es = {
     'Servidor multimedia con historial de escucha y exportación de listas',
   'settings.subsonicDescription':
     'Servidor de música autoalojado (Navidrome, Airsonic) para sincronización de biblioteca y descubrimiento',
+  'settings.musicRaterDescription':
+    'Valoraciones de la crítica desde tu instancia de music-rater. Aporta álbumes aclamados por la crítica que no posees y ajusta la puntuación de las recomendaciones de álbumes.',
   'settings.discogsDescription': 'Colección y lista de deseos de Discogs.',
   'settings.tidalConnectDescription':
     'Usa tus artistas favoritos de TIDAL como fuente de descubrimiento',

@@ -21,6 +21,7 @@ export const PROTECTED_I18N_TERMS = [
   'Discogs',
   'Deezer',
   'Digarr',
+  'music-rater',
   'Gotify',
   'Groq',
   'Ollama',

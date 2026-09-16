@@ -1063,6 +1063,8 @@ export const ko = {
   'settings.embyDescription': '청취 기록과 재생목록 내보내기 기능이 있는 미디어 서버',
   'settings.subsonicDescription':
     '라이브러리 동기화 및 발견을 위한 셀프 호스팅 음악 서버 (Navidrome, Airsonic)',
+  'settings.musicRaterDescription':
+    'music-rater 인스턴스의 평론가 평점입니다. 보유하지 않은 평단의 찬사를 받은 앨범을 제공하고, 앨범 추천 점수를 조정합니다.',
   'settings.discogsDescription': 'Discogs의 컬렉션과 위시리스트.',
   'settings.tidalConnectDescription': 'TIDAL 즐겨찾기 아티스트를 발견 소스로 사용합니다',
   'settings.tidalConnectHelp':

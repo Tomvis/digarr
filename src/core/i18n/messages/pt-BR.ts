@@ -1088,6 +1088,8 @@ export const ptBR = {
   'settings.embyDescription': 'Servidor de mídia com histórico de escuta e exportação de playlists',
   'settings.subsonicDescription':
     'Servidor de música auto-hospedado (Navidrome, Airsonic) para sincronização de biblioteca e descoberta',
+  'settings.musicRaterDescription':
+    'Avaliações da crítica da sua instância do music-rater. Fornece álbuns aclamados pela crítica que você não possui e ajusta a pontuação das recomendações de álbuns.',
   'settings.discogsDescription': 'Coleção e lista de desejos do Discogs.',
   'settings.tidalConnectDescription':
     'Use seus artistas favoritos do TIDAL como fonte de descoberta',

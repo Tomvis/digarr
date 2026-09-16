@@ -1086,6 +1086,8 @@ export const nl = {
   'settings.embyDescription': 'Mediaserver met luistergeschiedenis en afspeellijstexport',
   'settings.subsonicDescription':
     'Zelf-gehoste muziekserver (Navidrome, Airsonic) voor bibliotheeksynchronisatie en ontdekking',
+  'settings.musicRaterDescription':
+    'Beoordelingen van critici uit je music-rater-instantie. Levert door critici geprezen albums die je niet bezit en beïnvloedt de score van albumaanbevelingen.',
   'settings.discogsDescription': 'Collectie en verlanglijst van Discogs.',
   'settings.tidalConnectDescription': 'Gebruik je favoriete TIDAL-artiesten als ontdekkingsbron',
   'settings.tidalConnectHelp':

@@ -69,6 +69,10 @@ export function SubsonicIcon() {
   return <ServiceLogo src="/icons/subsonic.svg" alt="Subsonic" />
 }
 
+export function MusicRaterIcon() {
+  return <ServiceLogo src="/icons/music-rater.svg" alt="music-rater" />
+}
+
 export function TidalIcon() {
   return <ServiceLogo src="/icons/tidal.svg" alt="TIDAL" />
 }

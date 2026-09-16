@@ -1090,6 +1090,8 @@ export const it = {
     'Server multimediale con cronologia di ascolto ed esportazione playlist',
   'settings.subsonicDescription':
     'Server musicale self-hosted (Navidrome, Airsonic) per sincronizzazione libreria e scoperta',
+  'settings.musicRaterDescription':
+    'Valutazioni della critica dalla tua istanza music-rater. Fornisce album acclamati dalla critica che non possiedi e modula il punteggio dei consigli sugli album.',
   'settings.discogsDescription': 'Collezione e lista dei desideri da Discogs.',
   'settings.tidalConnectDescription':
     'Usa i tuoi artisti preferiti di TIDAL come fonte di scoperta',

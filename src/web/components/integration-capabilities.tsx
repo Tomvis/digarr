@@ -94,6 +94,15 @@ const INTEGRATIONS: Capability[] = [
     import_: null,
   },
   {
+    serviceKey: 'music-rater',
+    serviceLabel: 'music-rater',
+    discovery: 'integration.artistsAlbums',
+    subscriptions: null,
+    librarySync: null,
+    playlistExport: null,
+    import_: null,
+  },
+  {
     serviceKey: 'ai',
     serviceLabel: '',
     discovery: 'integration.moodDiscover',

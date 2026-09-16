@@ -1084,6 +1084,8 @@ export const en = {
   'settings.embyDescription': 'Media server with listening history and playlist export',
   'settings.subsonicDescription':
     'Self-hosted music server (Navidrome, Airsonic) for library sync and discovery',
+  'settings.musicRaterDescription':
+    'Critic ratings from your music-rater instance. Supplies critically acclaimed albums you do not own, and nudges the score of album recommendations.',
   'settings.discogsDescription': 'Collection and wantlist from Discogs.',
   'settings.tidalConnectDescription': 'Use your TIDAL favorite artists as a discovery source',
   'settings.tidalConnectHelp':

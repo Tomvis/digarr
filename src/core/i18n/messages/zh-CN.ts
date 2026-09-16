@@ -1004,6 +1004,8 @@ export const zhCN = {
     '你的 Jellyfin 用户名（推荐）或 UUID。用户名会通过 Jellyfin API 自动解析。',
   'settings.embyDescription': '带收听历史和播放列表导出功能的媒体服务器',
   'settings.subsonicDescription': '自托管音乐服务器（Navidrome、Airsonic），用于媒体库同步和发现',
+  'settings.musicRaterDescription':
+    '来自你的 music-rater 实例的乐评人评分。提供你尚未收藏、备受乐评人推崇的专辑，并影响专辑推荐的评分。',
   'settings.discogsDescription': '来自 Discogs 的收藏和心愿单。',
   'settings.tidalConnectDescription': '将你的 TIDAL 收藏艺术家作为发现来源',
   'settings.tidalConnectHelp': '连接你的 TIDAL 账户，即可从收藏的艺术家开始发现。',

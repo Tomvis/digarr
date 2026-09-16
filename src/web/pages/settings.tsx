@@ -30,6 +30,7 @@ import {
   LastfmIcon,
   LidarrIcon,
   ListenBrainzIcon,
+  MusicRaterIcon,
   PlexIcon,
   SpotifyIcon,
   SubsonicIcon,
@@ -119,6 +120,8 @@ type Settings = {
   subsonicUrl?: string
   subsonicUsername?: string
   subsonicPassword?: string
+  musicRaterUrl?: string
+  musicRaterApiKey?: string
   librarySyncIntervalHours?: number
   preferences?: Partial<Preferences>
   setupComplete?: boolean
@@ -837,6 +840,10 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
   const [subsonicPassword, setSubsonicPassword] = useState(
     settings.subsonicPassword === '***' ? '' : (settings.subsonicPassword ?? ''),
   )
+  const [musicRaterUrl, setMusicRaterUrl] = useState(settings.musicRaterUrl ?? '')
+  const [musicRaterApiKey, setMusicRaterApiKey] = useState(
+    settings.musicRaterApiKey === '***' ? '' : (settings.musicRaterApiKey ?? ''),
+  )
   const [spotifyClientId, setSpotifyClientId] = useState('')
   const [spotifyClientSecret, setSpotifyClientSecret] = useState('')
   const [redirectUriCopied, setRedirectUriCopied] = useState(false)
@@ -897,6 +904,7 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
     subsonic: Boolean(
       settings.subsonicUrl && settings.subsonicUsername && settings.subsonicPassword,
     ),
+    'music-rater': Boolean(settings.musicRaterUrl && settings.musicRaterApiKey),
   }
 
   function serviceStatus(key: string): 'connected' | 'not_configured' | 'error' | 'testing' {
@@ -1105,6 +1113,16 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
     }),
   )
 
+  const testMusicRater = createTester('music-rater', 'music-rater', () =>
+    testService('music-rater', { url: musicRaterUrl, apiKey: musicRaterApiKey }),
+  )
+  const saveMusicRater = createSaver('music-rater', 'music-rater', () =>
+    updateSettings({
+      musicRaterUrl,
+      musicRaterApiKey: musicRaterApiKey || undefined,
+    }),
+  )
+
   async function initiateSpotifyOAuth() {
     try {
       const res = await initiateOAuth('spotify', {
@@ -1180,6 +1198,7 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
   const isEmbyConfigured = !!(embyUrl || settings.embyUrl)
   const isDiscogsConfigured = !!(discogsUsername || settings.discogsUsername)
   const isSubsonicConfigured = !!(subsonicUrl || settings.subsonicUrl)
+  const isMusicRaterConfigured = !!(musicRaterUrl || settings.musicRaterUrl)
 
   return (
     <div className="space-y-4">
@@ -2252,6 +2271,63 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
               {saving.subsonic
                 ? t('settings.saving')
                 : isSubsonicConfigured
+                  ? t('settings.save')
+                  : t('settings.configure')}
+            </Button>
+          </div>
+        </ServiceCard>
+      </div>
+
+      {/* music-rater */}
+      <div>
+        <ServiceCard
+          name="music-rater"
+          description={t('settings.musicRaterDescription')}
+          status={serviceStatus('music-rater')}
+          icon={<MusicRaterIcon />}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('settings.fieldServerUrl')} id="music-rater-url">
+              <Input
+                id="music-rater-url"
+                type="url"
+                placeholder="http://music-rater:8080"
+                value={musicRaterUrl}
+                onChange={(e) => setMusicRaterUrl(e.target.value)}
+              />
+            </Field>
+            <Field label={t('settings.fieldApiKey')} id="music-rater-apikey">
+              <Input
+                id="music-rater-apikey"
+                type="password"
+                autoComplete="new-password"
+                placeholder={
+                  settings.musicRaterApiKey === '***'
+                    ? `(${t('settings.saved')})`
+                    : t('settings.fieldApiKey')
+                }
+                value={musicRaterApiKey}
+                onChange={(e) => setMusicRaterApiKey(e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            {canTestUserConnections && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={testMusicRater}
+                disabled={tests['music-rater'] === 'testing'}
+              >
+                {tests['music-rater'] === 'testing'
+                  ? t('settings.testing')
+                  : t('settings.testConnection')}
+              </Button>
+            )}
+            <Button size="sm" onClick={saveMusicRater} disabled={saving['music-rater']}>
+              {saving['music-rater']
+                ? t('settings.saving')
+                : isMusicRaterConfigured
                   ? t('settings.save')
                   : t('settings.configure')}
             </Button>

@@ -1076,6 +1076,8 @@ export const tr = {
   'settings.embyDescription': 'Dinleme geçmişi ve oynatma listesi disa aktarma ile medya sunucusu',
   'settings.subsonicDescription':
     'Kitaplık eşitleme ve keşif için kendi sunucunuzda barındırılan müzik sunucusu (Navidrome, Airsonic)',
+  'settings.musicRaterDescription':
+    'music-rater örneğinizden gelen eleştirmen puanları. Sahip olmadığınız, eleştirmenlerce beğenilen albümleri sağlar ve albüm önerilerinin puanını etkiler.',
   'settings.discogsDescription': "Discogs'tan koleksiyon ve istek listesi.",
   'settings.tidalConnectDescription': 'TIDAL favori sanatçılarınızı keşif kaynağı olarak kullanın',
   'settings.tidalConnectHelp':

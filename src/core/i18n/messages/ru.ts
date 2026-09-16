@@ -1093,6 +1093,8 @@ export const ru = {
   'settings.embyDescription': 'Медиасервер с историей прослушивания и экспортом плейлистов',
   'settings.subsonicDescription':
     'Самостоятельно размещённый музыкальный сервер (Navidrome, Airsonic) для синхронизации библиотеки и поиска новинок',
+  'settings.musicRaterDescription':
+    'Оценки критиков из вашего экземпляра music-rater. Предоставляет отмеченные критиками альбомы, которых у вас нет, и корректирует оценку рекомендаций альбомов.',
   'settings.discogsDescription': 'Коллекция и список желаний из Discogs.',
   'settings.tidalConnectDescription':
     'Используйте любимых исполнителей TIDAL как источник рекомендаций',

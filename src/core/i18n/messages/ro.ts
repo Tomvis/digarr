@@ -1090,6 +1090,8 @@ export const ro = {
   'settings.embyDescription': 'Server media cu istoric de ascultare și export liste de redare',
   'settings.subsonicDescription':
     'Server de muzică auto-găzduit (Navidrome, Airsonic) pentru sincronizarea bibliotecii și descoperire',
+  'settings.musicRaterDescription':
+    'Evaluări ale criticii din instanța ta music-rater. Oferă albume aclamate de critici pe care nu le deții și ajustează scorul recomandărilor de albume.',
   'settings.discogsDescription': 'Colecție și listă de dorințe din Discogs.',
   'settings.tidalConnectDescription':
     'Folosește artiștii tăi favoriți din TIDAL ca sursă de descoperire',

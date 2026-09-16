@@ -1087,6 +1087,8 @@ export const uk = {
   'settings.embyDescription': 'Медіасервер з історією прослуховування та експортом плейлистів',
   'settings.subsonicDescription':
     'Самостійно розміщений музичний сервер (Navidrome, Airsonic) для синхронізації бібліотеки та відкриття',
+  'settings.musicRaterDescription':
+    'Оцінки критиків із вашого екземпляра music-rater. Надає альбоми, визнані критиками, якими ви ще не володієте, і коригує оцінку рекомендацій альбомів.',
   'settings.discogsDescription': 'Колекція та список бажань із Discogs.',
   'settings.tidalConnectDescription':
     'Використовуйте улюблених виконавців TIDAL як джерело відкриттів',

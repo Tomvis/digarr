@@ -1079,6 +1079,8 @@ export const ja = {
   'settings.embyDescription': '視聴履歴とプレイリストエクスポート機能付きメディアサーバー',
   'settings.subsonicDescription':
     'ライブラリ同期と発見のためのセルフホスト音楽サーバー（Navidrome、Airsonic）',
+  'settings.musicRaterDescription':
+    'music-rater インスタンスからの批評家評価。未所有の批評家絶賛アルバムを提供し、アルバムのおすすめのスコアを調整します。',
   'settings.discogsDescription': 'Discogs のコレクションとウォントリスト。',
   'settings.tidalConnectDescription': 'TIDAL のお気に入りアーティストを発見のソースとして使います',
   'settings.tidalConnectHelp':
