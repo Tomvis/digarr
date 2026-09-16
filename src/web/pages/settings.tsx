@@ -65,6 +65,7 @@ import {
   importSpotifyLikedSongs,
   importSpotifyPlaylist,
   initiateOAuth,
+  linkOidcAccount,
   listTargets,
   listUsers,
   logoutUser,
@@ -77,6 +78,7 @@ import {
   updateUserPreferences,
 } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { broadcastSessionChanged } from '../lib/session-broadcast'
 import JobHistoryPage from './job-history'
 import { UserManagementPage } from './user-management'
 
@@ -2570,6 +2572,66 @@ function getTargetTypes(
         { key: 'userId', label: t('settings.fieldUserId'), placeholder: t('settings.fieldUserId') },
       ],
     },
+    {
+      value: 'jellyfin-playlist',
+      label: t('settings.targetTypeJellyfinPlaylist'),
+      fields: [
+        {
+          key: 'url',
+          label: t('settings.fieldUrl'),
+          placeholder: 'http://jellyfin:8096',
+          type: 'url',
+        },
+        {
+          key: 'apiKey',
+          label: t('settings.fieldApiKey'),
+          placeholder: t('settings.fieldApiKey'),
+          type: 'password',
+        },
+        { key: 'userId', label: t('settings.fieldUserId'), placeholder: t('settings.fieldUserId') },
+      ],
+    },
+    {
+      value: 'plex-playlist',
+      label: t('settings.targetTypePlexPlaylist'),
+      fields: [
+        {
+          key: 'url',
+          label: t('settings.fieldUrl'),
+          placeholder: 'http://plex:32400',
+          type: 'url',
+        },
+        {
+          key: 'token',
+          label: t('settings.plexToken'),
+          placeholder: t('settings.plexToken'),
+          type: 'password',
+        },
+      ],
+    },
+    {
+      value: 'navidrome-playlist',
+      label: t('settings.targetTypeNavidromePlaylist'),
+      fields: [
+        {
+          key: 'url',
+          label: t('settings.fieldUrl'),
+          placeholder: 'http://navidrome:4533',
+          type: 'url',
+        },
+        {
+          key: 'username',
+          label: t('settings.fieldUsername'),
+          placeholder: t('settings.fieldUsername'),
+        },
+        {
+          key: 'password',
+          label: t('settings.fieldPassword'),
+          placeholder: t('settings.fieldPassword'),
+          type: 'password',
+        },
+      ],
+    },
   ]
 }
 
@@ -2577,6 +2639,9 @@ function TargetTypeIcon({ type }: { type: string }) {
   const iconMap: Record<string, string> = {
     lidarr: '/icons/lidarr.png',
     'emby-playlist': '/icons/emby.svg',
+    'jellyfin-playlist': '/icons/jellyfin.svg',
+    'plex-playlist': '/icons/plex.svg',
+    'navidrome-playlist': '/icons/subsonic.svg',
     jellyfin: '/icons/jellyfin.svg',
     'spotify-playlist': '/icons/spotify.svg',
   }
@@ -3540,6 +3605,11 @@ function AccountTab() {
   const { t, locale, setLocale } = useI18n()
   const queryClient = useQueryClient()
   const { data: user } = useQuery({ queryKey: ['currentUser'], queryFn: getCurrentUser })
+  const { data: authMeta } = useQuery({ queryKey: ['authMeta'], queryFn: getAuthMeta })
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [linkNotice, setLinkNotice] = useState<string | null>(null)
+  const [linkPassword, setLinkPassword] = useState('')
+  const [linking, setLinking] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -3551,6 +3621,30 @@ function AccountTab() {
   useEffect(() => {
     setEmail(user?.email ?? '')
   }, [user?.email])
+
+  useEffect(() => {
+    const result = searchParams.get('oidc_link')
+    if (!result) return
+    setLinkNotice(result)
+    const next = new URLSearchParams(searchParams)
+    next.delete('oidc_link')
+    setSearchParams(next, { replace: true })
+    void queryClient.invalidateQueries({ queryKey: ['currentUser'] })
+  }, [searchParams, setSearchParams, queryClient])
+
+  async function handleLinkOidc(e: React.FormEvent) {
+    e.preventDefault()
+    setLinking(true)
+    setLinkNotice(null)
+    try {
+      const { url } = await linkOidcAccount(linkPassword)
+      setLinkPassword('')
+      window.location.assign(url)
+    } catch (err: unknown) {
+      toast.error(errMsg(err))
+      setLinking(false)
+    }
+  }
 
   async function handleSaveEmail(e: React.FormEvent) {
     e.preventDefault()
@@ -3577,6 +3671,7 @@ function AccountTab() {
     }
     clearStoredToken()
     window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    broadcastSessionChanged()
   }
 
   async function handleChangePassword(e: React.FormEvent) {
@@ -3612,6 +3707,20 @@ function AccountTab() {
 
   return (
     <div className="space-y-6 max-w-lg">
+      {linkNotice && (
+        <div role="status" className="space-y-2 rounded-lg border border-border p-3 text-sm">
+          <p>
+            {linkNotice === 'success'
+              ? t('settings.oidcLinkSuccess')
+              : linkNotice === 'identity_in_use'
+                ? t('settings.oidcLinkIdentityInUse')
+                : t('settings.oidcLinkFailed')}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setLinkNotice(null)}>
+            {t('discoveryMode.dismiss')}
+          </Button>
+        </div>
+      )}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
           {t('settings.profile')}
@@ -3653,6 +3762,34 @@ function AccountTab() {
           </Button>
         </form>
       </section>
+
+      {(user?.oidcSubject || (authMeta?.oidcEnabled && user?.authProvider === 'local')) && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
+            {t('settings.oidcSso')}
+          </h2>
+          {user?.oidcSubject ? (
+            <p className="text-sm text-muted">{t('settings.oidcLinked')}</p>
+          ) : user?.authProvider === 'local' ? (
+            <form onSubmit={handleLinkOidc} className="space-y-3">
+              <p className="text-xs text-muted">{t('settings.oidcLinkHelp')}</p>
+              <Field label={t('settings.currentPassword')} id="oidc-link-password">
+                <Input
+                  id="oidc-link-password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={linkPassword}
+                  onChange={(e) => setLinkPassword(e.target.value)}
+                />
+              </Field>
+              <Button type="submit" disabled={linking || !linkPassword}>
+                {linking ? t('settings.oidcLinking') : t('settings.oidcLinkAction')}
+              </Button>
+            </form>
+          ) : null}
+        </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
@@ -3745,6 +3882,7 @@ function AccountTab() {
 
 function AuthTab({ settings, onSaved }: { settings: Settings; onSaved: () => void }) {
   const { t } = useI18n()
+  const queryClient = useQueryClient()
   const [oidcIssuerUrl, setOidcIssuerUrl] = useState(settings.oidcIssuerUrl ?? '')
   const [oidcClientId, setOidcClientId] = useState(settings.oidcClientId ?? '')
   const [oidcClientSecret, setOidcClientSecret] = useState(
@@ -3774,6 +3912,7 @@ function AuthTab({ settings, onSaved }: { settings: Settings; onSaved: () => voi
         updates.oidcClientSecret = oidcClientSecret || undefined
       }
       await updateSettings(updates)
+      await queryClient.invalidateQueries({ queryKey: ['authMeta'] })
       toast.success(t('settings.authSaved'))
       onSaved()
     } catch {

@@ -550,6 +550,7 @@ export const ru = {
   'playlistForm.moodPlaceholder': 'ночная поездка',
   'playlistForm.trackCount': 'Количество треков',
   'playlistForm.scheduleAutomaticGeneration': 'Запланировать автоматическую генерацию',
+  'playlistForm.targets': 'Назначения',
   'playlistForm.nameRequired': 'Название обязательно',
   'playlistForm.genreRequired': 'Жанр обязателен для стратегии Фокус на жанре',
   'playlistForm.moodRequired': 'Настроение обязательно для стратегии Mood Mix',
@@ -1142,6 +1143,9 @@ export const ru = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Плейлист Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Плейлист Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Плейлист Plex',
+  'settings.targetTypeNavidromePlaylist': 'Плейлист Navidrome',
   'settings.slskdModeHelp':
     'slskd может ставить релизы в очередь, но для полной автоматизации нужна связанная цель Lidarr.',
   'settings.slskdReleasePolicy':
@@ -1226,7 +1230,7 @@ export const ru = {
   'settings.logOut': 'Выйти',
   'settings.email': 'Электронная почта',
   'settings.emailHelp':
-    'Укажите эл. почту, чтобы вход через OIDC/SSO мог привязаться к этому аккаунту.',
+    'Сохраните контактный адрес эл. почты для своего аккаунта. Это не связывает идентификатор SSO.',
   'settings.emailAddress': 'Адрес эл. почты',
   'settings.emailPlaceholder': 'you@example.com',
   'settings.saveEmail': 'Сохранить почту',
@@ -1249,6 +1253,15 @@ export const ru = {
   'settings.installHint': 'Добавьте на главный экран для быстрого доступа',
   'settings.install': 'Установить',
   'settings.oidcSso': 'OIDC и SSO',
+  'settings.oidcLinkHelp':
+    'Свяжите свой идентификатор SSO с этим аккаунтом. Пароль, роль и сохраненные данные останутся прежними.',
+  'settings.oidcLinkAction': 'Связать аккаунт SSO',
+  'settings.oidcLinking': 'Подключение...',
+  'settings.oidcLinked': 'SSO связан с этим аккаунтом.',
+  'settings.oidcLinkSuccess': 'Аккаунт SSO связан.',
+  'settings.oidcLinkFailed':
+    'Не удалось связать аккаунт SSO. Войдите с паролем и попробуйте снова.',
+  'settings.oidcLinkIdentityInUse': 'Этот идентификатор SSO уже связан с другим аккаунтом.',
   'settings.oidcDescription':
     'Настройте OpenID Connect для единого входа. После сохранения пользователи увидят кнопку «Войти через SSO» на странице входа.',
   'settings.authTip':

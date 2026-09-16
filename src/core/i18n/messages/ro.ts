@@ -548,6 +548,7 @@ export const ro = {
   'playlistForm.moodPlaceholder': 'drum de noapte',
   'playlistForm.trackCount': 'Număr de piese',
   'playlistForm.scheduleAutomaticGeneration': 'Planifică generarea automată',
+  'playlistForm.targets': 'Destinații',
   'playlistForm.nameRequired': 'Numele este obligatoriu',
   'playlistForm.genreRequired': 'Genul este obligatoriu pentru strategia Focus pe gen',
   'playlistForm.moodRequired': 'Starea este obligatorie pentru strategia Mood Mix',
@@ -1140,6 +1141,9 @@ export const ro = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Playlist Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Playlist Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Playlist Plex',
+  'settings.targetTypeNavidromePlaylist': 'Playlist Navidrome',
   'settings.slskdModeHelp':
     'slskd poate pune lansările la coadă, dar automatizarea completă necesită o destinație Lidarr conectată.',
   'settings.slskdReleasePolicy':
@@ -1223,7 +1227,7 @@ export const ro = {
   'settings.logOut': 'Deconectare',
   'settings.email': 'E-mail',
   'settings.emailHelp':
-    'Setează un e-mail pentru ca o autentificare OIDC/SSO să poată fi asociată acestui cont.',
+    'Salvează un e-mail de contact pentru contul tău. Aceasta nu leagă o identitate SSO.',
   'settings.emailAddress': 'Adresă de e-mail',
   'settings.emailPlaceholder': 'tu@exemplu.com',
   'settings.saveEmail': 'Salvează e-mailul',
@@ -1246,6 +1250,15 @@ export const ro = {
   'settings.installHint': 'Adăugați pe ecranul principal pentru acces rapid',
   'settings.install': 'Instalați',
   'settings.oidcSso': 'OIDC / SSO',
+  'settings.oidcLinkHelp':
+    'Leagă-ți identitatea SSO de acest cont. Parola, rolul și datele salvate rămân neschimbate.',
+  'settings.oidcLinkAction': 'Leagă contul SSO',
+  'settings.oidcLinking': 'Se conectează...',
+  'settings.oidcLinked': 'SSO este legat de acest cont.',
+  'settings.oidcLinkSuccess': 'Cont SSO legat.',
+  'settings.oidcLinkFailed':
+    'Contul SSO nu a putut fi legat. Conectează-te cu parola și încearcă din nou.',
+  'settings.oidcLinkIdentityInUse': 'Această identitate SSO este deja legată de alt cont.',
   'settings.oidcDescription':
     'Configurați OpenID Connect pentru autentificare unică. După salvare, utilizatorii vor vedea un buton „Autentificați-vă cu SSO" pe pagina de conectare.',
   'settings.authTip':

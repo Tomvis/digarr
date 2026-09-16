@@ -18,11 +18,11 @@ services:
     # Channels:
     #   :latest -> newest tagged release, recommended for first-time home installs
     #   :stable -> releases soaked for 7+ days with no follow-up patch
-    #   :1.15 -> current minor release line, patch fixes only
+    #   :1.17 -> current minor release line, patch fixes only
     # Pin to a specific patch when you want zero surprises:
-    # image: docker.io/iuliandita/digarr:1.15.0
+    # image: docker.io/iuliandita/digarr:1.17.0
     # Default image is alpine (musl libc). Debian/glibc variant:
-    # image: docker.io/iuliandita/digarr:1.15.0-debian
+    # image: docker.io/iuliandita/digarr:1.17.0-debian
     user: "1000:1000"
     networks:
       - frontend
@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine@sha256:c7526c0f6c3f30260a563d7bcf8ad778effac59a44f8ffa86678c35418338609
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     networks:
       - backend
     env_file:

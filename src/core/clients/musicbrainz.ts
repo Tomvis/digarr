@@ -2,7 +2,7 @@ import PQueue from 'p-queue'
 import { envConfig } from '@/config/env'
 import { VERSION } from '@/version'
 
-const BASE_URL = 'https://musicbrainz.org/ws/2'
+const BASE_URL = envConfig.musicbrainzUrl
 const USER_AGENT = `Digarr/${VERSION} (https://github.com/iuliandita/digarr)`
 
 export type MBArtist = {
@@ -232,15 +232,33 @@ export function ratioOr(value: number | undefined, fallback: number): number {
     : fallback
 }
 
+/**
+ * The base pace of the shared gate, in order of precedence:
+ *
+ *  1. `MUSICBRAINZ_MIN_INTERVAL_MS` -- the explicit governor knob, and the more
+ *     direct one; it is what the timing tests pin.
+ *  2. `DIGARR_MUSICBRAINZ_INTERVAL_MS` **when a self-hosted mirror is
+ *     configured**. The household-budget argument above is about MusicBrainz's
+ *     *public* service, which rate-limits per source IP across every consumer
+ *     behind the address. A mirror the operator runs has no such shared budget,
+ *     so their configured interval governs -- including `0`, which is why this
+ *     branch cannot go through `positiveOr`.
+ *  3. Otherwise the interval derived from the conservative req/hr ceiling.
+ */
+function resolveBaseIntervalMs(derivedIntervalMs: number): number {
+  const explicit = positiveOr(envConfig.musicbrainzMinIntervalMs, 0)
+  if (explicit > 0) return explicit
+  if (!envConfig.musicbrainzIsPublic) return envConfig.musicbrainzIntervalMs
+  return derivedIntervalMs
+}
+
 function resolveMbRateConfig(): MbRateConfig {
   const maxRph = positiveOr(envConfig.musicbrainzMaxRph, DEFAULT_MAX_RPH)
   const derivedIntervalMs = Math.round(3_600_000 / maxRph)
   const reserveRatio = ratioOr(envConfig.musicbrainzReserveRatio, DEFAULT_RESERVE_RATIO)
   return {
     maxRph,
-    // An explicit interval wins over the rate; it is the more direct knob and
-    // is what the timing tests pin.
-    baseIntervalMs: positiveOr(envConfig.musicbrainzMinIntervalMs, derivedIntervalMs),
+    baseIntervalMs: resolveBaseIntervalMs(derivedIntervalMs),
     reserveRatio,
     // The floor can never sit above the reserve, or the low tier vanishes.
     floorRatio: Math.min(
@@ -520,6 +538,8 @@ export function createMusicBrainzClient() {
       return await fetch(`${BASE_URL}${path}`, {
         headers: { 'User-Agent': USER_AGENT },
         signal: controller.signal,
+        // A fast mirror must not redirect requests onto the public rate-limited service.
+        redirect: 'error',
       })
     } finally {
       clearTimeout(timer)

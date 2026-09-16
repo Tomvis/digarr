@@ -46,6 +46,7 @@ import { waitForGenreWarmers } from './core/pipeline/genre-backfill'
 import { PipelineOrchestrator } from './core/pipeline/orchestrator'
 import type { StoreDb } from './core/pipeline/store'
 import { SubscriptionScheduler } from './core/pipeline/subscription-scheduler'
+import { pushPlaylistToTargets } from './core/playlists/export'
 import { generatePlaylist } from './core/playlists/generator'
 import { PlaylistScheduler } from './core/playlists/scheduler'
 import { buildStrategyDeps } from './core/playlists/strategy-deps'
@@ -53,7 +54,7 @@ import { createDiscogsSource } from './core/plugins/discogs'
 import { createLastFmSource } from './core/plugins/lastfm'
 import { createListenBrainzSource } from './core/plugins/listenbrainz'
 import { SourceRegistry } from './core/plugins/registry'
-import { resolveProviderToken } from './core/provider-auth'
+import { isConnectedToken, resolveProviderToken } from './core/provider-auth'
 import { createDefaultRegistry } from './core/providers/registry'
 import { buildSearchSourceCatalog } from './core/search/catalog'
 import { enrichSearchResultsWithImages } from './core/search/enrich'
@@ -91,6 +92,7 @@ import { createNavidromePlaylistTarget } from './core/targets/navidrome-playlist
 import { createPlexPlaylistTarget } from './core/targets/plex-playlist'
 import { createSlskdTarget } from './core/targets/slskd'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
+import type { DestinationTarget } from './core/targets/types'
 import { errMsg } from './core/validation'
 import { closeDb, db, pool } from './db'
 import { runMigrations } from './db/migrate'
@@ -270,14 +272,12 @@ async function getDiscoveryConnectionSnapshot(userId: number) {
     hasListenBrainz: Boolean(
       userConnections?.listenbrainzUsername && userConnections.listenbrainzToken,
     ),
-    hasSpotify: Boolean(
-      spotifyToken?.accessToken && !spotifyToken.accessToken.startsWith('pending:'),
-    ),
+    hasSpotify: isConnectedToken(spotifyToken),
     spotifyScopes: spotifyToken?.scopes?.split(' ').filter(Boolean) ?? [],
     hasLastfm: Boolean(userConnections?.lastfmUsername && userConnections.lastfmApiKey),
     hasDiscogs: Boolean(userConnections?.discogsUsername && userConnections.discogsToken),
-    hasDeezer: Boolean(deezerToken?.accessToken && !deezerToken.accessToken.startsWith('pending:')),
-    hasTidal: Boolean(tidalToken?.accessToken && !tidalToken.accessToken.startsWith('pending:')),
+    hasDeezer: isConnectedToken(deezerToken),
+    hasTidal: isConnectedToken(tidalToken),
     hasLibrarySync,
     hasSubsonic: Boolean(
       userConnections?.subsonicUrl &&
@@ -954,7 +954,7 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
     // Deezer adapter - only if the user has a stored OAuth token
     if (userId !== null && userId !== undefined) {
       const deezerOAuthRow = await getOAuthToken(db, userId, 'deezer')
-      if (deezerOAuthRow && !deezerOAuthRow.accessToken.startsWith('pending:')) {
+      if (isConnectedToken(deezerOAuthRow)) {
         const getToken = () => resolveProviderToken(db, userId, 'deezer')
         adapterRegistry.register(createDeezerAdapter({ getToken }))
       }
@@ -1127,6 +1127,7 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
     })
 
     if (playlist.targetIds.length > 0 && playlist.userId != null) {
+      const userId = playlist.userId
       const settings = await getSettings(db)
       const globalSkipTlsVerify = settings?.skipTlsVerify ?? false
       const targetRows = await getTargetsByUser(db, playlist.userId)
@@ -1138,15 +1139,12 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
         artistMbid: '',
         trackName: track.trackName ?? undefined,
         trackMbid: track.mbid ?? undefined,
+        spotifyUri: track.spotifyUri ?? undefined,
       }))
 
+      const targets: DestinationTarget[] = []
       for (const targetRow of enabledTargetRows) {
-        let target:
-          | ReturnType<typeof createNavidromePlaylistTarget>
-          | ReturnType<typeof createJellyfinPlaylistTarget>
-          | ReturnType<typeof createEmbyPlaylistTarget>
-          | ReturnType<typeof createPlexPlaylistTarget>
-          | null = null
+        let target: DestinationTarget | null = null
 
         if (targetRow.type === 'navidrome-playlist') {
           target = createNavidromePlaylistTarget(targetRow.id, {
@@ -1175,19 +1173,16 @@ async function executePlaylistGeneration(playlistId: number): Promise<void> {
             url: targetRow.config.url as string,
             token: targetRow.config.token as string,
           })
+        } else if (targetRow.type === 'spotify-playlist') {
+          target = createSpotifyPlaylistTarget(targetRow.id, {
+            getAccessToken: () => resolveProviderToken(db, userId, 'spotify'),
+          })
         }
 
-        if (!target?.createPlaylist) continue
-
-        try {
-          await target.createPlaylist(playlist.name, playlistItems)
-        } catch (err: unknown) {
-          console.error(
-            `[playlists] Failed to push to target ${targetRow.type}(${targetRow.id}):`,
-            err,
-          )
-        }
+        if (target?.createPlaylist) targets.push(target)
       }
+
+      await pushPlaylistToTargets(targets, playlist.name, playlistItems)
     }
 
     console.log(

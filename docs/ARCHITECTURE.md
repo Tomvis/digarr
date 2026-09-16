@@ -39,6 +39,13 @@ route; the callback is not limited). Password change and session replacement
 run as one database transaction under a user-row lock, so a password verified
 before a concurrent reset cannot mint a post-reset session.
 
+OIDC account linking reuses that callback with a server-owned transaction
+purpose. Initiation requires a cookie session and fresh password proof. The
+link callback locks the user and initiating session, rechecks the password
+fingerprint and session validity, and updates only the OIDC subject. It never
+creates an account or session; the unique subject index prevents linking one
+identity to two accounts.
+
 ## Database backend
 
 Digarr runs on PostgreSQL through Drizzle either way, but the backend is chosen
@@ -132,7 +139,7 @@ dedup, and the score threshold.
 
 ## Registry patterns
 
-Six extension points, each registry-based:
+Seven extension points, each registry-based:
 
 - `DestinationTarget` - where recommendations are pushed (Lidarr, Emby, `slskd`, ...)
 - `SubscriptionAdapter` - how recurring seeds are sourced (CSV, Spotify saved, ...)
@@ -140,6 +147,7 @@ Six extension points, each registry-based:
 - `RecommendationProvider` - AI backends (Anthropic, OpenAI, Gemini, Ollama, ...)
 - `DiscoveryMode` - on-demand / savable discovery flows, registered in `src/core/discovery-modes/registry.ts` (ListenBrainz radio, Release Radar, Library Gap-Fill, Charts, Deezer Flow, Spotify Saved Albums, TIDAL Favorite Artists, ...). A new mode is a factory plus a `registry.register` line plus an availability entry; the frontend renders modes generically, so no frontend change is needed. Modes that just read a user's artist collection from an OAuth-connected provider are one `createUserArtistCollectionMode({ id, label, description, provider, fetchArtists })` spec (`modes/user-artist-collection.ts`), and modes gated on a single connection flag are one row in `SINGLE_FLAG_MODES` in `availability.ts` rather than a hand-written branch. An optional `stability: 'experimental'` on the definition (serialized by `GET /api/v1/discovery-modes`, defaulting to `stable`) badges the mode card without a per-mode frontend branch
 - `NotificationChannel` - where notifications are delivered (webhook, ntfy, Telegram, Apprise), in `src/core/notifications/`. `registry.ts` fans one event out to every enabled, subscribed channel via `Promise.allSettled` (one channel down never blocks the others); each `channels/<type>.ts` formats its payload and calls the single SSRF-guarded `transport.ts`. A new type is a `channels/<type>.ts` module plus a union arm on `NotificationChannel`. The transport does DNS-pinned resolution, `redirect: manual`, and blocks private/link-local/cloud-metadata targets; a per-channel admin-only `allowPrivateTarget` waives only the RFC1918 set. Channel secrets are encrypted at rest and masked (`***`) through the settings API
+- `ProviderAuth` - how a streaming provider's stored OAuth token is resolved and refreshed, as a `PROVIDER_AUTH` map in `src/core/provider-auth.ts` keyed by `OAuthProvider`. `resolveProviderToken(db, userId, provider)` is the single entry point for Spotify, Deezer, and TIDAL; a provider without a `tokenEndpoint` (Deezer) is simply one that cannot refresh, rather than a separate code path. `authStyle` (`basic` or `body`) must match how that provider's authorization-code exchange authenticates, since a client accepts one style and not both. Failures raise `ProviderAuthError` with `reason: 'not_connected' | 'token_unusable'`, which is what lets discovery modes tell "never connected" from "token dead" instead of flattening both into one message. A new provider is one row here plus a callback handler in `src/server/routes/oauth-callbacks.ts`
 
 Adding a new implementation means:
 
@@ -198,13 +206,16 @@ Albums are a first-class recommendation unit. Key additions:
 
 ## Key invariants
 
-- Config precedence: DB settings (single row, `id=1`) override env vars. Per-user credentials live on the `users` table; global settings are the fallback.
+- Library sync replaces a source snapshot only after all source album fetches succeed. A failed fetch retains the previous snapshot and marks the run failed; MusicBrainz reconciliation failures remain separately counted.
+- Config precedence: for settings stored in the DB (single row, `id=1`), saved values override env defaults. Deployment-only options such as `DIGARR_MUSICBRAINZ_URL` and `DIGARR_MUSICBRAINZ_INTERVAL_MS` come from the environment and require a restart. Direct per-user service credentials live on `users`, with global settings as the fallback where supported; Spotify, Deezer, and TIDAL OAuth credentials live in `oauth_tokens`.
 - Provider, metadata, and playlist-target requests go through
   `createHttpClient()` in `src/core/clients/http.ts` for timeout, retry/backoff,
   JSON parsing, response-body errors, redaction, and optional TLS-skip behavior.
   Read-only calls retain the client retry default. Duplicate-producing playlist
   creation and song-add calls pass `retries: 0`; this classification is based on
   endpoint semantics because Subsonic mutations use GET-shaped endpoints.
+- Playlist generation stores its local tracks before pushing to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets. A target error, including a returned failed playlist result, does not stop later selected targets; after all attempts it fails the playlist job for Job History. There is no remote rollback, and the locally generated playlist remains available.
+- Spotify playlist exports retain explicit track URIs, or resolve artist/title pairs with exact matching. Artist-only approvals take up to three artist-matching track search results. Writes use `/me/playlists` and `/playlists/{id}/items`, with at most 100 URIs per request; failures are not retried as duplicate writes.
 - Emby, Jellyfin, and Subsonic source clients each own a media-server request
   queue capped at three concurrent requests and ten starts per second. This is
   an internal load-smoothing policy for self-hosted servers, not a claimed

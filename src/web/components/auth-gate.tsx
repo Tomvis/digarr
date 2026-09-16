@@ -11,6 +11,8 @@ import {
   registerUser,
 } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { clearQueryCache } from '../lib/query-client'
+import { broadcastSessionChanged, subscribeSessionChanged } from '../lib/session-broadcast'
 import { LanguageSwitcher } from './language-switcher'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
@@ -179,6 +181,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   // Listen for 401s from fetchApi and return to login
   useEffect(() => {
     const handler = () => {
+      clearQueryCache()
       setNotice(null)
       setState(hasUsers ? 'login' : 'register')
     }
@@ -186,7 +189,22 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler)
   }, [hasUsers])
 
+  const handleAuthenticatedRef = useRef<(fallback: 'login' | 'register') => Promise<void>>(
+    async () => {},
+  )
+  useEffect(() => {
+    handleAuthenticatedRef.current = handleAuthenticated
+  })
+
+  // Another tab logged out or switched accounts: re-check auth and drop the cache.
+  useEffect(() => {
+    return subscribeSessionChanged(() => {
+      void handleAuthenticatedRef.current('login')
+    })
+  }, [])
+
   async function handleAuthenticated(fallback: 'login' | 'register') {
+    clearQueryCache()
     setNotice(null)
     clearLegacyMigrationState()
     try {
@@ -263,6 +281,7 @@ function LoginForm({
     setLoading(true)
     try {
       await loginUser(username.trim(), password)
+      broadcastSessionChanged()
       await onSuccess()
     } catch (err: unknown) {
       setError(errMsg(err).includes('401') ? t('auth.invalidCredentials') : t('auth.loginFailed'))
@@ -373,6 +392,7 @@ function RegisterForm({
     setLoading(true)
     try {
       await registerUser(username.trim(), password)
+      broadcastSessionChanged()
       await onSuccess()
     } catch (err: unknown) {
       const msg = errMsg(err)

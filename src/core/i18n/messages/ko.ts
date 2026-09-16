@@ -542,6 +542,7 @@ export const ko = {
   'playlistForm.moodPlaceholder': '늦은 밤 드라이브',
   'playlistForm.trackCount': '트랙 수',
   'playlistForm.scheduleAutomaticGeneration': '자동 생성을 예약',
+  'playlistForm.targets': '대상',
   'playlistForm.nameRequired': '이름은 필수입니다',
   'playlistForm.genreRequired': '장르 포커스 전략에는 장르가 필요합니다',
   'playlistForm.moodRequired': '무드 믹스 전략에는 분위기가 필요합니다',
@@ -1109,6 +1110,9 @@ export const ko = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Emby 플레이리스트',
+  'settings.targetTypeJellyfinPlaylist': 'Jellyfin 플레이리스트',
+  'settings.targetTypePlexPlaylist': 'Plex 플레이리스트',
+  'settings.targetTypeNavidromePlaylist': 'Navidrome 플레이리스트',
   'settings.slskdModeHelp':
     'slskd는 릴리스를 대기열에 넣을 수 있지만, 완전한 자동화에는 연결된 Lidarr 대상이 필요합니다.',
   'settings.slskdReleasePolicy': '릴리스 정책: 독립형 slskd는 릴리스를 직접 대기열에 넣습니다.',
@@ -1187,7 +1191,7 @@ export const ko = {
   'settings.signedInAs': '로그인 계정:',
   'settings.logOut': '로그아웃',
   'settings.email': '이메일',
-  'settings.emailHelp': 'OIDC/SSO 로그인이 이 계정에 연결될 수 있도록 이메일을 설정하세요.',
+  'settings.emailHelp': '계정의 연락처 이메일을 저장하세요. 이 작업은 SSO ID를 연결하지 않습니다.',
   'settings.emailAddress': '이메일 주소',
   'settings.emailPlaceholder': 'you@example.com',
   'settings.saveEmail': '이메일 저장',
@@ -1210,6 +1214,15 @@ export const ko = {
   'settings.installHint': '빠른 접근을 위해 홈 화면에 추가하세요',
   'settings.install': '설치',
   'settings.oidcSso': 'OIDC 및 SSO',
+  'settings.oidcLinkHelp':
+    'SSO ID를 이 계정에 연결하세요. 비밀번호, 역할 및 저장된 데이터는 그대로 유지됩니다.',
+  'settings.oidcLinkAction': 'SSO 계정 연결',
+  'settings.oidcLinking': '연결 중...',
+  'settings.oidcLinked': 'SSO가 이 계정에 연결되어 있습니다.',
+  'settings.oidcLinkSuccess': 'SSO 계정이 연결되었습니다.',
+  'settings.oidcLinkFailed':
+    'SSO 계정을 연결할 수 없습니다. 비밀번호로 로그인한 후 다시 시도하세요.',
+  'settings.oidcLinkIdentityInUse': '이 SSO ID는 이미 다른 계정에 연결되어 있습니다.',
   'settings.oidcDescription':
     '싱글 사인온을 위해 OpenID Connect를 설정합니다. 저장 후 로그인 페이지에 "SSO로 로그인" 버튼이 표시됩니다.',
   'settings.authTip':

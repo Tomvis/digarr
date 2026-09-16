@@ -548,6 +548,7 @@ export const pl = {
   'playlistForm.moodPlaceholder': 'nocna jazda autem',
   'playlistForm.trackCount': 'Liczba utworów',
   'playlistForm.scheduleAutomaticGeneration': 'Zaplanuj automatyczne generowanie',
+  'playlistForm.targets': 'Cele',
   'playlistForm.nameRequired': 'Nazwa jest wymagana',
   'playlistForm.genreRequired': 'Gatunek jest wymagany dla strategii Fokus na gatunek',
   'playlistForm.moodRequired': 'Nastroj jest wymagany dla strategii Mood Mix',
@@ -1130,6 +1131,9 @@ export const pl = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Playlista Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Playlista Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Playlista Plex',
+  'settings.targetTypeNavidromePlaylist': 'Playlista Navidrome',
   'settings.slskdModeHelp':
     'slskd może kolejkować wydania, ale pełna automatyzacja wymaga połączonego celu Lidarr.',
   'settings.slskdReleasePolicy':
@@ -1212,7 +1216,7 @@ export const pl = {
   'settings.logOut': 'Wyloguj się',
   'settings.email': 'E-mail',
   'settings.emailHelp':
-    'Ustaw adres e-mail, aby logowanie OIDC/SSO mogło zostać powiązane z tym kontem.',
+    'Zapisz kontaktowy adres e-mail dla swojego konta. Nie powoduje to powiązania tożsamości SSO.',
   'settings.emailAddress': 'Adres e-mail',
   'settings.emailPlaceholder': 'ty@przyklad.com',
   'settings.saveEmail': 'Zapisz e-mail',
@@ -1236,6 +1240,15 @@ export const pl = {
   'settings.installHint': 'Dodaj do ekranu głównego, aby mieć szybki dostęp',
   'settings.install': 'Zainstaluj',
   'settings.oidcSso': 'OIDC / SSO',
+  'settings.oidcLinkHelp':
+    'Powiąż swoją tożsamość SSO z tym kontem. Hasło, rola i zapisane dane pozostaną bez zmian.',
+  'settings.oidcLinkAction': 'Powiąż konto SSO',
+  'settings.oidcLinking': 'Łączenie...',
+  'settings.oidcLinked': 'SSO jest powiązane z tym kontem.',
+  'settings.oidcLinkSuccess': 'Konto SSO powiązane.',
+  'settings.oidcLinkFailed':
+    'Nie udało się powiązać konta SSO. Zaloguj się hasłem i spróbuj ponownie.',
+  'settings.oidcLinkIdentityInUse': 'Ta tożsamość SSO jest już powiązana z innym kontem.',
   'settings.oidcDescription':
     'Skonfiguruj OpenID Connect dla logowania jednokrotnego. Po zapisaniu użytkownicy zobaczą przycisk „Zaloguj się przez SSO” na stronie logowania.',
   'settings.authTip':

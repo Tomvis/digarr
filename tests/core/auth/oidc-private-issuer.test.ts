@@ -48,7 +48,9 @@ async function captureCustomFetch(service: OidcService) {
   vi.mocked(oidcClient.buildAuthorizationUrl).mockReturnValue(
     new URL('https://authentik.leratom.cloud/authorize?state=mock-state'),
   )
-  await service.getAuthorizationUrl('https://digarr.example.com/api/v1/auth/oidc/callback')
+  await service.getAuthorizationUrl('https://digarr.example.com/api/v1/auth/oidc/callback', {
+    kind: 'login',
+  })
 
   const options = vi.mocked(oidcClient.discovery).mock.calls[0]?.[4]
   const customFetch = options?.[oidcClient.customFetch] as

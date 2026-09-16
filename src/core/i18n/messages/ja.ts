@@ -547,6 +547,7 @@ export const ja = {
   'playlistForm.moodPlaceholder': '夜のドライブ',
   'playlistForm.trackCount': '曲数',
   'playlistForm.scheduleAutomaticGeneration': '自動生成をスケジュールする',
+  'playlistForm.targets': 'ターゲット',
   'playlistForm.nameRequired': '名前は必須です',
   'playlistForm.genreRequired': 'ジャンルフォーカス戦略ではジャンルが必須です',
   'playlistForm.moodRequired': 'ムードミックス戦略ではムードが必須です',
@@ -1126,6 +1127,9 @@ export const ja = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Emby プレイリスト',
+  'settings.targetTypeJellyfinPlaylist': 'Jellyfin プレイリスト',
+  'settings.targetTypePlexPlaylist': 'Plex プレイリスト',
+  'settings.targetTypeNavidromePlaylist': 'Navidrome プレイリスト',
   'settings.slskdModeHelp':
     'slskd はリリースをキューに入れられますが、完全な自動化には連携した Lidarr ターゲットが必要です。',
   'settings.slskdReleasePolicy': 'リリース方針: 単体の slskd はリリースを直接キューに入れます。',
@@ -1205,7 +1209,7 @@ export const ja = {
   'settings.logOut': 'ログアウト',
   'settings.email': 'メール',
   'settings.emailHelp':
-    'OIDC/SSO ログインをこのアカウントに紐付けられるよう、メールアドレスを設定します。',
+    'アカウント用の連絡先メールアドレスを保存します。これによって SSO ID が紐付けられることはありません。',
   'settings.emailAddress': 'メールアドレス',
   'settings.emailPlaceholder': 'you@example.com',
   'settings.saveEmail': 'メールを保存',
@@ -1228,6 +1232,15 @@ export const ja = {
   'settings.installHint': 'ホーム画面に追加してすばやくアクセス',
   'settings.install': 'インストール',
   'settings.oidcSso': 'OIDC / SSO',
+  'settings.oidcLinkHelp':
+    'SSO ID をこのアカウントに紐付けます。パスワード、役割、保存済みデータはそのままです。',
+  'settings.oidcLinkAction': 'SSO アカウントを紐付ける',
+  'settings.oidcLinking': '接続中...',
+  'settings.oidcLinked': 'SSO はこのアカウントに紐付けられています。',
+  'settings.oidcLinkSuccess': 'SSO アカウントを紐付けました。',
+  'settings.oidcLinkFailed':
+    'SSO アカウントを紐付けられませんでした。パスワードでサインインしてから、もう一度お試しください。',
+  'settings.oidcLinkIdentityInUse': 'この SSO ID はすでに別のアカウントに紐付けられています。',
   'settings.oidcDescription':
     'シングルサインオン用に OpenID Connect を設定します。保存後、ユーザーはログインページに「SSO でサインイン」ボタンが表示されます。',
   'settings.authTip':

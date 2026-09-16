@@ -551,6 +551,7 @@ export const it = {
   'playlistForm.moodPlaceholder': 'guida notturna',
   'playlistForm.trackCount': 'Numero di brani',
   'playlistForm.scheduleAutomaticGeneration': 'Pianifica la generazione automatica',
+  'playlistForm.targets': 'Destinazioni',
   'playlistForm.nameRequired': 'Il nome e obbligatorio',
   'playlistForm.genreRequired': 'Il genere e obbligatorio per la strategia Focus sul genere',
   'playlistForm.moodRequired': 'L atmosfera e obbligatoria per la strategia Mood Mix',
@@ -1140,6 +1141,9 @@ export const it = {
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
   'settings.targetTypeEmbyPlaylist': 'Playlist Emby',
+  'settings.targetTypeJellyfinPlaylist': 'Playlist Jellyfin',
+  'settings.targetTypePlexPlaylist': 'Playlist Plex',
+  'settings.targetTypeNavidromePlaylist': 'Playlist Navidrome',
   'settings.slskdModeHelp':
     'slskd può mettere in coda le release, ma l’automazione completa richiede un target Lidarr collegato.',
   'settings.slskdReleasePolicy':
@@ -1223,7 +1227,7 @@ export const it = {
   'settings.logOut': 'Disconnetti',
   'settings.email': 'E-mail',
   'settings.emailHelp':
-    "Imposta un'email per consentire a un accesso OIDC/SSO di collegarsi a questo account.",
+    'Salva un indirizzo e-mail di contatto per il tuo account. Questo non collega un’identità SSO.',
   'settings.emailAddress': 'Indirizzo email',
   'settings.emailPlaceholder': 'tu@esempio.com',
   'settings.saveEmail': 'Salva email',
@@ -1247,6 +1251,15 @@ export const it = {
   'settings.installHint': 'Aggiungi alla schermata Home per un accesso rapido',
   'settings.install': 'Installa',
   'settings.oidcSso': 'OIDC / SSO',
+  'settings.oidcLinkHelp':
+    'Collega la tua identità SSO a questo account. Password, ruolo e dati salvati restano invariati.',
+  'settings.oidcLinkAction': 'Collega account SSO',
+  'settings.oidcLinking': 'Connessione...',
+  'settings.oidcLinked': 'SSO è collegato a questo account.',
+  'settings.oidcLinkSuccess': 'Account SSO collegato.',
+  'settings.oidcLinkFailed':
+    'Impossibile collegare l’account SSO. Accedi con la password e riprova.',
+  'settings.oidcLinkIdentityInUse': 'Questa identità SSO è già collegata a un altro account.',
   'settings.oidcDescription':
     'Configura OpenID Connect per il single sign-on. Dopo il salvataggio, gli utenti vedranno un pulsante "Accedi con SSO" nella pagina di login.',
   'settings.authTip':

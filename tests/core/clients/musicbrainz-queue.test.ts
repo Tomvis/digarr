@@ -16,17 +16,74 @@ function jsonOk(data: unknown): Response {
 }
 
 beforeEach(() => {
+  vi.stubEnv('DIGARR_MUSICBRAINZ_URL', undefined)
+  vi.stubEnv('DIGARR_MUSICBRAINZ_INTERVAL_MS', undefined)
   vi.useFakeTimers()
   vi.setSystemTime(0) // anchor Date.now() so fetch timestamps are relative to t=0
   mockFetch.mockReset()
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   vi.useRealTimers()
   delete process.env.MUSICBRAINZ_MIN_INTERVAL_MS
 })
 
 describe('MusicBrainz shared queue timing (real p-queue)', () => {
+  // Public MusicBrainz is paced by the household governor (360 req/hr = 10s),
+  // NOT by DIGARR_MUSICBRAINZ_INTERVAL_MS -- that knob only governs a mirror,
+  // which has no shared per-IP budget. See resolveBaseIntervalMs().
+  it.each([
+    [undefined, undefined, 10_000],
+    ['http://mirror.example/ws/2', '25', 25],
+  ])('shares the configured interval across clients (%s, %s)', async (url, interval, expected) => {
+    vi.setSystemTime(1)
+    vi.stubEnv('DIGARR_MUSICBRAINZ_URL', url)
+    vi.stubEnv('DIGARR_MUSICBRAINZ_INTERVAL_MS', interval)
+    vi.resetModules()
+    const { createMusicBrainzClient } = await import('@/core/clients/musicbrainz')
+    const times: number[] = []
+    mockFetch.mockImplementation(async () => {
+      times.push(Date.now())
+      return jsonOk({ artists: [] })
+    })
+    const requests = [
+      createMusicBrainzClient().searchArtist('A'),
+      createMusicBrainzClient().searchArtist('B'),
+    ]
+    await vi.advanceTimersByTimeAsync(expected * 2)
+    await Promise.all(requests)
+    expect(times).toEqual([1, expected + 1])
+  })
+
+  it('keeps one in-flight request across clients when the mirror interval is zero', async () => {
+    vi.stubEnv('DIGARR_MUSICBRAINZ_URL', 'http://mirror.example/ws/2')
+    vi.stubEnv('DIGARR_MUSICBRAINZ_INTERVAL_MS', '0')
+    vi.resetModules()
+    const { createMusicBrainzClient } = await import('@/core/clients/musicbrainz')
+    let releaseFirst: (response: Response) => void = () => {
+      throw new Error('First fetch did not start')
+    }
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseFirst = resolve
+        }),
+    )
+    mockFetch.mockResolvedValue(jsonOk({ artists: [] }))
+    const requests = [
+      createMusicBrainzClient().searchArtist('A'),
+      createMusicBrainzClient().searchArtist('B'),
+    ]
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    releaseFirst(jsonOk({ artists: [] }))
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.all(requests)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(Date.now()).toBe(0)
+  })
+
   it('a retrying request does not block other queued traffic for its full backoff', async () => {
     // Pin the base gate to 1 req/s for this test. The shipped default is far
     // slower (10s, i.e. 360 req/hr -- see musicbrainz-budget.test.ts), which

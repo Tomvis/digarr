@@ -37,6 +37,8 @@ function renderWithQuery(ui: ReactElement, initialEntries: string[] = ['/']) {
 
 vi.mock('@/web/lib/api', () => ({
   getSettings: vi.fn(),
+  getAuthMeta: vi.fn().mockResolvedValue({ oidcEnabled: false, proxyAuthEnabled: false }),
+  linkOidcAccount: vi.fn().mockResolvedValue({ url: '#oidc-link-test' }),
   updateSettings: vi.fn(),
   testNotificationChannel: vi.fn(),
   getPopularAlbumsAvailability: vi
@@ -189,6 +191,7 @@ vi.mock('@/web/lib/hooks', async (importOriginal) => {
 import {
   changePassword,
   createTargetApi,
+  getAuthMeta,
   getCurrentUser,
   getJobHealth,
   getLidarrMetadataProfiles,
@@ -198,6 +201,7 @@ import {
   getPipelineStatus,
   getSettings,
   importSpotifyLikedSongs,
+  linkOidcAccount,
   listJobs,
   listTargets,
   testNotificationChannel,
@@ -270,6 +274,12 @@ function setupMocks(settings: Record<string, unknown> = mockSettings) {
 describe('SettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getAuthMeta).mockResolvedValue({
+      version: '1.16.0',
+      oidcEnabled: false,
+      proxyAuthEnabled: false,
+    })
+    vi.mocked(linkOidcAccount).mockResolvedValue({ url: '#oidc-link-test' })
     Object.defineProperty(globalThis, 'ResizeObserver', {
       configurable: true,
       value: class {
@@ -828,6 +838,97 @@ describe('SettingsPage', () => {
     expect(await screen.findByLabelText('Language')).toBeInTheDocument()
   })
 
+  it('links a local account only after entering its current password', async () => {
+    setupMocks()
+    mockGetCurrentUser.mockResolvedValue({
+      id: 1,
+      username: 'admin',
+      isAdmin: true,
+      authProvider: 'local',
+      oidcSubject: null,
+    })
+    vi.mocked(getAuthMeta).mockResolvedValue({
+      version: '1.16.0',
+      oidcEnabled: true,
+      proxyAuthEnabled: false,
+    })
+    renderWithQuery(<SettingsPage />, ['/settings?tab=account'])
+
+    const button = await screen.findByRole('button', { name: 'Link SSO account' })
+    expect(button).toBeDisabled()
+    const form = button.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.change(within(form as HTMLFormElement).getByLabelText('Current password'), {
+      target: { value: 'current-password' },
+    })
+    fireEvent.click(button)
+
+    await waitFor(() => {
+      expect(linkOidcAccount).toHaveBeenCalledWith('current-password')
+      expect(window.location.hash).toBe('#oidc-link-test')
+    })
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+    window.history.replaceState(null, '', window.location.pathname)
+  })
+
+  it('refreshes link availability immediately after saving OIDC settings', async () => {
+    setupMocks()
+    mockGetCurrentUser.mockResolvedValue({
+      id: 1,
+      username: 'admin',
+      isAdmin: true,
+      authProvider: 'local',
+      oidcSubject: null,
+    })
+    const { client } = renderWithQuery(<SettingsPage />, ['/settings?tab=auth'])
+    client.setQueryDefaults(['authMeta'], { staleTime: 30_000 })
+    await screen.findByRole('button', { name: 'Save' })
+    await waitFor(() => expect(getAuthMeta).toHaveBeenCalledTimes(1))
+    vi.mocked(getAuthMeta).mockResolvedValue({
+      version: '1.16.0',
+      oidcEnabled: true,
+      proxyAuthEnabled: false,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(getAuthMeta).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByText('Account'))
+
+    expect(await screen.findByRole('button', { name: 'Link SSO account' })).toBeInTheDocument()
+  })
+
+  it('shows linked status without offering another link', async () => {
+    setupMocks()
+    mockGetCurrentUser.mockResolvedValue({
+      id: 1,
+      username: 'admin',
+      isAdmin: true,
+      authProvider: 'local',
+      oidcSubject: 'subject-1',
+    })
+    renderWithQuery(<SettingsPage />, ['/settings?tab=account'])
+
+    expect(await screen.findByText('SSO is linked to this account.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Link SSO account' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['success', 'SSO account linked.'],
+    ['identity_in_use', 'This SSO identity is already linked to another account.'],
+    [
+      'untrusted-value',
+      'Could not link the SSO account. Sign in with your password and try again.',
+    ],
+  ])('shows a fixed notice for OIDC link outcome %s', async (outcome, message) => {
+    setupMocks()
+    renderWithQuery(<SettingsPage />, [`/settings?tab=account&oidc_link=${outcome}`])
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.queryByText('untrusted-value')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText(message)).not.toBeInTheDocument()
+  })
+
   it('changes the password without persisting a response token', async () => {
     setupMocks()
     renderWithQuery(<SettingsPage />)
@@ -922,6 +1023,42 @@ describe('SettingsPage', () => {
           url: 'http://slskd:5030',
           apiKey: 'slskd-key',
           lidarrTargetId: 11,
+        },
+      })
+    })
+  })
+
+  it('creates a Navidrome playlist target', async () => {
+    setupMocks()
+
+    renderWithQuery(<SettingsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Connections')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Targets'))
+    fireEvent.click(await screen.findByText('Add Target'))
+
+    fireEvent.change(screen.getByLabelText('Type'), {
+      target: { value: 'navidrome-playlist' },
+    })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Navidrome' } })
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'http://navidrome:4533' } })
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Target' }))
+
+    await waitFor(() => {
+      expect(mockCreateTargetApi).toHaveBeenCalledWith({
+        type: 'navidrome-playlist',
+        userId: 1,
+        name: 'Navidrome',
+        config: {
+          url: 'http://navidrome:4533',
+          username: 'admin',
+          password: 'secret',
         },
       })
     })
