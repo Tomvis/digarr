@@ -1100,7 +1100,7 @@ export const de = {
   'settings.subsonicDescription':
     'Selbst gehosteter Musikserver (Navidrome, Airsonic) für Bibliothekssynchronisierung und Entdeckung',
   'settings.musicRaterDescription':
-    'Kritikerbewertungen aus Ihrer music-rater-Instanz. Liefert von der Kritik gefeierte Alben, die Sie nicht besitzen, und beeinflusst die Bewertung von Album-Empfehlungen.',
+    'Kritikerbewertungen aus deiner music-rater-Instanz. Liefert von der Kritik gefeierte Alben, die du nicht besitzt, und beeinflusst die Bewertung von Album-Empfehlungen.',
   'settings.discogsDescription': 'Sammlung und Wunschliste von Discogs.',
   'settings.tidalConnectDescription': 'Nutze deine TIDAL-Lieblingskünstler als Entdeckungsquelle',
   'settings.tidalConnectHelp':
