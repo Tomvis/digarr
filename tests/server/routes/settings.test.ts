@@ -1638,6 +1638,50 @@ describe('per-user listening source connections', () => {
       }),
     )
   })
+
+  it('clears the music-rater connection with null and reflects it on a subsequent GET', async () => {
+    await clearAllSessions()
+    const sessionToken = 'patch-session-token-mr'
+    await createSession(43, sessionToken)
+
+    const updateSettings = vi.fn(async () => {})
+    const app = createApp(makeDeps({ updateSettings, getUserCount: vi.fn(async () => 1) }))
+
+    const patchRes = await app.request('/api/v1/settings', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionToken}`,
+      },
+      body: JSON.stringify({
+        musicRaterUrl: null,
+        musicRaterApiKey: null,
+      }),
+    })
+    expect(patchRes.status).toBe(200)
+    expect(updateSettings).not.toHaveBeenCalled()
+    expect(mockUpdateUserConnections).toHaveBeenCalledWith(
+      expect.anything(),
+      43,
+      expect.objectContaining({
+        musicRaterUrl: null,
+        musicRaterApiKey: null,
+      }),
+    )
+
+    mockGetUserConnections.mockResolvedValueOnce({
+      ...defaultUserConnections,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
+    })
+    const getRes = await app.request('/api/v1/settings', {
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    })
+    expect(getRes.status).toBe(200)
+    const body = await getRes.json()
+    expect(body.musicRaterUrl).toBe('')
+    expect(body.musicRaterApiKey).toBeNull()
+  })
 })
 
 describe('POST /api/v1/settings/test-webhook', () => {
