@@ -1,12 +1,26 @@
 /**
- * Name normalisation for matching records across sources.
+ * Name normalisation for cross-source joins (music-rater ↔ digarr).
  *
- * Extracted from two private copies -- `artistKey` in
- * `pipeline/genre-backfill.ts` and `normalizeTitle` in `albums/popular.ts` --
- * because a third consumer (the music-rater corpus join) has to apply the
- * SAME function to both sides of a comparison. Two sources' own
- * normalisations never have to agree if digarr normalises both itself, but
- * that only holds while there is exactly one digarr normaliser.
+ * The music-rater corpus join applies the SAME normalisation to both sides of
+ * the comparison. Two sources' own normalisations never have to agree if digarr
+ * normalises both itself, but that only holds while there is exactly one digarr
+ * normaliser per join.
+ *
+ * This module is NEW CODE for music-rater integration. DO NOT refactor existing
+ * call sites to use it:
+ *
+ * - `normalizeTitle` in `albums/popular.ts` is deliberately aggressive: it
+ *   replaces `&` with `and` and strips everything but [a-z0-9], folding
+ *   "Sgt. Pepper's" to "sgt pepper s". This is correct for its use case
+ *   (Spotify ↔ MusicBrainz title matching).
+ *
+ * - `artistKey` in `pipeline/genre-backfill.ts` is deliberately minimal:
+ *   just `name.trim().toLowerCase()`, with NO diacritic stripping. It keys a
+ *   persisted cache table. Changing the key formula silently orphans all rows
+ *   written under the old spelling — the code cannot tell "cache miss" from
+ *   "cache key changed underneath me". That is the same class of failure the
+ *   architecture notes warn about. Do not "tidy" this without understanding
+ *   the migration cost.
  *
  * NOT the same thing as `normalizeTitle` in `pipeline/resolve.ts`, which
  * strips a trailing parenthetical to match MusicBrainz release-group titles.
