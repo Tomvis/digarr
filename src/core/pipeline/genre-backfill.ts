@@ -1,6 +1,5 @@
 import PQueue from 'p-queue'
 import type { MBArtist, MBSearchResult } from '@/core/clients/musicbrainz'
-import { normalizeArtistName as artistKey } from '@/core/matching/normalize'
 import { isMaintenance } from '@/core/ops/maintenance'
 import type { TopArtistEntry } from '@/core/plugins/types'
 import { redactSecrets } from '@/core/providers/retry'
@@ -49,6 +48,10 @@ type MusicBrainzGenreClient = {
 
 type LastFmGenreClient = {
   getArtistGenres(artistName: string, mbid?: string): Promise<string[]>
+}
+
+function artistKey(name: string): string {
+  return name.trim().toLowerCase()
 }
 
 function sourceNameKey(source: string, name: string): string {
