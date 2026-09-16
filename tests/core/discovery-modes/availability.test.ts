@@ -17,6 +17,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
 
     expect(result.enabled).toBe(false)
@@ -34,6 +35,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     }
 
     for (const modeId of [
@@ -61,6 +63,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
 
     expect(result).toMatchObject({
@@ -82,6 +85,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
 
     expect(result.enabled).toBe(true)
@@ -99,6 +103,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: true,
       hasSubsonic: false,
+      hasMusicRater: false,
     }
 
     expect(evaluateDiscoveryModeAvailability('artist-relationships', snapshot)).toMatchObject({
@@ -124,6 +129,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     }
 
     for (const modeId of [
@@ -151,6 +157,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
 
     expect(result).toMatchObject({
@@ -171,6 +178,7 @@ describe('evaluateDiscoveryModeAvailability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
 
     expect(result).toMatchObject({
@@ -273,6 +281,33 @@ describe('tidal-favorite-artists availability', () => {
       fallbackUsed: false,
       providerPath: [],
       reason: 'Connect TIDAL to use this mode.',
+    })
+  })
+})
+
+describe('critically-acclaimed availability', () => {
+  it('is enabled as a fallback source when music-rater is connected', () => {
+    const result = evaluateDiscoveryModeAvailability('critically-acclaimed', {
+      ...EMPTY_DISCOVERY_SNAPSHOT,
+      hasMusicRater: true,
+    })
+    expect(result).toMatchObject({
+      enabled: true,
+      fallbackUsed: true,
+      providerPath: ['music-rater'],
+    })
+  })
+
+  it('is disabled with a connect reason when music-rater is not connected', () => {
+    const result = evaluateDiscoveryModeAvailability(
+      'critically-acclaimed',
+      EMPTY_DISCOVERY_SNAPSHOT,
+    )
+    expect(result).toMatchObject({
+      enabled: false,
+      fallbackUsed: false,
+      providerPath: [],
+      reason: 'Connect music-rater to use this mode.',
     })
   })
 })

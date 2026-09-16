@@ -65,6 +65,7 @@ describe('charts mode – availability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
     expect(result).toMatchObject({
       enabled: true,
@@ -84,6 +85,7 @@ describe('charts mode – availability', () => {
       hasTidal: false,
       hasLibrarySync: false,
       hasSubsonic: false,
+      hasMusicRater: false,
     })
     expect(result.enabled).toBe(false)
     expect(result.reason).toMatch(/last\.fm/i)

@@ -905,6 +905,9 @@ export const en = {
   'discoveryMode.tidal-favorite-artists.label': 'TIDAL Favorite Artists',
   'discoveryMode.tidal-favorite-artists.description':
     'Discover from the artists in your TIDAL collection',
+  'discoveryMode.critically-acclaimed.label': 'Critically Acclaimed',
+  'discoveryMode.critically-acclaimed.description':
+    'Highly rated albums from your review sources that you do not own yet',
   'discoveryMode.reason.connectTidal': 'Connect TIDAL to use this mode.',
   'discoveryMode.notImplementedYet': 'This mode is not implemented yet.',
   'discoveryMode.notShippedYet': 'This mode is not shipped yet.',
@@ -918,6 +921,7 @@ export const en = {
   'discoveryMode.reason.connectSpotify': 'Connect Spotify to use this mode.',
   'discoveryMode.reason.reconnectSpotifyFollow': 'Reconnect Spotify to grant follow access.',
   'discoveryMode.reason.connectSubsonic': 'Connect Subsonic to use this mode.',
+  'discoveryMode.reason.connectMusicRater': 'Connect music-rater to use this mode.',
   'discoveryMode.reason.releaseRadarFallback': 'Using fallback providers for release discovery.',
   'discoveryMode.reason.libraryRequired': 'Sync a library first to use this mode.',
   'discoveryMode.field.feed': 'Feed',
@@ -935,6 +939,9 @@ export const en = {
   'discoveryMode.field.releaseWindow': 'Release window',
   'discoveryMode.field.relationships': 'Relationships',
   'discoveryMode.field.maxArtistsPerRun': 'Artists checked per run',
+  'discoveryMode.field.minScoreRatio': 'Minimum score (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Released since',
+  'discoveryMode.field.maxAlbumsPerRun': 'Albums resolved per run',
   'discoveryMode.field.helpArtistSeed': 'Artist name or MBID to seed the radio',
   'discoveryMode.field.helpConnectedAccount': 'Leave blank to use your connected account',
   'discoveryMode.field.helpSimilarUsers': 'How many similar users to pull top artists from (1-10)',

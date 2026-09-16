@@ -892,6 +892,9 @@ export const ko = {
   'discoveryMode.tidal-favorite-artists.label': 'TIDAL 즐겨찾기 아티스트',
   'discoveryMode.tidal-favorite-artists.description':
     'TIDAL 컬렉션에 있는 아티스트를 기반으로 발견합니다',
+  'discoveryMode.critically-acclaimed.label': '비평가 극찬',
+  'discoveryMode.critically-acclaimed.description':
+    '리뷰 소스에서 높은 평가를 받았지만 아직 소장하지 않은 앨범',
   'discoveryMode.reason.connectTidal': '이 모드를 사용하려면 TIDAL을 연결하세요.',
   'discoveryMode.notImplementedYet': '이 모드는 아직 구현되지 않았습니다.',
   'discoveryMode.notShippedYet': '이 모드는 아직 출시되지 않았습니다.',
@@ -906,6 +909,7 @@ export const ko = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     '팔로우 접근 권한을 부여하려면 Spotify를 다시 연결하세요.',
   'discoveryMode.reason.connectSubsonic': '이 모드를 사용하려면 Subsonic을 연결하세요.',
+  'discoveryMode.reason.connectMusicRater': '이 모드를 사용하려면 music-rater를 연결하세요.',
   'discoveryMode.reason.releaseRadarFallback': '릴리스 탐색에는 대체 제공자가 사용됩니다.',
   'discoveryMode.reason.libraryRequired': '이 모드를 사용하려면 먼저 라이브러리를 동기화하세요.',
   'discoveryMode.field.feed': '피드',
@@ -923,6 +927,9 @@ export const ko = {
   'discoveryMode.field.releaseWindow': '발매 기간',
   'discoveryMode.field.relationships': '관계',
   'discoveryMode.field.maxArtistsPerRun': '실행당 확인 아티스트 수',
+  'discoveryMode.field.minScoreRatio': '최소 점수 (0-1)',
+  'discoveryMode.field.minReleaseYear': '이 연도 이후 발매',
+  'discoveryMode.field.maxAlbumsPerRun': '실행당 해결할 앨범 수',
   'discoveryMode.field.helpArtistSeed': '라디오 시드에 사용할 아티스트 이름 또는 MBID',
   'discoveryMode.field.helpConnectedAccount': '연결된 계정을 사용하려면 비워 두세요',
   'discoveryMode.field.helpSimilarUsers': '인기 아티스트를 가져올 유사 사용자의 수 (1-10)',

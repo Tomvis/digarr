@@ -912,6 +912,9 @@ export const ru = {
   'discoveryMode.tidal-favorite-artists.label': 'Любимые исполнители TIDAL',
   'discoveryMode.tidal-favorite-artists.description':
     'Открывайте новое на основе исполнителей из вашей коллекции TIDAL',
+  'discoveryMode.critically-acclaimed.label': 'Признанные критиками',
+  'discoveryMode.critically-acclaimed.description':
+    'Высоко оценённые альбомы из ваших источников рецензий, которых у вас ещё нет',
   'discoveryMode.reason.connectTidal': 'Подключите TIDAL, чтобы использовать этот режим.',
   'discoveryMode.notImplementedYet': 'Этот режим ещё не реализован.',
   'discoveryMode.notShippedYet': 'Этот режим ещё недоступен.',
@@ -927,6 +930,8 @@ export const ru = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     'Переподключите Spotify, чтобы предоставить доступ к подпискам.',
   'discoveryMode.reason.connectSubsonic': 'Подключите Subsonic, чтобы использовать этот режим.',
+  'discoveryMode.reason.connectMusicRater':
+    'Подключите music-rater, чтобы использовать этот режим.',
   'discoveryMode.reason.releaseRadarFallback':
     'Для поиска релизов используются резервные провайдеры.',
   'discoveryMode.reason.libraryRequired':
@@ -946,6 +951,9 @@ export const ru = {
   'discoveryMode.field.releaseWindow': 'Окно релизов',
   'discoveryMode.field.relationships': 'Связи',
   'discoveryMode.field.maxArtistsPerRun': 'Проверяемых исполнителей за запуск',
+  'discoveryMode.field.minScoreRatio': 'Минимальная оценка (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Выпущено с',
+  'discoveryMode.field.maxAlbumsPerRun': 'Альбомов разрешено за запуск',
   'discoveryMode.field.helpArtistSeed': 'Имя исполнителя или MBID для запуска радио',
   'discoveryMode.field.helpConnectedAccount':
     'Оставьте пустым, чтобы использовать подключённую учётную запись',

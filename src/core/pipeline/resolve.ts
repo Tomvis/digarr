@@ -256,7 +256,7 @@ function normalizeTitle(title: string): string {
     .toLowerCase()
 }
 
-async function matchSuggestedAlbum(
+export async function matchSuggestedAlbum(
   suggestedAlbum: string,
   artistMbid: string,
   mb: MusicBrainzClient,

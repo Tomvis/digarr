@@ -906,6 +906,9 @@ export const uk = {
   'discoveryMode.tidal-favorite-artists.label': 'Улюблені виконавці TIDAL',
   'discoveryMode.tidal-favorite-artists.description':
     'Відкривайте нове на основі виконавців із вашої колекції TIDAL',
+  'discoveryMode.critically-acclaimed.label': 'Визнані критиками',
+  'discoveryMode.critically-acclaimed.description':
+    'Високо оцінені альбоми з ваших джерел рецензій, яких у вас ще немає',
   'discoveryMode.reason.connectTidal': 'Підключіть TIDAL, щоб використовувати цей режим.',
   'discoveryMode.notImplementedYet': 'Цей режим ще не реалізовано.',
   'discoveryMode.notShippedYet': 'Цей режим ще не доступний.',
@@ -921,6 +924,8 @@ export const uk = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     'Повторно підключіть Spotify, щоб надати доступ до підписок.',
   'discoveryMode.reason.connectSubsonic': 'Підключіть Subsonic, щоб використовувати цей режим.',
+  'discoveryMode.reason.connectMusicRater':
+    'Підключіть music-rater, щоб використовувати цей режим.',
   'discoveryMode.reason.releaseRadarFallback':
     'Для пошуку релізів використовуються резервні постачальники.',
   'discoveryMode.reason.libraryRequired':
@@ -940,6 +945,9 @@ export const uk = {
   'discoveryMode.field.releaseWindow': 'Вікно релізів',
   'discoveryMode.field.relationships': "Зв'язки",
   'discoveryMode.field.maxArtistsPerRun': 'Перевірених виконавців за запуск',
+  'discoveryMode.field.minScoreRatio': 'Мінімальна оцінка (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Випущено з',
+  'discoveryMode.field.maxAlbumsPerRun': 'Альбомів вирішено за запуск',
   'discoveryMode.field.helpArtistSeed': "Ім'я виконавця або MBID для запуску радіо",
   'discoveryMode.field.helpConnectedAccount':
     'Залиште порожнім, щоб використати підключений обліковий запис',

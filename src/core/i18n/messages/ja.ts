@@ -903,6 +903,9 @@ export const ja = {
   'discoveryMode.tidal-favorite-artists.label': 'TIDAL のお気に入りアーティスト',
   'discoveryMode.tidal-favorite-artists.description':
     'TIDAL のコレクションにいるアーティストから発見します',
+  'discoveryMode.critically-acclaimed.label': '批評家絶賛',
+  'discoveryMode.critically-acclaimed.description':
+    '批評ソースで高く評価されている、まだ所有していないアルバム',
   'discoveryMode.reason.connectTidal': 'このモードを使うには TIDAL を接続してください。',
   'discoveryMode.notImplementedYet': 'このモードはまだ実装されていません。',
   'discoveryMode.notShippedYet': 'このモードはまだ利用できません。',
@@ -918,6 +921,7 @@ export const ja = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     'フォローへのアクセスを許可するには Spotify を再接続してください。',
   'discoveryMode.reason.connectSubsonic': 'このモードを使うには Subsonic を接続してください。',
+  'discoveryMode.reason.connectMusicRater': 'このモードを使うには music-rater を接続してください。',
   'discoveryMode.reason.releaseRadarFallback':
     'リリース探索にはフォールバックプロバイダーが使われます。',
   'discoveryMode.reason.libraryRequired':
@@ -937,6 +941,9 @@ export const ja = {
   'discoveryMode.field.releaseWindow': 'リリース期間',
   'discoveryMode.field.relationships': '関係',
   'discoveryMode.field.maxArtistsPerRun': '実行ごとに確認するアーティスト数',
+  'discoveryMode.field.minScoreRatio': '最低スコア (0-1)',
+  'discoveryMode.field.minReleaseYear': 'この年以降にリリース',
+  'discoveryMode.field.maxAlbumsPerRun': '実行ごとに解決するアルバム数',
   'discoveryMode.field.helpArtistSeed': 'ラジオの起点となるアーティスト名または MBID',
   'discoveryMode.field.helpConnectedAccount': '接続済みのアカウントを使う場合は空欄にします',
   'discoveryMode.field.helpSimilarUsers': '上位アーティストを取得する類似ユーザーの人数 (1-10)',

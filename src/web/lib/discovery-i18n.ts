@@ -60,6 +60,7 @@ const REASON_KEY_ALIASES: Record<string, MessageKey> = {
   'This mode is not implemented yet.': 'discoveryMode.notImplementedYet',
   'This mode is not shipped yet.': 'discoveryMode.notShippedYet',
   'Sync a library first to use this mode.': 'discoveryMode.reason.libraryRequired',
+  'Connect music-rater to use this mode.': 'discoveryMode.reason.connectMusicRater',
 }
 
 function normalizeModeId(modeId: string): string {

@@ -907,6 +907,9 @@ export const nl = {
   'discoveryMode.tidal-favorite-artists.label': 'TIDAL Favoriete Artiesten',
   'discoveryMode.tidal-favorite-artists.description':
     'Ontdek op basis van de artiesten in je TIDAL-collectie',
+  'discoveryMode.critically-acclaimed.label': 'Door critici geprezen',
+  'discoveryMode.critically-acclaimed.description':
+    'Hoog gewaardeerde albums uit je recensiebronnen die je nog niet bezit',
   'discoveryMode.reason.connectTidal': 'Verbind TIDAL om deze modus te gebruiken.',
   'discoveryMode.notImplementedYet': 'Deze modus is nog niet geïmplementeerd.',
   'discoveryMode.notShippedYet': 'Deze modus is nog niet beschikbaar.',
@@ -921,6 +924,7 @@ export const nl = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     'Verbind Spotify opnieuw om toegang tot gevolgde artiesten te verlenen.',
   'discoveryMode.reason.connectSubsonic': 'Verbind Subsonic om deze modus te gebruiken.',
+  'discoveryMode.reason.connectMusicRater': 'Verbind music-rater om deze modus te gebruiken.',
   'discoveryMode.reason.releaseRadarFallback':
     'Fallbackproviders worden gebruikt voor release-ontdekking.',
   'discoveryMode.reason.libraryRequired':
@@ -940,6 +944,9 @@ export const nl = {
   'discoveryMode.field.releaseWindow': 'Releasevenster',
   'discoveryMode.field.relationships': 'Relaties',
   'discoveryMode.field.maxArtistsPerRun': 'Gecontroleerde artiesten per run',
+  'discoveryMode.field.minScoreRatio': 'Minimale score (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Uitgebracht sinds',
+  'discoveryMode.field.maxAlbumsPerRun': 'Opgeloste albums per run',
   'discoveryMode.field.helpArtistSeed': 'Artiestennaam of MBID voor de radio',
   'discoveryMode.field.helpConnectedAccount': 'Laat leeg om je gekoppelde account te gebruiken',
   'discoveryMode.field.helpSimilarUsers':

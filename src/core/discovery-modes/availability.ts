@@ -8,6 +8,7 @@ export type DiscoveryConnectionSnapshot = {
   hasTidal: boolean
   hasLibrarySync: boolean
   hasSubsonic: boolean
+  hasMusicRater: boolean
 }
 
 /** All-false connection snapshot: the default when no provider-state resolver is wired. */
@@ -21,6 +22,7 @@ export const EMPTY_DISCOVERY_SNAPSHOT: DiscoveryConnectionSnapshot = {
   hasTidal: false,
   hasLibrarySync: false,
   hasSubsonic: false,
+  hasMusicRater: false,
 }
 
 export type DiscoveryAvailabilityResult = {
@@ -101,6 +103,12 @@ const SINGLE_FLAG_MODES: Record<string, SingleFlagRule> = {
     providerPath: ['musicbrainz'],
     fallbackUsed: false,
     reason: 'Sync a library first to use this mode.',
+  },
+  'critically-acclaimed': {
+    flag: 'hasMusicRater',
+    providerPath: ['music-rater'],
+    fallbackUsed: true,
+    reason: 'Connect music-rater to use this mode.',
   },
 }
 

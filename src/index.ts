@@ -289,6 +289,7 @@ async function getDiscoveryConnectionSnapshot(userId: number) {
         userConnections.subsonicUsername &&
         userConnections.subsonicPassword,
     ),
+    hasMusicRater: Boolean(userConnections?.musicRaterUrl && userConnections.musicRaterApiKey),
   }
 }
 

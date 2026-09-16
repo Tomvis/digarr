@@ -911,6 +911,9 @@ export const ro = {
   'discoveryMode.tidal-favorite-artists.label': 'Artiști favoriți TIDAL',
   'discoveryMode.tidal-favorite-artists.description':
     'Descoperă pornind de la artiștii din colecția ta TIDAL',
+  'discoveryMode.critically-acclaimed.label': 'Aclamate de critici',
+  'discoveryMode.critically-acclaimed.description':
+    'Albume foarte apreciate din sursele tale de recenzii pe care nu le deții încă',
   'discoveryMode.reason.connectTidal': 'Conectează TIDAL pentru a folosi acest mod.',
   'discoveryMode.notImplementedYet': 'Acest mod nu este încă implementat.',
   'discoveryMode.notShippedYet': 'Acest mod nu este încă disponibil.',
@@ -925,6 +928,7 @@ export const ro = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     'Reconectează Spotify pentru a acorda acces la cei urmăriți.',
   'discoveryMode.reason.connectSubsonic': 'Conectează Subsonic pentru a folosi acest mod.',
+  'discoveryMode.reason.connectMusicRater': 'Conectează music-rater pentru a folosi acest mod.',
   'discoveryMode.reason.releaseRadarFallback':
     'Se folosesc furnizori de rezervă pentru descoperirea lansărilor.',
   'discoveryMode.reason.libraryRequired':
@@ -944,6 +948,9 @@ export const ro = {
   'discoveryMode.field.releaseWindow': 'Fereastră de lansare',
   'discoveryMode.field.relationships': 'Relații',
   'discoveryMode.field.maxArtistsPerRun': 'Artiști verificați pe rulare',
+  'discoveryMode.field.minScoreRatio': 'Scor minim (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Lansat din',
+  'discoveryMode.field.maxAlbumsPerRun': 'Albume rezolvate pe rulare',
   'discoveryMode.field.helpArtistSeed': 'Numele artistului sau MBID pentru a porni radio-ul',
   'discoveryMode.field.helpConnectedAccount': 'Lasă necompletat pentru a folosi contul conectat',
   'discoveryMode.field.helpSimilarUsers':

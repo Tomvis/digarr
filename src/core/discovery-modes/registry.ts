@@ -1,5 +1,6 @@
 import { createArtistRelationshipsMode } from './modes/artist-relationships'
 import { createChartsMode } from './modes/charts'
+import { createCriticallyAcclaimedMode } from './modes/critically-acclaimed'
 import { createDeezerFlowMode } from './modes/deezer-flow'
 import { createGapFillMode } from './modes/gap-fill'
 import { createLabelsMode } from './modes/labels'
@@ -54,6 +55,7 @@ export function registerDefaultDiscoveryModes(
   registry.register(createSpotifyFollowedArtistsMode())
   registry.register(createSubsonicStarredMode())
   registry.register(createTidalFavoriteArtistsMode())
+  registry.register(createCriticallyAcclaimedMode())
   return registry
 }
 

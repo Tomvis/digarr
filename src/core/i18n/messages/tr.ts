@@ -899,6 +899,9 @@ export const tr = {
   'discoveryMode.tidal-favorite-artists.label': 'TIDAL Favori Sanatçılar',
   'discoveryMode.tidal-favorite-artists.description':
     'TIDAL koleksiyonunuzdaki sanatçılardan keşfedin',
+  'discoveryMode.critically-acclaimed.label': 'Eleştirmen Beğenisi',
+  'discoveryMode.critically-acclaimed.description':
+    'Henüz sahip olmadığın, inceleme kaynaklarındaki yüksek puanlı albümler',
   'discoveryMode.reason.connectTidal': 'Bu modu kullanmak için TIDAL bağlayın.',
   'discoveryMode.notImplementedYet': 'Bu mod henüz uygulanmadı.',
   'discoveryMode.notShippedYet': 'Bu mod henüz kullanılamıyor.',
@@ -913,6 +916,7 @@ export const tr = {
   'discoveryMode.reason.reconnectSpotifyFollow':
     "Takip erişimi vermek için Spotify'ı yeniden bağlayın.",
   'discoveryMode.reason.connectSubsonic': "Bu modu kullanmak için Subsonic'i bağlayın.",
+  'discoveryMode.reason.connectMusicRater': "Bu modu kullanmak için music-rater'i bağlayın.",
   'discoveryMode.reason.releaseRadarFallback': 'Yayın keşfi için yedek sağlayıcılar kullanılıyor.',
   'discoveryMode.reason.libraryRequired': 'Bu modu kullanmak için önce bir kütüphaneyi eşitleyin.',
   'discoveryMode.field.feed': 'Besleme kaynağı',
@@ -930,6 +934,9 @@ export const tr = {
   'discoveryMode.field.releaseWindow': 'Yayın penceresi',
   'discoveryMode.field.relationships': 'İlişkiler',
   'discoveryMode.field.maxArtistsPerRun': 'Çalışma başına denetlenen sanatçılar',
+  'discoveryMode.field.minScoreRatio': 'Minimum puan (0-1)',
+  'discoveryMode.field.minReleaseYear': 'Şu yıldan itibaren yayımlanan',
+  'discoveryMode.field.maxAlbumsPerRun': 'Çalışma başına çözümlenen albümler',
   'discoveryMode.field.helpArtistSeed': 'Radyoyu beslemek için sanatçı adı veya MBID',
   'discoveryMode.field.helpConnectedAccount': 'Bağlı hesabınızı kullanmak için boş bırakın',
   'discoveryMode.field.helpSimilarUsers':
