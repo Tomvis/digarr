@@ -6,6 +6,7 @@ import {
   type MBRelation,
   type MBSearchResult,
   parseYear,
+  resetMusicBrainzRateLimitForTests,
 } from '@/core/clients/musicbrainz'
 import { VERSION } from '@/version'
 
@@ -91,6 +92,8 @@ const MOCK_SEARCH_RESPONSE: MBSearchResult = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The rate-limit cooldown is module state shared by every client.
+  resetMusicBrainzRateLimitForTests()
 })
 
 describe('parseYear', () => {
@@ -597,11 +600,15 @@ describe('createMusicBrainzClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1)
     })
 
-    it('honors Retry-After header within the cap', async () => {
-      mockFetch.mockResolvedValueOnce(
-        new Response('', { status: 429, headers: { 'retry-after': '0' } }),
-      )
-      mockFetch.mockResolvedValueOnce(makeJsonResponse({ artists: [] }))
+    it('treats Retry-After as a floor, never a licence to retry sooner', async () => {
+      const attemptsAt: number[] = []
+      mockFetch.mockImplementation(async () => {
+        attemptsAt.push(Date.now())
+        if (attemptsAt.length === 1) {
+          return new Response('', { status: 429, headers: { 'retry-after': '0' } })
+        }
+        return makeJsonResponse({ artists: [] })
+      })
 
       const client = createMusicBrainzClient()
       const promise = client.searchArtist('rate-limited')
@@ -610,6 +617,9 @@ describe('createMusicBrainzClient', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(2)
       expect(result).toEqual({ artists: [] })
+      // `Retry-After: 0` (what MB's gateway sends on a sub-second window) must
+      // not collapse the backoff into an instant retry.
+      expect((attemptsAt[1] ?? 0) - (attemptsAt[0] ?? 0)).toBeGreaterThanOrEqual(1000)
     })
   })
 })

@@ -93,22 +93,62 @@ const STREAMING_PATTERNS: Array<[RegExp, keyof StreamingUrls]> = [
 const STREAMING_TYPES = new Set(['streaming music', 'free streaming'])
 
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504])
+// Statuses that mean "you are over the rate limit", as opposed to "upstream
+// hiccupped". MusicBrainz answers a throttled request with 503, not 429.
+const RATE_LIMIT_STATUSES = new Set([429, 503])
 const MAX_RETRIES = 3
 const BASE_BACKOFF_MS = 1000
+// MusicBrainz publishes a ceiling of 1 request/second. Nothing may retry
+// sooner than that, whatever Retry-After claims.
+const MIN_RETRY_DELAY_MS = 1000
+const MAX_BACKOFF_MS = 30_000
 const MAX_RETRY_AFTER_MS = 30_000
+// Jitter as a fraction of the delay, so parallel retries desynchronise at every
+// backoff step rather than only at the first (a flat ±250ms is noise next to a
+// 4s wait).
+const JITTER_RATIO = 0.25
 
-function parseRetryAfterMs(header: string | null): number | null {
+/**
+ * Parse a Retry-After header into milliseconds, or null when it is absent or
+ * unusable.
+ *
+ * The value is deliberately NOT trusted as the delay: MusicBrainz's gateway
+ * floors its rate-limit window to whole seconds, so a window resetting in under
+ * a second is reported as `Retry-After: 0`. Callers must treat the result as a
+ * lower bound combined with their own backoff (see backoffDelayMs).
+ */
+export function parseRetryAfterMs(header: string | null): number | null {
   if (!header) return null
-  const seconds = Number(header)
+  const trimmed = header.trim()
+  if (trimmed === '') return null
+  const seconds = Number(trimmed)
   if (Number.isFinite(seconds) && seconds >= 0) {
     return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
   }
   // HTTP-date form
-  const when = Date.parse(header)
+  const when = Date.parse(trimmed)
   if (Number.isFinite(when)) {
     return Math.min(Math.max(when - Date.now(), 0), MAX_RETRY_AFTER_MS)
   }
   return null
+}
+
+/**
+ * Delay before retry `attempt` (0-based): exponential from BASE_BACKOFF_MS,
+ * capped, never below MusicBrainz's 1 req/s floor, with proportional jitter.
+ *
+ * `retryAfterMs` raises the floor but can never lower it. Using it directly
+ * (`retryAfter ?? backoff`) is what produced "retrying in 0ms" in production:
+ * `??` only falls through on null/undefined, so a `Retry-After: 0` became a
+ * zero-delay retry that re-tripped the limiter immediately.
+ */
+export function backoffDelayMs(attempt: number, retryAfterMs: number | null = null): number {
+  const exponential = BASE_BACKOFF_MS * 2 ** attempt
+  const floor = Math.max(exponential, retryAfterMs ?? 0, MIN_RETRY_DELAY_MS)
+  const capped = Math.min(floor, MAX_BACKOFF_MS)
+  // Whole milliseconds only: setTimeout truncates fractional delays, so a
+  // fractional deadline can never be reached and a wait loop would spin.
+  return Math.round(capped + capped * JITTER_RATIO * Math.random())
 }
 
 function sleep(ms: number): Promise<void> {
@@ -119,6 +159,33 @@ function sleep(ms: number): Promise<void> {
 // subsystem (pipeline, library sync, discovery modes, routes) funnels through
 // this one queue so concurrent runs can't sum past the ceiling and trigger 503s.
 const sharedQueue = new PQueue({ concurrency: 1, interval: 1000, intervalCap: 1 })
+
+// Shared rate-limit cooldown. A 429/503 is MusicBrainz telling the whole client
+// it is over the limit, not just the one request that happened to be in flight.
+// Every request issued while a cooldown is active waits it out before it may
+// enter the rate gate, so a storm cannot be kept alive by sibling calls (e.g.
+// the library reconciler fans getReleaseGroups out over every MB candidate).
+// It is a plain timestamp rather than queue.pause() so it is self-healing: a
+// lost timer cannot wedge MB traffic permanently.
+let cooldownUntil = 0
+
+function armCooldown(untilMs: number): void {
+  cooldownUntil = Math.max(cooldownUntil, untilMs)
+}
+
+async function waitOutCooldown(): Promise<void> {
+  let remaining = cooldownUntil - Date.now()
+  while (remaining > 0) {
+    await sleep(Math.ceil(Math.min(remaining, MAX_BACKOFF_MS)))
+    remaining = cooldownUntil - Date.now()
+  }
+}
+
+// Test-only reset; the cooldown is module state shared by every client, so it
+// would otherwise leak across tests (and across a rewound fake clock).
+export function resetMusicBrainzRateLimitForTests(): void {
+  cooldownUntil = 0
+}
 
 export function createMusicBrainzClient() {
   const queue = sharedQueue
@@ -144,6 +211,9 @@ export function createMusicBrainzClient() {
     let lastErr: unknown
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
+        // Observed before entering the gate, so the cooldown is spent outside
+        // the single concurrency slot (see the comment above).
+        await waitOutCooldown()
         const res = (await queue.add(() => fetchOnce(path))) as Response
 
         if (res.ok) {
@@ -155,13 +225,21 @@ export function createMusicBrainzClient() {
           throw new Error(`MusicBrainz HTTP ${res.status} for ${path}`)
         }
 
-        // Transient HTTP status: prefer server-provided Retry-After, else
-        // exponential backoff with jitter. Final failed attempt throws out.
+        const retryAfter = parseRetryAfterMs(res.headers.get('retry-after'))
+        const backoff = backoffDelayMs(attempt, retryAfter)
+
+        // Throttled: hold every other MB caller back too, even on the final
+        // attempt -- the limiter does not care that we have given up on this
+        // particular path.
+        if (RATE_LIMIT_STATUSES.has(res.status)) {
+          armCooldown(Date.now() + backoff)
+        }
+
+        // Final failed attempt throws out.
         if (attempt === MAX_RETRIES) {
           throw new Error(`MusicBrainz HTTP ${res.status} for ${path}`)
         }
-        const retryAfter = parseRetryAfterMs(res.headers.get('retry-after'))
-        const backoff = retryAfter ?? BASE_BACKOFF_MS * 2 ** attempt + Math.random() * 250
+
         console.warn(
           `[musicbrainz] HTTP ${res.status} for ${path} (attempt ${attempt + 1}/${MAX_RETRIES + 1}); retrying in ${Math.round(backoff)}ms`,
         )
@@ -177,7 +255,7 @@ export function createMusicBrainzClient() {
         if (!retryable || attempt === MAX_RETRIES) {
           throw err
         }
-        const backoff = BASE_BACKOFF_MS * 2 ** attempt + Math.random() * 250
+        const backoff = backoffDelayMs(attempt)
         console.warn(
           `[musicbrainz] ${err instanceof Error ? err.message : String(err)} for ${path} (attempt ${attempt + 1}/${MAX_RETRIES + 1}); retrying in ${Math.round(backoff)}ms`,
         )
