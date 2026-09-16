@@ -70,6 +70,7 @@ describe('createCriticallyAcclaimedMode', () => {
   })
 
   it('one album failing does not abort the rest of the slice', async () => {
+    const markResolved = vi.fn().mockResolvedValue(undefined)
     const mode = createCriticallyAcclaimedMode({
       getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
       resolveArtistMbid: vi
@@ -77,13 +78,24 @@ describe('createCriticallyAcclaimedMode', () => {
         .mockRejectedValueOnce(new Error('MB down'))
         .mockResolvedValueOnce('mbid-b'),
       matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-2', title: 'T' })),
-      markResolved: vi.fn().mockResolvedValue(undefined),
+      markResolved,
     })
 
     const { candidates } = await mode.executor(request())
 
     expect(candidates).toHaveLength(1)
     expect(candidates[0]).toMatchObject({ artistMbid: 'mbid-b' })
+
+    // The thrown MusicBrainz error is a transient failure, not an unmatchable
+    // album: it must NOT be stamped, or a MusicBrainz outage would
+    // permanently burn every album it touched out of the cursor with null
+    // mbids, never to be retried. Only the album that actually resolved
+    // (id 11) gets marked; the one that threw (id 10) does not appear at all.
+    expect(markResolved).toHaveBeenCalledTimes(1)
+    expect(markResolved).toHaveBeenCalledWith(11, {
+      artistMbid: 'mbid-b',
+      releaseGroupMbid: 'rg-2',
+    })
   })
 
   it('honours maxAlbumsPerRun from the request settings', async () => {
