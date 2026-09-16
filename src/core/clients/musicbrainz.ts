@@ -1,4 +1,5 @@
 import PQueue from 'p-queue'
+import { envConfig } from '@/config/env'
 import { VERSION } from '@/version'
 
 const BASE_URL = 'https://musicbrainz.org/ws/2'
@@ -155,10 +156,227 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// Single shared rate gate. MusicBrainz enforces ~1 req/s per consumer; every
-// subsystem (pipeline, library sync, discovery modes, routes) funnels through
-// this one queue so concurrent runs can't sum past the ceiling and trigger 503s.
-const sharedQueue = new PQueue({ concurrency: 1, interval: 1000, intervalCap: 1 })
+// ---------------------------------------------------------------------------
+// Rate governance
+//
+// MusicBrainz rate-limits per source IP, so the budget is a HOUSEHOLD budget,
+// not digarr's: Lidarr, beets and Music Assistant sit behind the same WAN
+// address. The old gate (`interval: 1000, intervalCap: 1`) provisioned digarr
+// at 3,600 req/hr -- several times the whole allowance -- so digarr always won
+// the race, drove x-ratelimit-remaining to the floor and left the *arr stack
+// getting 503s.
+//
+// Two mechanisms, in order of importance:
+//
+//  1. ADAPTIVE. MusicBrainz reports its live budget on every response
+//     (x-ratelimit-limit / -remaining / -reset). Above a reserve we run at the
+//     configured pace; inside the reserve we ramp the pace down in proportion
+//     to how deep we are; below a hard floor we hold until the window resets.
+//     This is self-correcting -- digarr gives way while the *arr stack is busy
+//     and takes the slack when the household is idle -- without hard-coding
+//     anyone's share.
+//
+//  2. A CONSERVATIVE FIXED CEILING underneath it, which is what applies when
+//     the headers are missing or unusable.
+//
+// All of this is in-memory and deliberately so: digarr is a single Node
+// process, and a cross-process token bucket would be a lot of machinery for one
+// container. What a restart loses is the observed budget, the consecutive
+// rate-limit count and an armed circuit breaker -- i.e. a restarted digarr
+// behaves as though MusicBrainz had never answered: it runs at the fixed
+// conservative pace and re-learns the budget from the first response. A
+// restart therefore CLEARS an armed breaker. That is accepted: the fixed
+// ceiling still applies, and the breaker re-arms within `breakerThreshold`
+// responses if MusicBrainz is still refusing.
+// ---------------------------------------------------------------------------
+
+/** 360 req/hr = one request every 10s, ~30% of a 1,200/hr household budget. */
+const DEFAULT_MAX_RPH = 360
+const DEFAULT_RESERVE_RATIO = 0.4
+const DEFAULT_FLOOR_RATIO = 0.1
+const DEFAULT_BREAKER_THRESHOLD = 5
+const DEFAULT_BREAKER_COOLDOWN_MS = 10 * 60_000
+/** Deepest low-tier slowdown, as a multiple of the base interval. */
+const LOW_TIER_MAX_MULTIPLIER = 4
+/** No single request is ever held longer than this, whatever a header claims. */
+const MAX_ADAPTIVE_HOLD_MS = 60_000
+/** An observation older than this says nothing about the budget now. */
+const SNAPSHOT_STALE_MS = 5 * 60_000
+
+export type MbRateConfig = {
+  maxRph: number
+  baseIntervalMs: number
+  reserveRatio: number
+  floorRatio: number
+  breakerThreshold: number
+  breakerCooldownMs: number
+}
+
+function positiveOr(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function ratioOr(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 && value <= 1 ? value : fallback
+}
+
+function resolveMbRateConfig(): MbRateConfig {
+  const maxRph = positiveOr(envConfig.musicbrainzMaxRph, DEFAULT_MAX_RPH)
+  const derivedIntervalMs = Math.round(3_600_000 / maxRph)
+  const reserveRatio = ratioOr(envConfig.musicbrainzReserveRatio, DEFAULT_RESERVE_RATIO)
+  return {
+    maxRph,
+    // An explicit interval wins over the rate; it is the more direct knob and
+    // is what the timing tests pin.
+    baseIntervalMs: positiveOr(envConfig.musicbrainzMinIntervalMs, derivedIntervalMs),
+    reserveRatio,
+    // The floor can never sit above the reserve, or the low tier vanishes.
+    floorRatio: Math.min(
+      ratioOr(envConfig.musicbrainzFloorRatio, DEFAULT_FLOOR_RATIO),
+      reserveRatio,
+    ),
+    breakerThreshold: positiveOr(envConfig.musicbrainzBreakerThreshold, DEFAULT_BREAKER_THRESHOLD),
+    breakerCooldownMs: positiveOr(
+      envConfig.musicbrainzBreakerCooldownMs,
+      DEFAULT_BREAKER_COOLDOWN_MS,
+    ),
+  }
+}
+
+export const mbRateConfig: MbRateConfig = resolveMbRateConfig()
+
+export type RateLimitSnapshot = {
+  limit: number
+  remaining: number
+  /** Epoch ms at which the window resets; equal to observedAtMs when unknown. */
+  resetAtMs: number
+  zone: string | null
+  observedAtMs: number
+}
+
+function parseResetAtMs(raw: string | null, nowMs: number): number {
+  if (raw === null || raw.trim() === '') return nowMs
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) return nowMs
+  // MusicBrainz sends an epoch in seconds. Some gateways send a delta instead;
+  // a value this small cannot be an epoch, so treat it as seconds-from-now.
+  return value < 1_000_000 ? nowMs + value * 1000 : value * 1000
+}
+
+/**
+ * Read MusicBrainz's rate-limit headers off a response.
+ *
+ * MusicBrainz answers with whichever bucket is closest to exhaustion, so
+ * `limit` is NOT a constant: a per-IP zone (limit ~400 over a few seconds) and
+ * a shared `x-ratelimit-zone: global` bucket (limit ~15) both appear in
+ * practice, and the global zone's `remaining` moves with worldwide traffic
+ * rather than ours. That is fine, and in fact the point -- the binding
+ * constraint is exactly what we should be pacing against.
+ *
+ * Returns null when the headers are absent or unusable, so "no budget known"
+ * is never confused with "budget exhausted".
+ */
+export function parseRateLimitHeaders(headers: Headers, nowMs: number): RateLimitSnapshot | null {
+  const rawLimit = headers.get('x-ratelimit-limit')
+  const rawRemaining = headers.get('x-ratelimit-remaining')
+  if (rawLimit === null || rawRemaining === null) return null
+
+  const limit = Number(rawLimit)
+  const remaining = Number(rawRemaining)
+  if (!Number.isFinite(limit) || limit <= 0) return null
+  if (!Number.isFinite(remaining)) return null
+
+  return {
+    limit,
+    // A negative remaining means we are already over; it is not a credit.
+    remaining: Math.max(0, remaining),
+    resetAtMs: parseResetAtMs(headers.get('x-ratelimit-reset'), nowMs),
+    zone: headers.get('x-ratelimit-zone'),
+    observedAtMs: nowMs,
+  }
+}
+
+export type RateLimitTier = 'unknown' | 'normal' | 'low' | 'floor'
+
+export type ThrottleDecision = {
+  tier: RateLimitTier
+  /** Extra milliseconds to hold inside the rate gate, on top of the base interval. */
+  holdMs: number
+  /** Human-readable, used for logs and for the schedulers' skip message. */
+  reason: string
+}
+
+/**
+ * Decide how hard to yield, given the last budget MusicBrainz reported.
+ *
+ * Pure, so the tiers can be asserted in milliseconds rather than inferred from
+ * call counts.
+ */
+export function throttleDecision(
+  snapshot: RateLimitSnapshot | null,
+  nowMs: number,
+  config: MbRateConfig = mbRateConfig,
+): ThrottleDecision {
+  const maxLowHoldMs = Math.round((LOW_TIER_MAX_MULTIPLIER - 1) * config.baseIntervalMs)
+
+  if (!snapshot) {
+    return { tier: 'unknown', holdMs: 0, reason: 'no rate-limit headers seen yet' }
+  }
+  if (nowMs - snapshot.observedAtMs > SNAPSHOT_STALE_MS) {
+    // Never let one old floor reading pin traffic to the floor forever.
+    return { tier: 'unknown', holdMs: 0, reason: 'last rate-limit observation is stale' }
+  }
+
+  const fraction = snapshot.remaining / snapshot.limit
+  const budgetText = `${snapshot.remaining}/${snapshot.limit}`
+  const pct = Math.round(fraction * 100)
+
+  if (fraction >= config.reserveRatio) {
+    return { tier: 'normal', holdMs: 0, reason: `budget healthy (${budgetText}, ${pct}%)` }
+  }
+
+  if (fraction >= config.floorRatio) {
+    // Ramp rather than step, so the slowdown is proportional to the pressure
+    // and there is no cliff at the reserve boundary.
+    const span = config.reserveRatio - config.floorRatio
+    const depth = span > 0 ? (config.reserveRatio - fraction) / span : 1
+    const holdMs = Math.round(Math.min(Math.max(depth, 0), 1) * maxLowHoldMs)
+    return { tier: 'low', holdMs, reason: `budget low (${budgetText}, ${pct}%)` }
+  }
+
+  // Below the hard floor: hold until MusicBrainz's window resets, but never
+  // less than the deepest low-tier hold (the reset is often only a second or
+  // two away, and yielding for 1s while sitting at 2% is not yielding at all),
+  // and never more than MAX_ADAPTIVE_HOLD_MS so a bogus header cannot wedge
+  // the client.
+  const untilResetMs = snapshot.resetAtMs - nowMs
+  const holdMs = Math.min(Math.max(untilResetMs, maxLowHoldMs), MAX_ADAPTIVE_HOLD_MS)
+  const resetsInSec = Math.max(0, Math.ceil(untilResetMs / 1000))
+  return {
+    tier: 'floor',
+    holdMs,
+    reason: `budget depleted (${budgetText}), window resets in ${resetsInSec}s`,
+  }
+}
+
+// Single shared rate gate. Every subsystem (pipeline, library sync, discovery
+// modes, routes) funnels through this one queue so concurrent runs can't sum
+// past the ceiling. The interval is the FIXED floor of protection; the adaptive
+// hold below stacks on top of it.
+const sharedQueue = new PQueue({
+  concurrency: 1,
+  interval: mbRateConfig.baseIntervalMs,
+  intervalCap: 1,
+})
+
+// Latest budget MusicBrainz reported, shared by every client instance.
+let budget: RateLimitSnapshot | null = null
+let lastLoggedTier: RateLimitTier = 'unknown'
+
+/** The live budget, for diagnostics and for the schedulers. */
+export function musicBrainzRateLimitSnapshot(): RateLimitSnapshot | null {
+  return budget
+}
 
 // Shared rate-limit cooldown. A 429/503 is MusicBrainz telling the whole client
 // it is over the limit, not just the one request that happened to be in flight.
@@ -169,8 +387,53 @@ const sharedQueue = new PQueue({ concurrency: 1, interval: 1000, intervalCap: 1 
 // lost timer cannot wedge MB traffic permanently.
 let cooldownUntil = 0
 
+// Circuit breaker, layered on the same timestamp. `cooldownUntil` on its own
+// only ever holds seconds, which is worth waiting out in place. A breaker-
+// length cooldown is minutes, which is NOT: parking a whole library sync for
+// ten minutes inside waitOutCooldown would be its own outage. So `breakerUntil`
+// marks a cooldown that requests fail fast against instead of waiting on.
+let consecutiveRateLimited = 0
+let breakerUntil = 0
+
+export class MusicBrainzCircuitOpenError extends Error {
+  readonly retryAtMs: number
+  constructor(retryAtMs: number) {
+    const seconds = Math.max(0, Math.ceil((retryAtMs - Date.now()) / 1000))
+    super(
+      `MusicBrainz circuit breaker open for another ${seconds}s (too many consecutive rate-limited responses)`,
+    )
+    this.name = 'MusicBrainzCircuitOpenError'
+    this.retryAtMs = retryAtMs
+  }
+}
+
 function armCooldown(untilMs: number): void {
   cooldownUntil = Math.max(cooldownUntil, untilMs)
+}
+
+/** Arm the long cooldown. Returns nothing; callers check `breakerUntil`. */
+function armBreaker(nowMs: number): void {
+  const until = nowMs + mbRateConfig.breakerCooldownMs
+  armCooldown(until)
+  breakerUntil = Math.max(breakerUntil, until)
+  // Reset the counter so the breaker re-arms only after another full run of
+  // rate-limited responses once this cooldown expires.
+  consecutiveRateLimited = 0
+  console.warn(
+    `[musicbrainz] circuit breaker armed: ${mbRateConfig.breakerThreshold} consecutive rate-limited responses; holding all MusicBrainz traffic for ${Math.round(mbRateConfig.breakerCooldownMs / 60_000)}m`,
+  )
+}
+
+/** Count a 429/503. Returns true when this one armed the breaker. */
+function noteRateLimited(nowMs: number): boolean {
+  consecutiveRateLimited += 1
+  if (consecutiveRateLimited < mbRateConfig.breakerThreshold) return false
+  armBreaker(nowMs)
+  return true
+}
+
+function noteRequestSucceeded(): void {
+  consecutiveRateLimited = 0
 }
 
 async function waitOutCooldown(): Promise<void> {
@@ -181,10 +444,49 @@ async function waitOutCooldown(): Promise<void> {
   }
 }
 
-// Test-only reset; the cooldown is module state shared by every client, so it
-// would otherwise leak across tests (and across a rewound fake clock).
+/** Hold inside the rate gate for as long as the live budget says we should. */
+async function applyAdaptiveHold(): Promise<void> {
+  const decision = throttleDecision(budget, Date.now())
+  if (decision.holdMs <= 0) {
+    lastLoggedTier = decision.tier
+    return
+  }
+  // Log the transition only, not every request: a depleted budget would
+  // otherwise produce one warning per call for as long as it lasts.
+  if (decision.tier !== lastLoggedTier) {
+    console.warn(
+      `[musicbrainz] yielding to the shared rate limit: ${decision.reason}; holding ${decision.holdMs}ms between requests`,
+    )
+    lastLoggedTier = decision.tier
+  }
+  await sleep(decision.holdMs)
+}
+
+/**
+ * Why background work should not start right now, or null when it may.
+ *
+ * Consumed by the library schedulers: starting a long MusicBrainz-heavy job
+ * against an exhausted budget can only produce `leaving unreconciled` rows
+ * while pushing the shared household budget further down.
+ */
+export function musicBrainzDeferralReason(nowMs: number = Date.now()): string | null {
+  const breakerRemainingMs = breakerUntil - nowMs
+  if (breakerRemainingMs > 0) {
+    return `MusicBrainz circuit breaker armed for another ${Math.ceil(breakerRemainingMs / 60_000)}m`
+  }
+  const decision = throttleDecision(budget, nowMs)
+  if (decision.tier === 'floor') return `MusicBrainz ${decision.reason}`
+  return null
+}
+
+// Test-only reset; all of the above is module state shared by every client, so
+// it would otherwise leak across tests (and across a rewound fake clock).
 export function resetMusicBrainzRateLimitForTests(): void {
   cooldownUntil = 0
+  breakerUntil = 0
+  consecutiveRateLimited = 0
+  budget = null
+  lastLoggedTier = 'unknown'
 }
 
 export function createMusicBrainzClient() {
@@ -211,12 +513,31 @@ export function createMusicBrainzClient() {
     let lastErr: unknown
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
+        // Checked before anything else, including the cooldown wait: once the
+        // breaker is armed, in-flight work must STOP re-queueing rather than
+        // grind through its remaining per-request retries, and it must not sit
+        // in waitOutCooldown for the whole multi-minute cooldown either.
+        if (breakerUntil > Date.now()) {
+          throw new MusicBrainzCircuitOpenError(breakerUntil)
+        }
+
         // Observed before entering the gate, so the cooldown is spent outside
         // the single concurrency slot (see the comment above).
         await waitOutCooldown()
-        const res = (await queue.add(() => fetchOnce(path))) as Response
+        const res = (await queue.add(async () => {
+          // The adaptive hold belongs INSIDE the slot: it is the rate gate, so
+          // it must serialise with it. The retry backoff below stays outside.
+          await applyAdaptiveHold()
+          return fetchOnce(path)
+        })) as Response
+
+        // Every response carries the live budget, including the ones that say
+        // no. Record it before branching.
+        const snapshot = parseRateLimitHeaders(res.headers, Date.now())
+        if (snapshot) budget = snapshot
 
         if (res.ok) {
+          noteRequestSucceeded()
           return (await res.json()) as T
         }
 
@@ -233,6 +554,12 @@ export function createMusicBrainzClient() {
         // particular path.
         if (RATE_LIMIT_STATUSES.has(res.status)) {
           armCooldown(Date.now() + backoff)
+          if (noteRateLimited(Date.now())) {
+            // Sustained rate limiting, not a hiccup. Abandon the remaining
+            // retries: another three attempts on this one path cannot help,
+            // and every sibling request is about to do the same.
+            throw new MusicBrainzCircuitOpenError(breakerUntil)
+          }
         }
 
         // Final failed attempt throws out.

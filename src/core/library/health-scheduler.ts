@@ -1,4 +1,5 @@
 import { Cron } from 'croner'
+import { musicBrainzDeferralReason } from '@/core/clients/musicbrainz'
 import { isMaintenance } from '@/core/ops/maintenance'
 
 export type LibraryHealthSchedulerDeps = {
@@ -22,6 +23,17 @@ export function startLibraryHealthScheduler(deps: LibraryHealthSchedulerDeps): C
   return new Cron(pattern, () => {
     if (isMaintenance()) {
       console.log('[library-health-scheduler] tick skipped: maintenance in progress')
+      return
+    }
+    // The health scan is long and MusicBrainz-heavy, and it runs at process
+    // start as well as on this schedule -- so a `docker restart` does not stop
+    // it. Starting one against an exhausted budget, or while the client's
+    // circuit breaker is armed, can only produce `leaving unreconciled` rows
+    // while pushing the shared household budget further down. Skip loudly and
+    // wait for the next tick; an operator can still scan on demand from the UI.
+    const deferral = musicBrainzDeferralReason()
+    if (deferral) {
+      console.log(`[library-health-scheduler] tick skipped: ${deferral}`)
       return
     }
     try {

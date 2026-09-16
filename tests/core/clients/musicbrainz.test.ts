@@ -119,13 +119,17 @@ describe('parseYear', () => {
 
 describe('createMusicBrainzClient', () => {
   describe('p-queue rate limiter configuration', () => {
-    it('creates a shared PQueue with concurrency:1, interval:1000, intervalCap:1', async () => {
+    it('creates a shared PQueue paced from the configured MusicBrainz ceiling', async () => {
       vi.resetModules()
       const { default: FreshPQueue } = await import('p-queue')
-      await import('@/core/clients/musicbrainz')
+      const { mbRateConfig } = await import('@/core/clients/musicbrainz')
+      // The gate is no longer MusicBrainz's published 1 req/s: that is 3,600
+      // req/hr, several times the whole household's shared allowance. The
+      // default is now 360 req/hr, with the adaptive throttle on top.
+      expect(mbRateConfig.baseIntervalMs).toBe(10_000)
       expect(FreshPQueue).toHaveBeenCalledWith({
         concurrency: 1,
-        interval: 1000,
+        interval: mbRateConfig.baseIntervalMs,
         intervalCap: 1,
       })
     })

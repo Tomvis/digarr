@@ -23,10 +23,15 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  delete process.env.MUSICBRAINZ_MIN_INTERVAL_MS
 })
 
 describe('MusicBrainz shared queue timing (real p-queue)', () => {
   it('a retrying request does not block other queued traffic for its full backoff', async () => {
+    // Pin the base gate to 1 req/s for this test. The shipped default is far
+    // slower (10s, i.e. 360 req/hr -- see musicbrainz-budget.test.ts), which
+    // would swamp the millisecond gaps this test is actually about.
+    process.env.MUSICBRAINZ_MIN_INTERVAL_MS = '1000'
     // Fresh module load so the shared queue is constructed under fake timers.
     vi.resetModules()
     const { createMusicBrainzClient } = await import('@/core/clients/musicbrainz')

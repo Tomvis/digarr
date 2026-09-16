@@ -36,6 +36,13 @@ function envInt(key: string): number | undefined {
   return Number.isNaN(n) ? undefined : n
 }
 
+function envFloat(key: string): number | undefined {
+  const val = process.env[key]
+  if (!val) return undefined
+  const n = Number.parseFloat(val)
+  return Number.isFinite(n) ? n : undefined
+}
+
 function envOneOf<const T extends readonly string[]>(
   key: string,
   allowed: T,
@@ -125,6 +132,18 @@ export const envConfig = {
   // Deezer OAuth
   deezerAppId: env('DEEZER_APP_ID'),
   deezerAppSecret: env('DEEZER_APP_SECRET'),
+
+  // MusicBrainz rate governance. See src/core/clients/musicbrainz.ts.
+  // MusicBrainz limits per source IP, so digarr's budget is shared with every
+  // other MB consumer behind the same WAN address (Lidarr, beets, Music
+  // Assistant). These knobs exist so an operator can retune that share without
+  // a rebuild; the defaults are deliberately conservative.
+  musicbrainzMaxRph: envInt('MUSICBRAINZ_MAX_RPH'),
+  musicbrainzMinIntervalMs: envInt('MUSICBRAINZ_MIN_INTERVAL_MS'),
+  musicbrainzReserveRatio: envFloat('MUSICBRAINZ_RESERVE_RATIO'),
+  musicbrainzFloorRatio: envFloat('MUSICBRAINZ_FLOOR_RATIO'),
+  musicbrainzBreakerThreshold: envInt('MUSICBRAINZ_BREAKER_THRESHOLD'),
+  musicbrainzBreakerCooldownMs: envInt('MUSICBRAINZ_BREAKER_COOLDOWN_MS'),
 } as const
 
 export type EnvConfig = typeof envConfig

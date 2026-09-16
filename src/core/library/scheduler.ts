@@ -1,4 +1,5 @@
 import { Cron } from 'croner'
+import { musicBrainzDeferralReason } from '@/core/clients/musicbrainz'
 import { isMaintenance } from '@/core/ops/maintenance'
 import type { SyncOrchestrator } from './sync'
 
@@ -44,6 +45,15 @@ export function startLibrarySyncScheduler(deps: LibrarySchedulerDeps): Cron {
   const cron = new Cron(pattern, async () => {
     if (isMaintenance()) {
       console.log('[library-sync-scheduler] tick skipped: maintenance in progress')
+      return
+    }
+    // Reconciliation fans MusicBrainz lookups out per artist (searchArtist,
+    // plus a getReleaseGroups per candidate while disambiguating). Starting a
+    // run against an exhausted budget can only produce `leaving unreconciled`
+    // rows, so back off the same way the health scheduler does.
+    const deferral = musicBrainzDeferralReason()
+    if (deferral) {
+      console.log(`[library-sync-scheduler] tick skipped: ${deferral}`)
       return
     }
     try {
