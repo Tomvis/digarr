@@ -64,7 +64,8 @@ describe('encryption-key rotation coverage', () => {
             jellyfin_api_key text,
             emby_api_key text,
             discogs_token text,
-            subsonic_password text
+            subsonic_password text,
+            music_rater_api_key text
           );
           CREATE TABLE oauth_tokens (
             id integer PRIMARY KEY,

@@ -70,6 +70,8 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     })),
     getUserByUsername: vi.fn(async () => null),

@@ -59,6 +59,8 @@ function makeUserConnections(overrides: Partial<UserConnections> = {}): UserConn
     subsonicUrl: null,
     subsonicUsername: null,
     subsonicPassword: null,
+    musicRaterUrl: null,
+    musicRaterApiKey: null,
     ...overrides,
   }
 }

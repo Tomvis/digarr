@@ -33,6 +33,8 @@ const { mockGetUserConnections, mockUpdateUserConnections } = vi.hoisted(() => (
     subsonicUrl: null as string | null,
     subsonicUsername: null as string | null,
     subsonicPassword: null as string | null,
+    musicRaterUrl: null as string | null,
+    musicRaterApiKey: null as string | null,
   })),
   mockUpdateUserConnections: vi.fn(async () => {}),
 }))
@@ -69,6 +71,15 @@ const { mockCreateSubsonicClient } = vi.hoisted(() => ({
     testConnection: vi.fn(async () => ({
       success: true,
       message: 'Connected to Subsonic',
+    })),
+  })),
+}))
+
+const { mockCreateMusicRaterClient } = vi.hoisted(() => ({
+  mockCreateMusicRaterClient: vi.fn(() => ({
+    testConnection: vi.fn(async () => ({
+      success: true,
+      message: 'Connected to music-rater',
     })),
   })),
 }))
@@ -144,6 +155,10 @@ vi.mock('@/core/clients/subsonic', () => ({
   createSubsonicClient: mockCreateSubsonicClient,
 }))
 
+vi.mock('@/core/clients/music-rater', () => ({
+  createMusicRaterClient: mockCreateMusicRaterClient,
+}))
+
 vi.mock('@/core/auth/oidc', () => ({
   OidcService: class OidcService {
     testConnection = mockOidcTestConnection
@@ -197,6 +212,8 @@ const defaultUserConnections: UserConnections = {
   subsonicUrl: null,
   subsonicUsername: null,
   subsonicPassword: null,
+  musicRaterUrl: null,
+  musicRaterApiKey: null,
 }
 
 function makeMockOrchestrator() {
@@ -268,6 +285,8 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     })),
     getUserByUsername: vi.fn(async () => null),
@@ -299,6 +318,8 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     })),
     getUserCount: vi.fn(async () => 0),
@@ -402,6 +423,20 @@ describe('GET /api/v1/settings', () => {
     expect(body.lidarrApiKey).toBe('***')
     expect(body.listenbrainzToken).toBe('***')
     expect(body.aiApiKey).toBeNull()
+  })
+
+  it('masks the stored music-rater API key and returns the plaintext URL', async () => {
+    mockGetUserConnections.mockResolvedValueOnce({
+      ...defaultUserConnections,
+      musicRaterUrl: 'http://mr.example',
+      musicRaterApiKey: 'mr_secret',
+    })
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, '/api/v1/settings')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.musicRaterUrl).toBe('http://mr.example')
+    expect(body.musicRaterApiKey).toBe('***')
   })
 
   it('masks the stored TIDAL client secret', async () => {
@@ -754,6 +789,8 @@ describe('PATCH /api/v1/settings', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
       }),
@@ -826,6 +863,8 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
       }),
@@ -1220,6 +1259,38 @@ describe('POST /api/v1/settings/test/:service', () => {
     expect(body.type).toBe('/problems/probe-missing-input')
   })
 
+  it('probes music-rater with the stored per-user credentials', async () => {
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, '/api/v1/settings/test/music-rater', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'http://mr.example', apiKey: 'mr_test' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(mockCreateMusicRaterClient).toHaveBeenCalledWith('http://mr.example', 'mr_test', false)
+  })
+
+  it('reports missing input when no music-rater URL is configured', async () => {
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, '/api/v1/settings/test/music-rater', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '', apiKey: '' }),
+    })
+
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.type).toBe('/problems/probe-missing-input')
+  })
+
+  it('masks the music-rater API key in the settings response', async () => {
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, '/api/v1/settings')
+    const body = await res.json()
+    if (body.musicRaterApiKey) expect(body.musicRaterApiKey).toBe('***')
+  })
+
   it('returns 400 for unknown service', async () => {
     const app = createApp(makeDeps())
     const res = await authedRequest(app, '/api/v1/settings/test/unknown', {
@@ -1275,6 +1346,8 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
       }),
@@ -1333,6 +1406,8 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
       }),
@@ -1465,6 +1540,8 @@ describe('per-user listening source connections', () => {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
     })
 
     const app = createApp(
@@ -1497,6 +1574,8 @@ describe('per-user listening source connections', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
       }),

@@ -38,6 +38,7 @@ const SECRET_FIELDS = [
   'discogsToken',
   'subsonicPassword',
   'tidalClientSecret',
+  'musicRaterApiKey',
 ] as const
 
 type SettingsResponse = Record<string, unknown>
@@ -215,6 +216,9 @@ async function buildSettingsResponse(
       response.subsonicUsername = userConns.subsonicUsername ?? ''
       response.subsonicPassword = userConns.subsonicPassword
       response._subsonicScope = 'user'
+      response.musicRaterUrl = userConns.musicRaterUrl ?? ''
+      response.musicRaterApiKey = userConns.musicRaterApiKey
+      response._musicRaterScope = 'user'
     }
   }
 
@@ -294,6 +298,8 @@ export function settingsRoutes(deps: AppDependencies) {
     'subsonicUrl',
     'subsonicUsername',
     'subsonicPassword',
+    'musicRaterUrl',
+    'musicRaterApiKey',
   ])
 
   const ALL_MUTABLE_FIELDS = new Set([...GLOBAL_MUTABLE_FIELDS, ...USER_CONNECTION_FIELDS])
@@ -636,6 +642,17 @@ export function settingsRoutes(deps: AppDependencies) {
         const { createSubsonicClient } = await import('@/core/clients/subsonic')
         const skipTls = body.skipTlsVerify ?? (stored?.skipTlsVerify as boolean) ?? false
         const client = createSubsonicClient(url, user, password, { skipTlsVerify: skipTls })
+        return runProbe(c, () => client.testConnection(), messages['common.unknownError'])
+      }
+      case 'music-rater': {
+        const url = body.url || userConns?.musicRaterUrl || ''
+        const apiKey = body.apiKey || userConns?.musicRaterApiKey || ''
+        if (!url || !apiKey) {
+          return missingInput(`Missing ${!url ? 'URL' : 'API key'}`)
+        }
+        const { createMusicRaterClient } = await import('@/core/clients/music-rater')
+        const skipTls = body.skipTlsVerify ?? (stored?.skipTlsVerify as boolean) ?? false
+        const client = createMusicRaterClient(url, apiKey, skipTls)
         return runProbe(c, () => client.testConnection(), messages['common.unknownError'])
       }
       case 'spotify': {

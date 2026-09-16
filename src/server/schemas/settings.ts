@@ -137,4 +137,6 @@ export const updateSettingsSchema = z.object({
   subsonicUrl: z.string().nullable().optional(),
   subsonicUsername: z.string().nullable().optional(),
   subsonicPassword: z.string().nullable().optional(),
+  musicRaterUrl: z.string().url().or(z.literal('')).optional(),
+  musicRaterApiKey: z.string().optional(),
 })

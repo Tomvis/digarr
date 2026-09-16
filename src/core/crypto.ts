@@ -307,5 +307,6 @@ export const SENSITIVE_USER_CONNECTIONS = [
   'embyApiKey',
   'discogsToken',
   'subsonicPassword',
+  'musicRaterApiKey',
 ] as const
 export const SENSITIVE_TARGET_CONFIG = ['apiKey', 'password', 'token', 'secret'] as const

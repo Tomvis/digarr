@@ -290,6 +290,8 @@ export type UserConnections = {
   subsonicUrl: string | null
   subsonicUsername: string | null
   subsonicPassword: string | null
+  musicRaterUrl: string | null
+  musicRaterApiKey: string | null
 }
 
 export async function getUserConnections(
@@ -318,6 +320,8 @@ export async function getUserConnections(
       subsonicUrl: users.subsonicUrl,
       subsonicUsername: users.subsonicUsername,
       subsonicPassword: users.subsonicPassword,
+      musicRaterUrl: users.musicRaterUrl,
+      musicRaterApiKey: users.musicRaterApiKey,
     })
     .from(users)
     .where(eq(users.id, userId))

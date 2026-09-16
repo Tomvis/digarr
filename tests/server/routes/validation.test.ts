@@ -32,6 +32,8 @@ const adminUser = {
   subsonicUrl: null,
   subsonicUsername: null,
   subsonicPassword: null,
+  musicRaterUrl: null,
+  musicRaterApiKey: null,
   createdAt: new Date(),
 }
 

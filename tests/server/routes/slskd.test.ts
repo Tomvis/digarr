@@ -72,6 +72,8 @@ function makeUser(overrides: Partial<UserPublic> = {}): UserPublic {
     subsonicUrl: null,
     subsonicUsername: null,
     subsonicPassword: null,
+    musicRaterUrl: null,
+    musicRaterApiKey: null,
     createdAt: new Date(),
     ...overrides,
   }

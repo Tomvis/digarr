@@ -56,6 +56,8 @@ const baseConnections: UserConnections = {
   subsonicUrl: null,
   subsonicUsername: null,
   subsonicPassword: null,
+  musicRaterUrl: null,
+  musicRaterApiKey: null,
 }
 
 beforeEach(() => {

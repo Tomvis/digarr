@@ -108,6 +108,8 @@ export const users = pgTable(
     subsonicUrl: text('subsonic_url'),
     subsonicUsername: text('subsonic_username'),
     subsonicPassword: text('subsonic_password'),
+    musicRaterUrl: text('music_rater_url'),
+    musicRaterApiKey: text('music_rater_api_key'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

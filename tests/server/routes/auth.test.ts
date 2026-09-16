@@ -111,6 +111,8 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     })),
     getUserByUsername: vi.fn(async () => null),
@@ -143,6 +145,8 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     })),
     getUserCount: vi.fn(async () => 0),
@@ -369,6 +373,8 @@ describe('POST /api/v1/auth/register', () => {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     }))
     const app = createApp(makeDeps({ createUser, getUserCount: vi.fn(async () => 0) }))
@@ -419,6 +425,8 @@ describe('POST /api/v1/auth/register', () => {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
       createdAt: new Date(),
     }))
     const app = createApp(makeDeps({ createUser, getUserCount: vi.fn(async () => 1) }))
@@ -1117,6 +1125,8 @@ describe('GET /api/v1/auth/me', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
         getUserCount: vi.fn(async () => 1),
@@ -1170,6 +1180,8 @@ describe('GET /api/v1/auth/me', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          musicRaterUrl: null,
+          musicRaterApiKey: null,
           createdAt: new Date(),
         })),
         getUserCount: vi.fn(async () => 1),

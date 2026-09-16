@@ -76,6 +76,8 @@ function userRow(overrides: Partial<Record<string, unknown>> = {}) {
     subsonicUrl: null,
     subsonicUsername: null,
     subsonicPassword: null,
+    musicRaterUrl: null,
+    musicRaterApiKey: null,
     createdAt: new Date(),
     ...overrides,
   }

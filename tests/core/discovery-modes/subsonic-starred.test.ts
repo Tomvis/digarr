@@ -172,6 +172,8 @@ describe('subsonic-starred mode – executor', () => {
       subsonicUrl: 'https://music.example.com',
       subsonicUsername: null,
       subsonicPassword: null,
+      musicRaterUrl: null,
+      musicRaterApiKey: null,
     })
     const mode = createSubsonicStarredMode()
     await expect(mode.executor(makeRequest({}))).rejects.toThrow(

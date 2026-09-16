@@ -94,6 +94,8 @@ vi.mock('@/web/lib/api', () => ({
     subsonicUrl: null,
     subsonicUsername: null,
     subsonicPassword: null,
+    musicRaterUrl: null,
+    musicRaterApiKey: null,
     discogsToken: null,
     preferences: {},
   }),
