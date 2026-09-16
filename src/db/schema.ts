@@ -836,3 +836,40 @@ export const albumBlocks = pgTable(
     artistIdx: index('album_blocks_artist_idx').on(table.artistId),
   }),
 )
+
+export const musicRaterAlbums = pgTable(
+  'music_rater_albums',
+  {
+    id: integer('id').primaryKey().generatedByDefaultAsIdentity(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** music-rater's own `albums.id`. */
+    musicRaterAlbumId: integer('music_rater_album_id').notNull(),
+    artistNameRaw: text('artist_name_raw').notNull(),
+    albumTitleRaw: text('album_title_raw').notNull(),
+    /** digarr's normalisation, applied to BOTH sides of every comparison. */
+    artistNameNormalized: text('artist_name_normalized').notNull(),
+    albumTitleNormalized: text('album_title_normalized').notNull(),
+    releaseYear: integer('release_year'),
+    maxScoreRatio: real('max_score_ratio'),
+    drValue: integer('dr_value'),
+    genreSlugs: jsonb('genre_slugs').$type<string[]>(),
+    sourceSites: jsonb('source_sites').$type<string[]>(),
+    resolvedArtistMbid: text('resolved_artist_mbid'),
+    resolvedReleaseGroupMbid: text('resolved_release_group_mbid'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userAlbumUniqueIdx: uniqueIndex('music_rater_albums_user_album_unique_idx').on(
+      table.userId,
+      table.musicRaterAlbumId,
+    ),
+    nameMatchIdx: index('music_rater_albums_name_match_idx').on(
+      table.userId,
+      table.artistNameNormalized,
+      table.albumTitleNormalized,
+    ),
+  }),
+)

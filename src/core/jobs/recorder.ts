@@ -10,6 +10,7 @@ const STUCK_THRESHOLDS_MS: Record<string, number> = {
   target: 2 * 60 * 1000,
   playlist: 2 * 60 * 1000,
   library_sync: 90 * 60 * 1000,
+  music_rater_sync: 15 * 60 * 1000,
 }
 
 export function createJobRecorder(db: Database): JobRecorder {

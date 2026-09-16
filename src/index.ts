@@ -9,6 +9,7 @@ import { createDeezerClient } from './core/clients/deezer'
 import { createEmbyClient } from './core/clients/emby'
 import { createJellyfinClient } from './core/clients/jellyfin'
 import { createLidarrClient } from './core/clients/lidarr'
+import { createMusicRaterClient } from './core/clients/music-rater'
 import { createMusicBrainzClient } from './core/clients/musicbrainz'
 import { createPlexClient } from './core/clients/plex'
 import { tryConsume } from './core/clients/rate-limiter'
@@ -37,6 +38,8 @@ import { createSubsonicLibrarySource } from './core/library/sources/subsonic'
 import { createLibrarySyncStore } from './core/library/store'
 import { createSyncOrchestrator, type SyncOrchestrator } from './core/library/sync'
 import { markShuttingDown } from './core/lifecycle'
+import { startMusicRaterSyncScheduler } from './core/music-rater/scheduler'
+import { syncMusicRaterCorpus } from './core/music-rater/sync'
 import { dispatch } from './core/notifications'
 import { migrateLegacyListeningConnections } from './core/ops/legacy-listening-connections'
 import { isMaintenance, setMaintenance } from './core/ops/maintenance'
@@ -136,6 +139,7 @@ import {
   markLibraryHealthScanStarted,
   saveLibraryHealthState,
 } from './db/queries/library-health'
+import { upsertMusicRaterAlbums } from './db/queries/music-rater'
 import { deleteExpiredPendingOAuth } from './db/queries/oauth-pending'
 import { getOAuthToken } from './db/queries/oauth-tokens'
 import {
@@ -195,6 +199,7 @@ import {
   getUserByUsername,
   getUserConnections,
   getUserCount,
+  listUserIdsWithMusicRaterConnection,
   listUsers,
   updateUser,
   updateUserConnections,
@@ -1228,6 +1233,7 @@ let libraryHealthCron: Cron | null = null
 let slskdCron: Cron | null = null
 let stuckDetectorCron: Cron | null = null
 let digestNotifierCron: Cron | null = null
+let musicRaterSyncCron: Cron | null = null
 
 function restartLibraryMaintenanceScheduler(intervalHours: number): void {
   librarySyncCron?.stop()
@@ -1242,6 +1248,47 @@ function restartLibraryMaintenanceScheduler(intervalHours: number): void {
     intervalHours,
     libraryHealth,
   })
+}
+
+/**
+ * Sync one user's music-rater corpus into `music_rater_albums`, recorded via
+ * `createJobRecorder` so a failure is visible in Job History. Mirrors
+ * `executePlaylistGeneration`'s start/complete/fail shape: the job is
+ * started before any network call so a crash mid-sync still leaves a
+ * 'running' row for the stuck detector to catch, and the error is rethrown
+ * after recording so the caller (the scheduler tick) knows this user's sync
+ * failed without having to inspect Job History itself.
+ */
+async function executeMusicRaterSync(userId: number): Promise<void> {
+  const jobId = await jobRecorder.start({ type: 'music_rater_sync', userId })
+  try {
+    const [connections, settings] = await Promise.all([
+      getUserConnections(db, userId),
+      getSettings(db),
+    ])
+    if (!connections?.musicRaterUrl || !connections?.musicRaterApiKey) {
+      // Connection was cleared between the scheduler's user list and this
+      // run (e.g. disconnected mid-tick). Nothing to sync, and not a failure.
+      await jobRecorder.complete(jobId, { metadata: { synced: 0 } })
+      return
+    }
+    const client = createMusicRaterClient(
+      connections.musicRaterUrl,
+      connections.musicRaterApiKey,
+      settings?.skipTlsVerify ?? false,
+    )
+    const { synced } = await syncMusicRaterCorpus(
+      {
+        client: { listScoredAlbums: (offset) => client.listScoredAlbums(offset) },
+        upsert: (uid, rows) => upsertMusicRaterAlbums(db, uid, rows),
+      },
+      userId,
+    )
+    await jobRecorder.complete(jobId, { metadata: { synced } })
+  } catch (err: unknown) {
+    await recordFailureSafely(jobRecorder, jobId, errMsg(err))
+    throw err
+  }
 }
 
 function buildDigestDeps() {
@@ -1669,6 +1716,13 @@ const server = serve({ fetch: app.fetch, port })
 
     // Start scheduled notification digest (no-op until digestCron is configured)
     digestNotifierCron = await startDigestNotifier(buildDigestDeps())
+
+    // Nightly music-rater corpus sync, one user at a time. Only users with a
+    // complete connection (both URL and API key) are ticked.
+    musicRaterSyncCron = startMusicRaterSyncScheduler({
+      listSyncableUserIds: () => listUserIdsWithMusicRaterConnection(db),
+      syncUser: executeMusicRaterSync,
+    })
   } catch (err: unknown) {
     console.error('Failed to initialize:', err)
   }
@@ -1729,6 +1783,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     digestNotifierCron?.stop()
     librarySyncCron?.stop()
     libraryHealthCron?.stop()
+    musicRaterSyncCron?.stop()
     server.close()
     // Hard deadline: exit no matter what after 30s
     const deadline = setTimeout(() => {

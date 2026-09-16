@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, count, desc, eq, lt, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, lt, or, sql } from 'drizzle-orm'
 import { decryptFields, encryptFields, SENSITIVE_USER_CONNECTIONS } from '@/core/crypto'
 import { isUniqueViolation } from '@/core/db-errors'
 import type { SupportedLocale } from '@/core/i18n/locales'
@@ -337,6 +337,20 @@ export async function updateUserConnections(
 ): Promise<void> {
   const encrypted = encryptFields(data, SENSITIVE_USER_CONNECTIONS)
   await db.update(users).set(encrypted).where(eq(users.id, userId))
+}
+
+/**
+ * IDs of users with a usable music-rater connection (both URL and API key
+ * set). Filters on `IS NOT NULL` rather than decrypting every row: field
+ * encryption only touches string values (see `encryptFields`), so a NULL
+ * connection field stays NULL at rest and this check needs no decryption.
+ */
+export async function listUserIdsWithMusicRaterConnection(db: Database): Promise<number[]> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(isNotNull(users.musicRaterUrl), isNotNull(users.musicRaterApiKey)))
+  return rows.map((row) => row.id)
 }
 
 export async function updateUser(

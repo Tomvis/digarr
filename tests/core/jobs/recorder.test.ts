@@ -199,8 +199,9 @@ describe('createJobRecorder', () => {
 
       await recorder.markStuck()
 
-      // 6 job types: pipeline, quick_discover, subscription, target, playlist, library_sync
-      expect(db._mocks.update).toHaveBeenCalledTimes(6)
+      // 7 job types: pipeline, quick_discover, subscription, target, playlist,
+      // library_sync, music_rater_sync
+      expect(db._mocks.update).toHaveBeenCalledTimes(7)
     })
 
     it('returns total count of stuck jobs across all types', async () => {
@@ -209,8 +210,8 @@ describe('createJobRecorder', () => {
 
       const count = await recorder.markStuck()
 
-      // 6 types * 2 rows each = 12
-      expect(count).toBe(12)
+      // 7 types * 2 rows each = 14
+      expect(count).toBe(14)
     })
 
     it('updates status to stuck', async () => {
@@ -230,8 +231,8 @@ describe('createJobRecorder', () => {
 
       const count = await recorder.markStuck()
 
-      // All 6 types attempted despite first failure
-      expect(db._mocks.update).toHaveBeenCalledTimes(6)
+      // All 7 types attempted despite first failure
+      expect(db._mocks.update).toHaveBeenCalledTimes(7)
       expect(count).toBe(0)
     })
   })

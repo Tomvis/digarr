@@ -8,6 +8,7 @@ export const jobTypeSchema = z.enum([
   'target',
   'playlist',
   'library_sync',
+  'music_rater_sync',
 ])
 
 export const jobStatusSchema = z.enum(['running', 'completed', 'failed', 'stuck'])
