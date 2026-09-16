@@ -983,6 +983,45 @@ describe('PipelineOrchestrator', () => {
     expect(mockStore).toHaveBeenCalledWith([], db, expect.anything())
   })
 
+  it('looks up critic scores in one batched call keyed by the shared normalisers, and threads the result into score()', async () => {
+    const findMusicRaterScoresByNames = vi
+      .fn()
+      .mockResolvedValue(new Map([['radiohead::new one', 0.9]]))
+    const db = {
+      ...makeDb(),
+      getLibraryArtistsForUser: vi.fn().mockResolvedValue(trackedArtistLibrary),
+      getExistingRecommendationMbids: vi.fn().mockResolvedValue(new Set<string>()),
+      getExistingAlbumReleaseGroupMbids: vi.fn().mockResolvedValue(new Set<string>()),
+      getBlockedAlbumKeys: vi.fn().mockResolvedValue(new Set<string>()),
+      findMusicRaterScoresByNames,
+    }
+    mockResolve.mockResolvedValueOnce([
+      // One album candidate and one artist candidate in the same run: the
+      // artist candidate must not appear in the batched lookup's keys.
+      resolved[0],
+      albumScored[0],
+    ])
+    mockScore.mockReturnValue(albumScored as never)
+    mockFilter.mockImplementation((artists) => artists as never)
+
+    await orchestrator.run({
+      db,
+      settings: defaultSettings,
+      providerRegistry,
+      librarySync: { syncForUser },
+      userId: 1,
+    })
+
+    // One batched call for the whole scan, not one per album candidate.
+    expect(findMusicRaterScoresByNames).toHaveBeenCalledTimes(1)
+    expect(findMusicRaterScoresByNames).toHaveBeenCalledWith(1, [
+      { artistNormalized: 'radiohead', titleNormalized: 'new one' },
+    ])
+
+    const scoreCall = mockScore.mock.calls[0]
+    expect(scoreCall?.[6]).toEqual(new Map([['radiohead::new one', 0.9]]))
+  })
+
   it('fire-and-forgets first library sync when user has no prior sync state', async () => {
     const db = makeDb()
     const dbWithLibrary: import('@/core/pipeline/store').StoreDb = {

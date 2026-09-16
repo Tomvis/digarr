@@ -64,6 +64,16 @@ export interface StoreDb {
 
   getPopularityMap?: () => Promise<Map<string, number>>
 
+  /**
+   * Batched music-rater critic-score lookup for a scan's album candidates,
+   * keyed the way `criticScoreKey` (in `./score`) composes it. One call per
+   * scan, not one per candidate -- see the orchestrator's score-stage wiring.
+   */
+  findMusicRaterScoresByNames?: (
+    userId: number,
+    keys: import('@/db/queries/music-rater').CriticScoreKey[],
+  ) => Promise<Map<string, number>>
+
   getLibraryArtistsForUser?: (
     userId: number,
     options?: { onlyReconciled?: boolean; source?: string },

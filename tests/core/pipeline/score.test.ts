@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { score } from '@/core/pipeline/score'
+import { applyAlbumModifier, criticScoreKey, score } from '@/core/pipeline/score'
 import type { ResolvedArtist } from '@/core/types'
 import type { Preferences } from '@/db/schema'
 
@@ -325,5 +325,103 @@ describe('score()', () => {
     const artist = makeArtist({ genres: ['rock', 'metal'] })
     const [result] = score([artist], [], defaultWeights, new Map())
     expect(result?.sourceScores.genreOverlap).toBe(0)
+  })
+
+  it('applies the critic score for an album-kind candidate found in the map, keyed via criticScoreKey', () => {
+    const artist = makeArtist({
+      name: 'Radiohead',
+      kind: 'album' as const,
+      suggestedAlbum: { title: 'OK Computer' },
+      discoveries: [{ name: 'Radiohead', similarityScore: 0.8, source: 'release-radar' }],
+    })
+    const criticScoreMap = new Map([[criticScoreKey('Radiohead', 'OK Computer'), 1]])
+    const withoutMap = score([artist], [], defaultWeights, new Map())
+    const withMap = score(
+      [artist],
+      [],
+      defaultWeights,
+      new Map(),
+      undefined,
+      undefined,
+      criticScoreMap,
+    )
+
+    expect(withMap[0]?.sourceScores.criticScore).toBe(1)
+    expect(withoutMap[0]?.sourceScores.criticScore).toBeUndefined()
+    expect(withMap[0]?.score).toBeGreaterThan(withoutMap[0]?.score ?? 1)
+  })
+
+  it('matches the critic score across case/diacritic differences via the shared normalisers', () => {
+    // Exercises the exact failure mode the shared-key rule guards against: the
+    // corpus row and the resolved candidate rarely share byte-identical
+    // casing/diacritics, so the lookup must go through the same normalisers
+    // criticScoreKey composes, not a raw string compare.
+    const artist = makeArtist({
+      name: 'Sigur Rós',
+      kind: 'album' as const,
+      suggestedAlbum: { title: '( )' },
+      discoveries: [{ name: 'Sigur Rós', similarityScore: 0.8, source: 'release-radar' }],
+    })
+    const criticScoreMap = new Map([[criticScoreKey('sigur ros', '( )'), 0.75]])
+    const [scored] = score(
+      [artist],
+      [],
+      defaultWeights,
+      new Map(),
+      undefined,
+      undefined,
+      criticScoreMap,
+    )
+
+    expect(scored?.sourceScores.criticScore).toBe(0.75)
+  })
+
+  it('leaves artist-kind candidates untouched even when the critic map has a matching entry', () => {
+    const artist = makeArtist({ name: 'Radiohead' })
+    const criticScoreMap = new Map([[criticScoreKey('Radiohead', ''), 1]])
+    const [scored] = score(
+      [artist],
+      [],
+      defaultWeights,
+      new Map(),
+      undefined,
+      undefined,
+      criticScoreMap,
+    )
+
+    expect(scored?.sourceScores.criticScore).toBeUndefined()
+  })
+})
+
+describe('criticScoreKey', () => {
+  it('composes the same normalisers findMusicRaterScoresByNames keys its rows with', () => {
+    expect(criticScoreKey('Radiohead', 'OK Computer')).toBe('radiohead::ok computer')
+  })
+
+  it('is stable across case and diacritics on both sides', () => {
+    expect(criticScoreKey('Sigur Rós', '( )')).toBe(criticScoreKey('sigur ros', '( )'))
+  })
+})
+
+describe('applyAlbumModifier with criticScore', () => {
+  it('raises the score for a critically acclaimed album', () => {
+    const base = 0.5
+    expect(applyAlbumModifier(base, { criticScore: 1 })).toBeGreaterThan(base)
+  })
+
+  it('lowers the score for a poorly rated one', () => {
+    const base = 0.5
+    expect(applyAlbumModifier(base, { criticScore: 0 })).toBeLessThan(base)
+  })
+
+  it('leaves scoring unchanged when no critic score is known', () => {
+    const withRecency = applyAlbumModifier(0.5, { recency: 0.8 })
+    const withUndefined = applyAlbumModifier(0.5, { recency: 0.8, criticScore: undefined })
+    expect(withUndefined).toBe(withRecency)
+  })
+
+  it('stays clamped to [0, 1]', () => {
+    expect(applyAlbumModifier(1, { criticScore: 1 })).toBeLessThanOrEqual(1)
+    expect(applyAlbumModifier(0, { criticScore: 0 })).toBeGreaterThanOrEqual(0)
   })
 })

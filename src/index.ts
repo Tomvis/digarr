@@ -139,7 +139,7 @@ import {
   markLibraryHealthScanStarted,
   saveLibraryHealthState,
 } from './db/queries/library-health'
-import { upsertMusicRaterAlbums } from './db/queries/music-rater'
+import { findMusicRaterScoresByNames, upsertMusicRaterAlbums } from './db/queries/music-rater'
 import { deleteExpiredPendingOAuth } from './db/queries/oauth-pending'
 import { getOAuthToken } from './db/queries/oauth-tokens'
 import {
@@ -347,6 +347,7 @@ const storeDb: StoreDb = {
   getFeedbackHistory: (userId) => getGenreFeedbackHistory(db, userId),
   lookupArtistMetadata: (name) => lookupByName(db, name),
   getPopularityMap: () => getPopularityMap(db),
+  findMusicRaterScoresByNames: (userId, keys) => findMusicRaterScoresByNames(db, userId, keys),
   getLibraryArtistsForUser: async (userId, options) => {
     const conds = [or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId))]
     if (options?.onlyReconciled) conds.push(isNotNull(libraryArtists.mbid))

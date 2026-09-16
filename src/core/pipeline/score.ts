@@ -1,3 +1,4 @@
+import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 import type { ResolvedArtist, ScoredArtist } from '@/core/types'
 import type { Preferences, ScoringWeights } from '@/db/schema'
 
@@ -52,6 +53,17 @@ export type AlbumScoreSignals = {
   popularity?: number
   /** Gap-fill priority (how core the missing album is) -> closer to 1. */
   gapPriority?: number
+  /**
+   * Critic rating from music-rater, 0..1 (its `max_score_ratio`, already
+   * normalised across each source's native scale: AMG is /5, TPS is /10).
+   *
+   * Rides the existing bounded modifier rather than becoming a
+   * `ScoringWeights` entry: the modifier averages whatever signals are
+   * present and scales by ALBUM_MODIFIER_WEIGHT, so an absent rating is
+   * genuinely absent -- it does not pull the average toward a neutral
+   * value -- and no weights migration or UI change is needed.
+   */
+  criticScore?: number
 }
 
 /** Max total nudge an album can receive on top of its artist base score. */
@@ -63,9 +75,12 @@ const ALBUM_MODIFIER_WEIGHT = 0.15
  * modifier only re-ranks albums within a similar-artist band. Clamped to [0, 1].
  */
 export function applyAlbumModifier(baseScore: number, signals: AlbumScoreSignals): number {
-  const present = [signals.recency, signals.popularity, signals.gapPriority].filter(
-    (v): v is number => typeof v === 'number',
-  )
+  const present = [
+    signals.recency,
+    signals.popularity,
+    signals.gapPriority,
+    signals.criticScore,
+  ].filter((v): v is number => typeof v === 'number')
   if (present.length === 0) return Math.max(0, Math.min(1, baseScore))
   const avg = present.reduce((sum, v) => sum + v, 0) / present.length
   const nudge = ALBUM_MODIFIER_WEIGHT * (avg - 0.5) * 2 // map 0..1 -> -weight..+weight
@@ -89,6 +104,17 @@ export function computeRecency(releaseDate: string, now: Date): number {
   return Math.max(0, Math.min(1, 1 - monthsSince / RECENCY_DECAY_MONTHS))
 }
 
+/**
+ * The `music_rater_albums` lookup key for an album candidate.
+ *
+ * Exported so the orchestrator builds the map with exactly the function the
+ * scorer reads it with. Two call sites composing the same two normalisers by
+ * hand is how a matching bug survives a green test suite.
+ */
+export function criticScoreKey(artistName: string, albumTitle: string): string {
+  return `${normalizeArtistName(artistName)}::${normalizeAlbumTitle(albumTitle)}`
+}
+
 export function score(
   artists: ResolvedArtist[],
   libraryGenres: string[],
@@ -96,6 +122,11 @@ export function score(
   feedbackHistory: Map<string, GenreFeedback>,
   popularityMap?: Map<string, number>,
   now: Date = new Date(),
+  // Appended after `now` (rather than inserted earlier, or an options object)
+  // because one existing caller passes `now` positionally as arg 6
+  // (tests/core/pipeline/score.test.ts, the recency test) -- inserting before
+  // it would silently shift that Date into this parameter's slot.
+  criticScoreMap?: Map<string, number>,
 ): ScoredArtist[] {
   const libraryGenreSet = new Set(libraryGenres.map((g) => g.toLowerCase()))
 
@@ -163,14 +194,18 @@ export function score(
       popularity,
     }
 
-    // Album-kind candidates get a bounded nudge from the recency and popularity
-    // signals on top of the artist base score; artist-kind candidates are left
-    // untouched.
+    // Album-kind candidates get a bounded nudge from the recency, popularity,
+    // and critic-score signals on top of the artist base score; artist-kind
+    // candidates are left untouched.
     let finalScore = baseScore
     if (artist.kind === 'album') {
       const recency = artist.releaseDate ? computeRecency(artist.releaseDate, now) : undefined
-      finalScore = applyAlbumModifier(baseScore, { recency, popularity })
+      const criticScore = criticScoreMap?.get(
+        criticScoreKey(artist.name, artist.suggestedAlbum?.title ?? ''),
+      )
+      finalScore = applyAlbumModifier(baseScore, { recency, popularity, criticScore })
       if (recency !== undefined) sourceScores.recency = recency
+      if (criticScore !== undefined) sourceScores.criticScore = criticScore
     }
 
     // AI reasoning from first AI discovery

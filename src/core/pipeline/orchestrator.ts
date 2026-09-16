@@ -5,6 +5,7 @@ import { decryptChannelSecrets } from '@/core/crypto'
 import type { SupportedLocale } from '@/core/i18n/locales'
 import { createTranslator } from '@/core/i18n/translator'
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
+import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 import { dispatch } from '@/core/notifications'
 import { createDiscogsSource } from '@/core/plugins/discogs'
 import { createEmbySource } from '@/core/plugins/emby'
@@ -479,6 +480,18 @@ export class PipelineOrchestrator extends EventEmitter {
         message: t('pipeline.message.scoring', String(resolved.length)),
       })
       const popularityMap = (await db.getPopularityMap?.()) ?? new Map<string, number>()
+      // Batched critic-score lookup: one query for the run's album candidates,
+      // not one per candidate. `criticScoreKey` in score.ts composes the same
+      // two normalisers when the scorer reads this map back.
+      const albumCandidates = resolved.filter((r) => r.kind === 'album')
+      const criticScoreMap =
+        (await db.findMusicRaterScoresByNames?.(
+          deps.userId,
+          albumCandidates.map((r) => ({
+            artistNormalized: normalizeArtistName(r.name),
+            titleNormalized: normalizeAlbumTitle(r.suggestedAlbum?.title ?? ''),
+          })),
+        )) ?? new Map<string, number>()
       const referenceGenres =
         libraryGenres.length > 0 ? libraryGenres : tasteProfile.topGenres.map((g) => g.name)
       const scored = score(
@@ -487,6 +500,8 @@ export class PipelineOrchestrator extends EventEmitter {
         prefs.scoringWeights,
         feedbackHistory,
         popularityMap,
+        undefined,
+        criticScoreMap,
       )
 
       ckpt()
