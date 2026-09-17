@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, count, desc, eq, isNotNull, lt, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptFields, encryptFields, SENSITIVE_USER_CONNECTIONS } from '@/core/crypto'
 import { isUniqueViolation } from '@/core/db-errors'
 import type { SupportedLocale } from '@/core/i18n/locales'
@@ -341,15 +341,30 @@ export async function updateUserConnections(
 
 /**
  * IDs of users with a usable music-rater connection (both URL and API key
- * set). Filters on `IS NOT NULL` rather than decrypting every row: field
- * encryption only touches string values (see `encryptFields`), so a NULL
- * connection field stays NULL at rest and this check needs no decryption.
+ * set, and neither cleared to an empty string). Filters on `IS NOT NULL`
+ * rather than decrypting every row: field encryption only touches string
+ * values (see `encryptFields`), so a NULL connection field stays NULL at
+ * rest and this check needs no decryption.
+ *
+ * The empty-string check matters because clearing the URL is the settings
+ * card's only disconnect gesture: it sends `musicRaterUrl: ''` verbatim
+ * while omitting the untouched (still-encrypted, still non-null) API key.
+ * Without it, a disconnected user sits at `('', <encrypted key>)` forever --
+ * `hasMusicRater` correctly reports not-connected, but this query would
+ * still pick them up for a nightly sync that can never do anything.
  */
 export async function listUserIdsWithMusicRaterConnection(db: Database): Promise<number[]> {
   const rows = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(isNotNull(users.musicRaterUrl), isNotNull(users.musicRaterApiKey)))
+    .where(
+      and(
+        isNotNull(users.musicRaterUrl),
+        ne(users.musicRaterUrl, ''),
+        isNotNull(users.musicRaterApiKey),
+        ne(users.musicRaterApiKey, ''),
+      ),
+    )
   return rows.map((row) => row.id)
 }
 
