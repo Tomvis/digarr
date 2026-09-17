@@ -9,6 +9,7 @@ import {
   findMusicRaterScoresByNames,
   getUnresolvedAcclaimedAlbums,
   isReleaseGroupOwnedByUser,
+  markMusicRaterAlbumResolved,
   recordMusicRaterResolutionFailure,
   upsertMusicRaterAlbums,
 } from '@/db/queries/music-rater'
@@ -198,6 +199,100 @@ describe('getUnresolvedAcclaimedAlbums (real db)', () => {
     await close()
   })
 
+  it('excludes rows that already carry a resolved release-group mbid', async () => {
+    await seedAcclaimedRow(db, userId, { musicRaterAlbumId: 1, artistNameRaw: 'Resolved Artist' })
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 2,
+      artistNameRaw: 'Done Artist',
+      resolvedReleaseGroupMbid: crypto.randomUUID(),
+      resolvedArtistMbid: crypto.randomUUID(),
+      resolvedAt: new Date(),
+    })
+
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0,
+      minReleaseYear: 0,
+      limit: 10,
+    })
+
+    expect(result.map((r) => r.artistNameRaw)).toEqual(['Resolved Artist'])
+  })
+
+  it('orders never-attempted rows (resolvedAt null) before attempted ones, then by id', async () => {
+    const now = new Date()
+    const earlier = new Date(now.getTime() - 60_000)
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 1,
+      artistNameRaw: 'Attempted Recently',
+      resolvedAt: now,
+    })
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 2,
+      artistNameRaw: 'Attempted Earlier',
+      resolvedAt: earlier,
+    })
+    await seedAcclaimedRow(db, userId, { musicRaterAlbumId: 3, artistNameRaw: 'Never Attempted B' })
+    await seedAcclaimedRow(db, userId, { musicRaterAlbumId: 4, artistNameRaw: 'Never Attempted A' })
+
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0,
+      minReleaseYear: 0,
+      limit: 10,
+    })
+
+    // nulls first (ids 3 then 4, ascending by id), then non-null resolvedAt
+    // ascending (earlier before recent): id 2 before id 1.
+    expect(result.map((r) => r.artistNameRaw)).toEqual([
+      'Never Attempted B',
+      'Never Attempted A',
+      'Attempted Earlier',
+      'Attempted Recently',
+    ])
+  })
+
+  it('applies minScoreRatio and minReleaseYear as inclusive lower bounds', async () => {
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 1,
+      artistNameRaw: 'Too Low Score',
+      maxScoreRatio: 0.5,
+      releaseYear: 2015,
+    })
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 2,
+      artistNameRaw: 'Too Old',
+      maxScoreRatio: 0.9,
+      releaseYear: 1990,
+    })
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 3,
+      artistNameRaw: 'Exactly At Bounds',
+      maxScoreRatio: 0.8,
+      releaseYear: 2000,
+    })
+
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0.8,
+      minReleaseYear: 2000,
+      limit: 10,
+    })
+
+    expect(result.map((r) => r.artistNameRaw)).toEqual(['Exactly At Bounds'])
+  })
+
+  it('respects the limit', async () => {
+    for (let i = 1; i <= 5; i++) {
+      await seedAcclaimedRow(db, userId, { musicRaterAlbumId: i, artistNameRaw: `Artist ${i}` })
+    }
+
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0,
+      minReleaseYear: 0,
+      limit: 2,
+    })
+
+    expect(result).toHaveLength(2)
+  })
+
   it('excludes a corpus row whose (artist, title) name-matches an album already in the library', async () => {
     await seedOwnedAlbum(db, userId, { artistName: 'Radiohead', albumTitle: 'Kid A' })
     await seedAcclaimedRow(db, userId, {
@@ -376,5 +471,100 @@ describe('recordMusicRaterResolutionFailure (real db)', () => {
       limit: 10,
     })
     expect(unresolved.map((r) => r.id)).toEqual([id])
+  })
+})
+
+/**
+ * FIX 3: the branch's own declared critical invariant -- a resync must not
+ * clobber the MusicBrainz resolution state a previous run paid for -- was
+ * recorded as "VERIFIED" on the strength of two code reads, with no test.
+ * Nothing would fail if a future edit added resolved_at (or
+ * resolution_attempts) to `upsertMusicRaterAlbums`'s onConflictDoUpdate
+ * set-list while "fixing staleness".
+ */
+describe('upsertMusicRaterAlbums (real db) — the resolution invariant it must not clobber', () => {
+  let db: Database
+  let close: () => Promise<void>
+  let userId: number
+
+  beforeEach(async () => {
+    const testDb = await makeTestDb()
+    db = testDb.db as unknown as Database
+    close = testDb.close
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'invariant-test', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+    userId = user.id
+  })
+
+  afterEach(async () => {
+    await close()
+  })
+
+  it('a resync (re-upsert on the natural key) leaves resolved_* and resolution_attempts untouched', async () => {
+    const artistNameRaw = 'Boards of Canada'
+    const albumTitleRaw = 'Geogaddi'
+    const row = {
+      musicRaterAlbumId: 42,
+      artistNameRaw,
+      albumTitleRaw,
+      artistNameNormalized: normalizeArtistName(artistNameRaw),
+      albumTitleNormalized: normalizeAlbumTitle(albumTitleRaw),
+      releaseYear: 2002,
+      maxScoreRatio: 0.85,
+      drValue: null,
+      genreSlugs: [] as string[],
+      sourceSites: ['amg'],
+    }
+
+    await upsertMusicRaterAlbums(db, userId, [row])
+    const [seeded] = await db
+      .select()
+      .from(musicRaterAlbums)
+      .where(eq(musicRaterAlbums.userId, userId))
+    if (!seeded) throw new Error('seeded row missing')
+
+    const artistMbid = crypto.randomUUID()
+    const releaseGroupMbid = crypto.randomUUID()
+    await markMusicRaterAlbumResolved(db, seeded.id, {
+      artistMbid,
+      releaseGroupMbid,
+    })
+    await recordMusicRaterResolutionFailure(db, seeded.id) // bumps resolution_attempts to 1
+
+    const [resolved] = await db
+      .select()
+      .from(musicRaterAlbums)
+      .where(eq(musicRaterAlbums.id, seeded.id))
+    if (!resolved) throw new Error('resolved row missing')
+    expect(resolved.resolvedArtistMbid).toBe(artistMbid)
+    expect(resolved.resolvedReleaseGroupMbid).toBe(releaseGroupMbid)
+    expect(resolved.resolvedAt).not.toBeNull()
+
+    // A resync sends the SAME natural key again, with a changed score (proving
+    // the update branch actually runs, not just a no-op insert-skip) -- this
+    // is exactly what a nightly re-sync of an already-resolved album looks like.
+    await upsertMusicRaterAlbums(db, userId, [{ ...row, maxScoreRatio: 0.99 }])
+
+    const [reupserted] = await db
+      .select()
+      .from(musicRaterAlbums)
+      .where(eq(musicRaterAlbums.id, seeded.id))
+    if (!reupserted) throw new Error('re-upserted row missing')
+
+    // The signal DID refresh...
+    expect(reupserted.maxScoreRatio).toBe(0.99)
+    // ...but the MusicBrainz resolution work and the retry budget did NOT get
+    // clobbered. If a future edit added resolved_at (or resolution_attempts)
+    // to the upsert's onConflictDoUpdate set-list, this is what would break:
+    // resolvedAt would reset to `now()` (or resolution_attempts to 0),
+    // silently discarding paid-for MusicBrainz work and starting the retry
+    // budget over.
+    expect(reupserted.resolvedArtistMbid).toBe(artistMbid)
+    expect(reupserted.resolvedReleaseGroupMbid).toBe(releaseGroupMbid)
+    expect(reupserted.resolvedAt?.getTime()).toBe(resolved.resolvedAt?.getTime())
+    expect(reupserted.resolutionAttempts).toBe(1)
   })
 })
