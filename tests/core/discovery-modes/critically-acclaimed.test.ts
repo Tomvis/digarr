@@ -21,6 +21,24 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('createCriticallyAcclaimedMode', () => {
+  it('has id "critically-acclaimed" and fallback availability', () => {
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn(),
+        resolveArtistMbid: vi.fn(),
+        matchAlbum: vi.fn(),
+        markResolved: vi.fn(),
+      }) as never,
+    )
+
+    expect(mode.id).toBe('critically-acclaimed')
+    // Must agree with SINGLE_FLAG_MODES['critically-acclaimed'].fallbackUsed
+    // === true (src/core/discovery-modes/availability.ts) -- same shape as
+    // labels/charts/subsonic-starred, all of which are also 'fallback'. See
+    // availability.test.ts's "is enabled as a fallback source" assertion.
+    expect(mode.availability).toBe('fallback')
+  })
+
   it('emits a release candidate for each resolved album', async () => {
     const mode = createCriticallyAcclaimedMode(
       baseDeps({

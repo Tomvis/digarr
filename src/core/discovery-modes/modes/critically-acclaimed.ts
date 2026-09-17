@@ -113,7 +113,11 @@ export function createCriticallyAcclaimedMode(
     id: 'critically-acclaimed',
     label: 'Critically Acclaimed',
     description: 'Highly rated albums from your review sources that you do not own yet',
-    availability: 'strict',
+    // Gated on exactly one connection flag (hasMusicRater), same shape as
+    // labels/charts/subsonic-starred -- all of which are 'fallback' to match
+    // their SINGLE_FLAG_MODES fallbackUsed:true (availability.ts). This mode
+    // was 'strict', disagreeing with its own fallbackUsed:true.
+    availability: 'fallback',
     easyFields: [
       { key: 'minScoreRatio', label: 'Minimum score (0-1)', type: 'number' },
       { key: 'minReleaseYear', label: 'Released since', type: 'number' },
