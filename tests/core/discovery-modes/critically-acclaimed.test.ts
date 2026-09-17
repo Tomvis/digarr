@@ -209,6 +209,36 @@ describe('createCriticallyAcclaimedMode', () => {
     expect(recordResolutionFailure).toHaveBeenCalledWith(10)
   })
 
+  it('FIX 2: a rejecting recordResolutionFailure does not lose the other album in the slice', async () => {
+    const markResolved = vi.fn().mockResolvedValue(undefined)
+    // The bookkeeping call itself throws -- this is exactly what FIX 2
+    // guards against. Unguarded, this rejection would escape the per-album
+    // catch and fail the whole slice's Promise.all, losing album 11's
+    // candidate too even though it resolved cleanly.
+    const recordResolutionFailure = vi.fn().mockRejectedValue(new Error('db down'))
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
+        resolveArtistMbid: vi
+          .fn()
+          .mockRejectedValueOnce(new Error('MB down'))
+          .mockResolvedValueOnce('mbid-b'),
+        matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-2', title: 'T' })),
+        markResolved,
+        recordResolutionFailure,
+      }),
+    )
+
+    const { candidates } = await mode.executor(request())
+
+    // Album 11's candidate must still come back even though album 10's
+    // resolveArtistMbid threw AND the resulting recordResolutionFailure
+    // bookkeeping call also threw.
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]).toMatchObject({ artistMbid: 'mbid-b' })
+    expect(recordResolutionFailure).toHaveBeenCalledWith(10)
+  })
+
   it('honours maxAlbumsPerRun from the request settings', async () => {
     const getUnresolvedAcclaimedAlbums = vi.fn().mockResolvedValue([])
     const mode = createCriticallyAcclaimedMode(

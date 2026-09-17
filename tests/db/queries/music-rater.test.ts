@@ -318,6 +318,45 @@ describe('getUnresolvedAcclaimedAlbums (real db)', () => {
     expect(result.map((r) => r.albumTitleRaw)).toEqual(['In Rainbows'])
   })
 
+  /**
+   * FIX 4 follow-up (review round 1, GAP 1): the ownership filter compares
+   * two owned-key arrays (artist norms, title norms) via Postgres's
+   * multi-arg `unnest(a[], b[])`, which pairs the two arrays POSITIONALLY --
+   * row i of the first array with row i of the second. If that ever
+   * regressed into a cross-join (every artist checked against every title,
+   * independently), this would silently OVER-exclude: a corpus row whose
+   * artist matches one owned album and whose title matches a DIFFERENT
+   * owned album would be wrongly treated as owned and dropped -- the mode
+   * would just quietly recommend less, with nothing pointing at the cause.
+   *
+   * Every other ownership test here seeds at most one owned album, so none
+   * of them can distinguish correct positional pairing from a cross-join
+   * bug (with only one row, "positional" and "cross-join" produce the same
+   * single pair). This test seeds TWO owned albums with different
+   * artist/title pairs and asserts the cross-pair corpus row -- owned by
+   * neither pairing -- survives.
+   */
+  it('pairs owned artist/title keys positionally, not as a cross-join', async () => {
+    await seedOwnedAlbum(db, userId, { artistName: 'Radiohead', albumTitle: 'Kid A' })
+    await seedOwnedAlbum(db, userId, { artistName: 'Boards of Canada', albumTitle: 'Geogaddi' })
+    // Not an owned pair under EITHER seeded row: artist matches row 1's
+    // artist, title matches row 2's title. A cross-join bug would exclude
+    // this; positional pairing must not.
+    await seedAcclaimedRow(db, userId, {
+      musicRaterAlbumId: 1,
+      artistNameRaw: 'Radiohead',
+      albumTitleRaw: 'Geogaddi',
+    })
+
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0,
+      minReleaseYear: 0,
+      limit: 10,
+    })
+
+    expect(result.map((r) => r.albumTitleRaw)).toEqual(['Geogaddi'])
+  })
+
   it('matches ownership by name regardless of casing/whitespace, via the shared normaliser', async () => {
     await seedOwnedAlbum(db, userId, { artistName: 'Sigur Rós', albumTitle: 'Ágætis Byrjun' })
     await seedAcclaimedRow(db, userId, {
