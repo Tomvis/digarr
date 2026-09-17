@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 import type { MusicRaterAlbumRow } from '@/core/music-rater/sync'
 import type { Database } from '@/db'
@@ -59,9 +59,9 @@ export type AcclaimedAlbumRow = {
 }
 
 /**
- * Normalised `"<artist>::<title>"` keys for every album this user (or the
- * global/null-owner library, same scoping as `listOwnedAlbumsForArtist`)
- * already owns.
+ * Normalised (artist, title) pairs, as two parallel arrays, for every album
+ * this user (or the global/null-owner library, same scoping as
+ * `listOwnedAlbumsForArtist`) already owns.
  *
  * Deliberately does NOT read `library_albums.title_normalized` /
  * `library_artists.name_normalized`: those columns are produced by
@@ -75,8 +75,16 @@ export type AcclaimedAlbumRow = {
  * other's matching-normaliser output would silently under-match (owned
  * albums slipping through as "new"), so both sides of this comparison are
  * (re)computed here, from the raw names, with the same function.
+ *
+ * Returned as two parallel arrays (not a `Set<"artist::title">`) so the
+ * caller can hand them to Postgres as exactly two bind parameters via
+ * `unnest(...)`, whatever the library size -- see
+ * `getUnresolvedAcclaimedAlbums`.
  */
-async function getOwnedAlbumNormalizedKeys(db: Database, userId: number): Promise<Set<string>> {
+async function getOwnedAlbumNormalizedKeyPairs(
+  db: Database,
+  userId: number,
+): Promise<{ artists: string[]; titles: string[] }> {
   const rows = await db
     .select({ artistName: libraryArtists.name, title: libraryAlbums.title })
     .from(libraryAlbums)
@@ -89,9 +97,10 @@ async function getOwnedAlbumNormalizedKeys(db: Database, userId: number): Promis
         or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId))!,
       ),
     )
-  return new Set(
-    rows.map((row) => `${normalizeArtistName(row.artistName)}::${normalizeAlbumTitle(row.title)}`),
-  )
+  return {
+    artists: rows.map((row) => normalizeArtistName(row.artistName)),
+    titles: rows.map((row) => normalizeAlbumTitle(row.title)),
+  }
 }
 
 /**
@@ -103,21 +112,39 @@ async function getOwnedAlbumNormalizedKeys(db: Database, userId: number): Promis
  *
  * Ownership is filtered HERE, before any MusicBrainz call is spent: a
  * name-based match (both sides normalised with `src/core/matching/normalize.ts`,
- * see `getOwnedAlbumNormalizedKeys`) against the album this row's `resolvedAt`
+ * see `getOwnedAlbumNormalizedKeyPairs`) against the album this row's `resolvedAt`
  * position would otherwise waste a search+lookup pair resolving. This is a
  * cheap, best-effort pass, not the definitive check -- a corpus row whose
  * artist/title spelling differs from the library's (a real MusicBrainz-side
  * name variant, an alias, a retitled reissue) will still pass through here.
  * The definitive check is post-resolution, by exact release-group MBID (see
  * `isReleaseGroupOwnedByUser`), once this row actually has one to check.
+ *
+ * The ownership filter is a `NOT EXISTS` against `unnest(...)` of the two
+ * owned-key arrays, not a `notInArray` of composite `"artist::title"`
+ * strings (the previous approach). Two things wrong with that: (1)
+ * `notInArray` binds one Postgres parameter PER owned album, and a 17k-album
+ * library blows well past Postgres's 65535-parameter cap; (2) comparing a
+ * concatenated `artist || '::' || title` expression can't use
+ * `music_rater_albums_name_match_idx` (an index on the two separate
+ * columns), so it always required a full scan of this user's corpus. The
+ * `unnest` form sends exactly two array parameters regardless of library
+ * size, and compares the two RAW columns directly, so the planner can hash
+ * or index its way through the anti-join instead of evaluating a computed
+ * expression per row.
  */
 export async function getUnresolvedAcclaimedAlbums(
   db: Database,
   userId: number,
   opts: { minScoreRatio: number; minReleaseYear: number; limit: number },
 ): Promise<AcclaimedAlbumRow[]> {
-  const ownedKeys = await getOwnedAlbumNormalizedKeys(db, userId)
-  const compositeKey = sql`(${musicRaterAlbums.artistNameNormalized} || '::' || ${musicRaterAlbums.albumTitleNormalized})`
+  const owned = await getOwnedAlbumNormalizedKeyPairs(db, userId)
+  const notOwned = sql`NOT EXISTS (
+    SELECT 1 FROM unnest(${sql.param(owned.artists)}::text[], ${sql.param(owned.titles)}::text[])
+      AS owned_lib(artist_norm, title_norm)
+    WHERE owned_lib.artist_norm = ${musicRaterAlbums.artistNameNormalized}
+      AND owned_lib.title_norm = ${musicRaterAlbums.albumTitleNormalized}
+  )`
 
   return db
     .select({
@@ -133,7 +160,7 @@ export async function getUnresolvedAcclaimedAlbums(
         isNull(musicRaterAlbums.resolvedReleaseGroupMbid),
         gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
         gte(musicRaterAlbums.releaseYear, opts.minReleaseYear),
-        notInArray(compositeKey, Array.from(ownedKeys)),
+        notOwned,
       ),
     )
     .orderBy(sql`${musicRaterAlbums.resolvedAt} asc nulls first`, asc(musicRaterAlbums.id))
