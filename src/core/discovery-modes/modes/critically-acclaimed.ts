@@ -1,22 +1,23 @@
 import PQueue from 'p-queue'
+// `AcclaimedAlbumRow` is the row shape `getUnresolvedAcclaimedAlbums` (the DB
+// layer) actually returns. This module used to declare its own structurally
+// identical `AcclaimedAlbum` type one file away in the same dependency
+// chain; collapsed onto the query's own type instead of keeping two names
+// for one shape. `import type` is erased at compile time, so this does not
+// pull `db/queries/music-rater` (and therefore the DB) into this module's
+// runtime graph -- `defaultDeps` below still loads it lazily via `import()`.
+import type { AcclaimedAlbumRow } from '@/db/queries/music-rater'
 import type { DiscoveryModeDefinition, RawDiscoveryCandidate } from '../types'
 
 const DEFAULT_MAX_ALBUMS_PER_RUN = 25
 const DEFAULT_MIN_SCORE_RATIO = 0.8
 const DEFAULT_MIN_RELEASE_YEAR = 2000
 
-export type AcclaimedAlbum = {
-  id: number
-  artistNameRaw: string
-  albumTitleRaw: string
-  releaseYear: number | null
-}
-
 export type CriticallyAcclaimedDeps = {
   getUnresolvedAcclaimedAlbums: (
     userId: number,
     opts: { minScoreRatio: number; minReleaseYear: number; limit: number },
-  ) => Promise<AcclaimedAlbum[]>
+  ) => Promise<AcclaimedAlbumRow[]>
   resolveArtistMbid: (artistName: string) => Promise<string | null>
   matchAlbum: (
     title: string,
@@ -105,6 +106,15 @@ function numberSetting(value: unknown, fallback: number): number {
  * move on) but emits no candidate: this mode promises albums the user does
  * not own yet, and `getUnresolvedAcclaimedAlbums` only screens out owned
  * albums it can catch by name before spending MusicBrainz budget on them.
+ *
+ * The ownership check runs BEFORE the row is stamped, deliberately: stamping
+ * writes a real `resolvedReleaseGroupMbid`, which permanently excludes the
+ * row from `getUnresolvedAcclaimedAlbums` (`isNull(resolvedReleaseGroupMbid)`)
+ * -- so if the ownership check threw after the stamp, the row would be both
+ * "done" forever and never have emitted (or even decided on) a candidate,
+ * with nothing pointing at it. Checking first means a throw there is caught
+ * like any other failure in this loop: the row stays unresolved and is
+ * retried next run.
  */
 export function createCriticallyAcclaimedMode(
   injected?: CriticallyAcclaimedDeps,
@@ -152,18 +162,20 @@ export function createCriticallyAcclaimedMode(
               }
 
               const matched = await deps.matchAlbum(album.albumTitleRaw, artistMbid)
-              await deps.markResolved(album.id, {
-                artistMbid,
-                releaseGroupMbid: matched.releaseGroupId ?? null,
-              })
-              if (!matched.releaseGroupId) return []
+              const releaseGroupMbid = matched.releaseGroupId ?? null
 
               // Definitive ownership check, by exact release-group MBID
-              // against digarr's own library. The row is genuinely resolved
-              // (already stamped above), so the cursor moves on either way;
-              // an owned album just never becomes a candidate.
-              const owned = await deps.isAlbumOwned(request.userId, matched.releaseGroupId)
-              if (owned) return []
+              // against digarr's own library. Deliberately run BEFORE
+              // markResolved below -- see the module docstring's "runs
+              // BEFORE the row is stamped" note. Only checked when there is
+              // actually a release group to check.
+              const owned =
+                releaseGroupMbid !== null
+                  ? await deps.isAlbumOwned(request.userId, releaseGroupMbid)
+                  : false
+
+              await deps.markResolved(album.id, { artistMbid, releaseGroupMbid })
+              if (releaseGroupMbid === null || owned) return []
 
               return [
                 {
@@ -171,7 +183,7 @@ export function createCriticallyAcclaimedMode(
                   name: album.albumTitleRaw,
                   artistName: album.artistNameRaw,
                   artistMbid,
-                  releaseGroupMbid: matched.releaseGroupId,
+                  releaseGroupMbid,
                   provenanceProvider: 'music-rater',
                   fallbackUsed: false,
                   ...(album.releaseYear != null
@@ -183,11 +195,24 @@ export function createCriticallyAcclaimedMode(
               // One album's MusicBrainz failure must not lose the slice's
               // other resolutions. Deliberately NOT stamped directly here --
               // recordResolutionFailure only stamps once a bounded number of
-              // CONSECUTIVE throws accumulate, so a transient failure keeps
-              // retrying but a deterministically-failing name (an unescaped
-              // Lucene-breaking artist name 400ing forever) eventually
-              // leaves the head of the cursor too.
-              await deps.recordResolutionFailure(album.id)
+              // CUMULATIVE attempts accumulate (it is a running total, never
+              // reset by an intervening success -- see
+              // db/queries/music-rater.ts's MAX_RESOLUTION_ATTEMPTS), so a
+              // transient failure keeps retrying but a deterministically-failing
+              // name (an unescaped Lucene-breaking artist name 400ing forever)
+              // eventually leaves the head of the cursor too.
+              try {
+                await deps.recordResolutionFailure(album.id)
+              } catch (recordErr) {
+                // Bookkeeping must not be able to abort the whole slice's
+                // Promise.all -- worst case this row is retried again next
+                // run instead of rotating out, which is the same outcome as
+                // any other transient failure below the attempt budget.
+                console.error(
+                  `[critically-acclaimed] recordResolutionFailure threw for album ${album.id}:`,
+                  recordErr,
+                )
+              }
               return []
             }
           }),
