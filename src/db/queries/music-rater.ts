@@ -9,9 +9,12 @@ import { libraryAlbums, libraryArtists, musicRaterAlbums } from '@/db/schema'
  * Lucene search deterministically, forever -- `[dunkelbunt]`, `!!!`) must not
  * retry forever: it would sit at the head of `resolvedAt asc nulls first`
  * every single run, burning the whole slice on the same poison rows. A
- * transient failure gets a few free retries; the Nth consecutive one is
+ * transient failure gets a few free retries; the Nth CUMULATIVE one is
  * stamped (with null mbids, exactly like an unmatchable album) so it rotates
  * out of the "never attempted" bucket instead of monopolising it forever.
+ * "Cumulative", not "consecutive": `resolutionAttempts` is a running total
+ * across this row's whole retry history and is never reset -- not by a
+ * non-throwing miss, not by anything else. Nothing decrements it.
  */
 const MAX_RESOLUTION_ATTEMPTS = 3
 
@@ -198,7 +201,7 @@ export async function isReleaseGroupOwnedByUser(
 
 /**
  * Record a failed resolution attempt (the MusicBrainz call threw). Increments
- * the consecutive-failure counter and, once it reaches `MAX_RESOLUTION_ATTEMPTS`,
+ * the cumulative-failure counter and, once it reaches `MAX_RESOLUTION_ATTEMPTS`,
  * stamps `resolvedAt` (with null mbids, same shape as an unmatchable album) so
  * the row rotates out of the "never attempted" head of the cursor instead of
  * being retried on every single run forever. Below the threshold, `resolvedAt`

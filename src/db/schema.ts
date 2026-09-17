@@ -859,7 +859,8 @@ export const musicRaterAlbums = pgTable(
     resolvedArtistMbid: text('resolved_artist_mbid'),
     resolvedReleaseGroupMbid: text('resolved_release_group_mbid'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-    // Consecutive resolution failures (MusicBrainz call threw). Bounds the
+    // Cumulative resolution failures (MusicBrainz call threw) -- a running
+    // total across this row's whole retry history, never reset. Bounds the
     // retry: past MAX_RESOLUTION_ATTEMPTS (db/queries/music-rater.ts) the row
     // is stamped so a deterministically-failing name (Lucene-breaking artist
     // names 400 forever) does not monopolise the cursor's head.
