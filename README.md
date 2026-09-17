@@ -33,7 +33,7 @@
 > - 💿 **Album-level discovery** -- recommends and approves *individual albums* (gap-fills, new releases, net-new finds), not just artists. No whole-discography grabs.
 > - 🧠 **AI you control** -- Anthropic, OpenAI, Gemini, Ollama, or any OpenAI-compatible endpoint, scored with **configurable weights** that learn from your approvals and rejections.
 > - 💬 **Mood discovery** -- *"something like Boards of Canada but darker"* is a valid query.
-> - 🧭 **17 discovery modes** -- ListenBrainz radios, Release Radar, Library Gap-Fill, artist relationship graphs, labels, charts, Deezer Flow, Spotify Saved Albums, Spotify Followed Artists, TIDAL Favorite Artists, Subsonic Starred, Critically Acclaimed (via music-rater) -- most runnable on demand or saved as subscriptions.
+> - 🧭 **17 discovery modes** -- ListenBrainz radios, Release Radar, Library Gap-Fill, artist relationship graphs, labels, charts, Deezer Flow, Spotify Saved Albums, Spotify Followed Artists, TIDAL Favorite Artists, Subsonic Starred, Critically Acclaimed (via music-rater) -- all runnable on demand or saved as subscriptions.
 > - 🔓 **No Lidarr required** -- full discovery-only mode; genre-aware scoring uses native listening metadata plus a bounded MusicBrainz cache warmer when no library is connected.
 > - 👥 **Real multi-user** -- OIDC/SSO plus per-user queues, credentials, scoring weights, and targets.
 > - 🌍 **15 languages** -- the UI *and* the AI's reasoning, localized.
