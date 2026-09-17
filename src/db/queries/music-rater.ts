@@ -5,6 +5,17 @@ import type { Database } from '@/db'
 import { libraryAlbums, libraryArtists, musicRaterAlbums } from '@/db/schema'
 
 /**
+ * A repeatedly-failing resolution (e.g. an artist name that 400s MusicBrainz's
+ * Lucene search deterministically, forever -- `[dunkelbunt]`, `!!!`) must not
+ * retry forever: it would sit at the head of `resolvedAt asc nulls first`
+ * every single run, burning the whole slice on the same poison rows. A
+ * transient failure gets a few free retries; the Nth consecutive one is
+ * stamped (with null mbids, exactly like an unmatchable album) so it rotates
+ * out of the "never attempted" bucket instead of monopolising it forever.
+ */
+const MAX_RESOLUTION_ATTEMPTS = 3
+
+/**
  * Upsert one synced page.
  *
  * The excluded-column list is the important part: a resync must NOT clear
@@ -156,6 +167,25 @@ export async function isReleaseGroupOwnedByUser(
     )
     .limit(1)
   return rows.length > 0
+}
+
+/**
+ * Record a failed resolution attempt (the MusicBrainz call threw). Increments
+ * the consecutive-failure counter and, once it reaches `MAX_RESOLUTION_ATTEMPTS`,
+ * stamps `resolvedAt` (with null mbids, same shape as an unmatchable album) so
+ * the row rotates out of the "never attempted" head of the cursor instead of
+ * being retried on every single run forever. Below the threshold, `resolvedAt`
+ * is left untouched (still null, if it was) so the row is retried next run --
+ * transient MusicBrainz failures must keep retrying.
+ */
+export async function recordMusicRaterResolutionFailure(db: Database, id: number): Promise<void> {
+  await db
+    .update(musicRaterAlbums)
+    .set({
+      resolutionAttempts: sql`${musicRaterAlbums.resolutionAttempts} + 1`,
+      resolvedAt: sql`CASE WHEN ${musicRaterAlbums.resolutionAttempts} + 1 >= ${MAX_RESOLUTION_ATTEMPTS} THEN now() ELSE ${musicRaterAlbums.resolvedAt} END`,
+    })
+    .where(eq(musicRaterAlbums.id, id))
 }
 
 /**

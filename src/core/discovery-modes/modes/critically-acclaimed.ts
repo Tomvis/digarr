@@ -35,6 +35,13 @@ export type CriticallyAcclaimedDeps = {
    * budget, but this is the check that must never miss.
    */
   isAlbumOwned: (userId: number, releaseGroupMbid: string) => Promise<boolean>
+  /**
+   * Records a thrown (not merely unmatched) resolution attempt, so a
+   * deterministically-failing row (see MAX_RESOLUTION_ATTEMPTS in
+   * db/queries/music-rater.ts) eventually leaves the head of the cursor
+   * instead of being retried on every run forever.
+   */
+  recordResolutionFailure: (id: number) => Promise<void>
 }
 
 async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
@@ -66,6 +73,7 @@ async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
     markResolved: (id, resolved) => queries.markMusicRaterAlbumResolved(db, id, resolved),
     isAlbumOwned: (userId, releaseGroupMbid) =>
       queries.isReleaseGroupOwnedByUser(db, userId, releaseGroupMbid),
+    recordResolutionFailure: (id) => queries.recordMusicRaterResolutionFailure(db, id),
   }
 }
 
@@ -169,9 +177,13 @@ export function createCriticallyAcclaimedMode(
               ]
             } catch {
               // One album's MusicBrainz failure must not lose the slice's
-              // other resolutions. Deliberately NOT stamped: this is a
-              // transient failure, not an unmatchable album, so it should be
-              // retried on the next run.
+              // other resolutions. Deliberately NOT stamped directly here --
+              // recordResolutionFailure only stamps once a bounded number of
+              // CONSECUTIVE throws accumulate, so a transient failure keeps
+              // retrying but a deterministically-failing name (an unescaped
+              // Lucene-breaking artist name 400ing forever) eventually
+              // leaves the head of the cursor too.
+              await deps.recordResolutionFailure(album.id)
               return []
             }
           }),

@@ -1,0 +1,1 @@
+ALTER TABLE "music_rater_albums" ADD COLUMN IF NOT EXISTS "resolution_attempts" integer DEFAULT 0 NOT NULL;

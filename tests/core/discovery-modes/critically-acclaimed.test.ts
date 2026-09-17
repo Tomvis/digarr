@@ -11,10 +11,11 @@ const acclaimed = [
   { id: 11, artistNameRaw: 'Boards of Canada', albumTitleRaw: 'Geogaddi', releaseYear: 2002 },
 ]
 
-/** Deps object with ownership always "not owned" unless overridden. */
+/** Common deps shape with ownership always "not owned" and no recorded failures. */
 function baseDeps(overrides: Record<string, unknown> = {}) {
   return {
     isAlbumOwned: vi.fn().mockResolvedValue(false),
+    recordResolutionFailure: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -112,8 +113,9 @@ describe('createCriticallyAcclaimedMode', () => {
     expect(isAlbumOwned).toHaveBeenCalledWith(1, 'rg-owned')
   })
 
-  it('one album failing does not abort the rest of the slice', async () => {
+  it('one album failing does not abort the rest of the slice, and records the failure without stamping', async () => {
     const markResolved = vi.fn().mockResolvedValue(undefined)
+    const recordResolutionFailure = vi.fn().mockResolvedValue(undefined)
     const mode = createCriticallyAcclaimedMode(
       baseDeps({
         getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
@@ -123,6 +125,7 @@ describe('createCriticallyAcclaimedMode', () => {
           .mockResolvedValueOnce('mbid-b'),
         matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-2', title: 'T' })),
         markResolved,
+        recordResolutionFailure,
       }) as never,
     )
 
@@ -132,15 +135,20 @@ describe('createCriticallyAcclaimedMode', () => {
     expect(candidates[0]).toMatchObject({ artistMbid: 'mbid-b' })
 
     // The thrown MusicBrainz error is a transient failure, not an unmatchable
-    // album: it must NOT be stamped, or a MusicBrainz outage would
-    // permanently burn every album it touched out of the cursor with null
-    // mbids, never to be retried. Only the album that actually resolved
+    // album: it must NOT be stamped via markResolved, or a MusicBrainz outage
+    // would permanently burn every album it touched out of the cursor with
+    // null mbids, never to be retried. Only the album that actually resolved
     // (id 11) gets marked; the one that threw (id 10) does not appear at all.
     expect(markResolved).toHaveBeenCalledTimes(1)
     expect(markResolved).toHaveBeenCalledWith(11, {
       artistMbid: 'mbid-b',
       releaseGroupMbid: 'rg-2',
     })
+    // Instead, the throw is recorded so a row that fails the SAME way every
+    // run (a deterministic 400, not a transient outage) eventually leaves
+    // the cursor -- see db/queries/music-rater.ts's MAX_RESOLUTION_ATTEMPTS.
+    expect(recordResolutionFailure).toHaveBeenCalledTimes(1)
+    expect(recordResolutionFailure).toHaveBeenCalledWith(10)
   })
 
   it('honours maxAlbumsPerRun from the request settings', async () => {

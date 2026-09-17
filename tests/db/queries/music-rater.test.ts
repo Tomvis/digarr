@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 import { criticScoreKey } from '@/core/pipeline/score'
@@ -8,6 +9,7 @@ import {
   findMusicRaterScoresByNames,
   getUnresolvedAcclaimedAlbums,
   isReleaseGroupOwnedByUser,
+  recordMusicRaterResolutionFailure,
   upsertMusicRaterAlbums,
 } from '@/db/queries/music-rater'
 import { libraryAlbums, libraryArtists, musicRaterAlbums, users } from '@/db/schema'
@@ -307,5 +309,72 @@ describe('isReleaseGroupOwnedByUser (real db)', () => {
 
   it('is false when no library row has that mbid', async () => {
     expect(await isReleaseGroupOwnedByUser(db, userId, crypto.randomUUID())).toBe(false)
+  })
+})
+
+/**
+ * FIX 2: a repeatedly-throwing resolution (e.g. an artist name that 400s
+ * MusicBrainz's Lucene search deterministically) must not retry forever.
+ */
+describe('recordMusicRaterResolutionFailure (real db)', () => {
+  let db: Database
+  let close: () => Promise<void>
+  let userId: number
+
+  beforeEach(async () => {
+    const testDb = await makeTestDb()
+    db = testDb.db as unknown as Database
+    close = testDb.close
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'retry-budget-test', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+    userId = user.id
+  })
+
+  afterEach(async () => {
+    await close()
+  })
+
+  it('below the attempt budget: increments the counter but leaves resolvedAt null (keeps retrying)', async () => {
+    const id = await seedAcclaimedRow(db, userId, { musicRaterAlbumId: 1 })
+
+    await recordMusicRaterResolutionFailure(db, id)
+
+    const [row] = await db.select().from(musicRaterAlbums).where(eq(musicRaterAlbums.id, id))
+    expect(row?.resolutionAttempts).toBe(1)
+    expect(row?.resolvedAt).toBeNull()
+  })
+
+  it('at the attempt budget: stamps resolvedAt (with null mbids) so the row leaves the cursor head', async () => {
+    const id = await seedAcclaimedRow(db, userId, { musicRaterAlbumId: 1 })
+
+    // MAX_RESOLUTION_ATTEMPTS in db/queries/music-rater.ts is 3 -- three
+    // consecutive throws must be enough to stop this row from being
+    // reattempted on every single run.
+    await recordMusicRaterResolutionFailure(db, id)
+    await recordMusicRaterResolutionFailure(db, id)
+    let [row] = await db.select().from(musicRaterAlbums).where(eq(musicRaterAlbums.id, id))
+    expect(row?.resolvedAt).toBeNull()
+
+    await recordMusicRaterResolutionFailure(db, id)
+    ;[row] = await db.select().from(musicRaterAlbums).where(eq(musicRaterAlbums.id, id))
+
+    expect(row?.resolutionAttempts).toBe(3)
+    expect(row?.resolvedAt).not.toBeNull()
+    expect(row?.resolvedArtistMbid).toBeNull()
+    expect(row?.resolvedReleaseGroupMbid).toBeNull()
+
+    // Stamped rows are the same shape as an "unmatchable" album: excluded
+    // outright only by resolved_release_group_mbid, which stays null here --
+    // it rotates to the back of the queue (resolvedAt no longer null) rather
+    // than disappearing, exactly like a legitimate "artist not found" miss.
+    const unresolved = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0,
+      minReleaseYear: 0,
+      limit: 10,
+    })
+    expect(unresolved.map((r) => r.id)).toEqual([id])
   })
 })
