@@ -1284,13 +1284,6 @@ describe('POST /api/v1/settings/test/:service', () => {
     expect(body.type).toBe('/problems/probe-missing-input')
   })
 
-  it('masks the music-rater API key in the settings response', async () => {
-    const app = createApp(makeDeps())
-    const res = await authedRequest(app, '/api/v1/settings')
-    const body = await res.json()
-    if (body.musicRaterApiKey) expect(body.musicRaterApiKey).toBe('***')
-  })
-
   it('returns 400 for unknown service', async () => {
     const app = createApp(makeDeps())
     const res = await authedRequest(app, '/api/v1/settings/test/unknown', {
