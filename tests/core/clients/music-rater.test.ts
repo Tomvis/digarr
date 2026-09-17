@@ -79,6 +79,13 @@ describe('createMusicRaterClient', () => {
     const url = mockFetch.mock.calls[0]?.[0] as string
     expect(url).toContain('/api/v1/albums')
     expect(url).toContain('has_score=true')
+    // Load-bearing, not cosmetic: `sort_by`/`sort_dir` is a non-unique sort
+    // key with no tiebreaker, and sync.ts's loop terminates on
+    // `synced >= total`. Silently dropping the ordering would let duplicate
+    // rows cross page boundaries, inflate `synced`, and truncate a sync
+    // without ever surfacing an error.
+    expect(url).toContain('sort_by=release_year')
+    expect(url).toContain('sort_dir=desc')
     expect(url).toContain('limit=500')
     expect(url).toContain('offset=500')
   })
