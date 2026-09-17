@@ -409,6 +409,7 @@ export const zhCN = {
   'jobHistory.of': '/',
   'jobHistory.pipeline': '流水线',
   'jobHistory.librarySync': '资料库同步',
+  'jobHistory.musicRaterSync': 'music-rater 同步',
   'jobHistory.playlists': '播放列表',
   'jobHistory.quickDiscover': '快速发现',
   'jobHistory.showing': '显示',

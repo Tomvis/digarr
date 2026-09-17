@@ -435,6 +435,7 @@ export const tr = {
   'jobHistory.of': '/',
   'jobHistory.pipeline': 'Keşif çalıştırması',
   'jobHistory.librarySync': 'Kütüphane eşitleme',
+  'jobHistory.musicRaterSync': 'music-rater eşitleme',
   'jobHistory.playlists': 'Çalma listeleri',
   'jobHistory.quickDiscover': 'Hızlı Keşif',
   'jobHistory.showing': 'Gösterilen',

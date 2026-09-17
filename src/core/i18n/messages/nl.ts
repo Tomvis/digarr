@@ -440,6 +440,7 @@ export const nl = {
   'jobHistory.of': 'van',
   'jobHistory.pipeline': 'Ontdekkingsrun',
   'jobHistory.librarySync': 'Bibliotheeksynchronisatie',
+  'jobHistory.musicRaterSync': 'music-rater-synchronisatie',
   'jobHistory.playlists': 'Afspeellijsten',
   'jobHistory.quickDiscover': 'Snel ontdekken',
   'jobHistory.showing': 'Toont',

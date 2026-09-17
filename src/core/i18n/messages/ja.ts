@@ -440,6 +440,7 @@ export const ja = {
   'jobHistory.of': '/',
   'jobHistory.pipeline': 'パイプライン',
   'jobHistory.librarySync': 'ライブラリ同期',
+  'jobHistory.musicRaterSync': 'music-rater 同期',
   'jobHistory.playlists': 'プレイリスト',
   'jobHistory.quickDiscover': 'クイック探索',
   'jobHistory.showing': '表示',

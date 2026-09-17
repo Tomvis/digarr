@@ -435,6 +435,7 @@ export const ko = {
   'jobHistory.of': '/',
   'jobHistory.pipeline': '파이프라인',
   'jobHistory.librarySync': '라이브러리 동기화',
+  'jobHistory.musicRaterSync': 'music-rater 동기화',
   'jobHistory.playlists': '재생목록',
   'jobHistory.quickDiscover': '빠른 발견',
   'jobHistory.showing': '표시',

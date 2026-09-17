@@ -433,6 +433,7 @@ export const en = {
   'jobHistory.of': 'of',
   'jobHistory.pipeline': 'Pipeline',
   'jobHistory.librarySync': 'Library Sync',
+  'jobHistory.musicRaterSync': 'music-rater Sync',
   'jobHistory.playlists': 'Playlists',
   'jobHistory.quickDiscover': 'Quick Discover',
   'jobHistory.showing': 'Showing',

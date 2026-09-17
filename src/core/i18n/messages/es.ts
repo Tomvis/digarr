@@ -440,6 +440,7 @@ export const es = {
   'jobHistory.of': 'de',
   'jobHistory.pipeline': 'Proceso de descubrimiento',
   'jobHistory.librarySync': 'Sincronización de biblioteca',
+  'jobHistory.musicRaterSync': 'Sincronización de music-rater',
   'jobHistory.playlists': 'Listas de reproducción',
   'jobHistory.quickDiscover': 'Descubrimiento rápido',
   'jobHistory.showing': 'Mostrando',

@@ -435,6 +435,7 @@ export const fr = {
   'jobHistory.of': 'sur',
   'jobHistory.pipeline': 'Flux de découverte',
   'jobHistory.librarySync': 'Synchronisation de la bibliothèque',
+  'jobHistory.musicRaterSync': 'Synchronisation music-rater',
   'jobHistory.playlists': 'Listes de lecture',
   'jobHistory.quickDiscover': 'Découverte rapide',
   'jobHistory.showing': 'Affichage',

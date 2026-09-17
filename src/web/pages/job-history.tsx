@@ -14,6 +14,7 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
     { key: 'subscription', label: t('jobHistory.subscriptions') },
     { key: 'target', label: t('jobHistory.targets') },
     { key: 'library_sync', label: t('jobHistory.librarySync') },
+    { key: 'music_rater_sync', label: t('jobHistory.musicRaterSync') },
     { key: 'quick_discover', label: t('jobHistory.quickDiscover') },
     { key: 'playlist', label: t('jobHistory.playlists') },
   ]

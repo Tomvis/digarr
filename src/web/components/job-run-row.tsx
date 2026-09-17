@@ -11,6 +11,7 @@ const TYPE_LABEL_KEYS: Record<string, MessageKey> = {
   target: 'jobHistory.targetType',
   playlist: 'jobHistory.playlistType',
   library_sync: 'jobHistory.librarySync',
+  music_rater_sync: 'jobHistory.musicRaterSync',
 }
 
 function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
@@ -32,6 +33,8 @@ function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
       return String(meta.playlistName ?? t('jobHistory.playlistGeneration'))
     case 'library_sync':
       return t('jobHistory.librarySync')
+    case 'music_rater_sync':
+      return t('jobHistory.musicRaterSync')
     default:
       return job.type
   }

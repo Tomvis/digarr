@@ -443,6 +443,7 @@ export const it = {
   'jobHistory.of': 'di',
   'jobHistory.pipeline': 'Pipeline di scoperta',
   'jobHistory.librarySync': 'Sincronizzazione libreria',
+  'jobHistory.musicRaterSync': 'Sincronizzazione music-rater',
   'jobHistory.playlists': 'Playlist',
   'jobHistory.quickDiscover': 'Scoperta rapida',
   'jobHistory.showing': 'Mostrando',

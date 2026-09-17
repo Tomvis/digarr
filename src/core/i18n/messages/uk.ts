@@ -440,6 +440,7 @@ export const uk = {
   'jobHistory.of': 'з',
   'jobHistory.pipeline': 'Запуск пошуку',
   'jobHistory.librarySync': 'Синхронізація бібліотеки',
+  'jobHistory.musicRaterSync': 'Синхронізація music-rater',
   'jobHistory.playlists': 'Плейлисти',
   'jobHistory.quickDiscover': 'Швидке відкриття',
   'jobHistory.showing': 'Показано',

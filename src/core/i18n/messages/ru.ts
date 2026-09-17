@@ -442,6 +442,7 @@ export const ru = {
   'jobHistory.of': 'из',
   'jobHistory.pipeline': 'Пайплайн',
   'jobHistory.librarySync': 'Синхронизация библиотеки',
+  'jobHistory.musicRaterSync': 'Синхронизация music-rater',
   'jobHistory.playlists': 'Плейлисты',
   'jobHistory.quickDiscover': 'Быстрый поиск',
   'jobHistory.showing': 'Показано',

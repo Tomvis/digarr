@@ -441,6 +441,7 @@ export const ro = {
   'jobHistory.of': 'din',
   'jobHistory.pipeline': 'Rulare de descoperire',
   'jobHistory.librarySync': 'Sincronizarea bibliotecii',
+  'jobHistory.musicRaterSync': 'Sincronizarea music-rater',
   'jobHistory.playlists': 'Liste de redare',
   'jobHistory.quickDiscover': 'Descoperire rapidă',
   'jobHistory.showing': 'Se afișează',

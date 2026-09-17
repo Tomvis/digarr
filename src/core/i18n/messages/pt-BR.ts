@@ -442,6 +442,7 @@ export const ptBR = {
   'jobHistory.of': 'de',
   'jobHistory.pipeline': 'Fluxo de descoberta',
   'jobHistory.librarySync': 'Sincronização da biblioteca',
+  'jobHistory.musicRaterSync': 'Sincronização do music-rater',
   'jobHistory.playlists': 'Listas de reprodução',
   'jobHistory.quickDiscover': 'Descoberta rápida',
   'jobHistory.showing': 'Mostrando',

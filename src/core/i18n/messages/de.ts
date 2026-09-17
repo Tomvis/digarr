@@ -445,6 +445,7 @@ export const de = {
   'jobHistory.of': 'von',
   'jobHistory.pipeline': 'Entdeckungslauf',
   'jobHistory.librarySync': 'Bibliothekssynchronisierung',
+  'jobHistory.musicRaterSync': 'music-rater-Synchronisierung',
   'jobHistory.playlists': 'Wiedergabelisten',
   'jobHistory.quickDiscover': 'Schnelle Entdeckung',
   'jobHistory.showing': 'Angezeigt',
