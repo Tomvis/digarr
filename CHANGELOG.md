@@ -4,6 +4,12 @@ All notable user-facing changes are documented here.
 
 Releases that have been promoted to the `:stable` Docker channel carry a `(stable)` marker after the version heading. Promotion happens after a release has been live for at least seven days with no follow-up patch.
 
+## Unreleased
+
+### Added
+
+- **A new music-rater integration surfaces critically acclaimed albums you don't already own, and lets critic ratings nudge every album recommendation.** Connect a music-rater instance from Settings > Your Connections with its URL and a `mr_` API key (encrypted at rest, with a Test Connection check). A nightly sync pulls your scored album corpus into digarr and shows up in Job History as its own job type. The new Critically Acclaimed discovery mode reads that corpus for highly rated albums you have not added, resolving each against MusicBrainz the first time it is seen so repeat runs only do new work. Once connected, matching critic ratings also fold into the score of album recommendations from any discovery mode or pipeline scan, not just Critically Acclaimed; the adjustment rides the existing bounded per-album score modifier, so nothing changes for anyone who has not connected music-rater. Library sync, playlist export, and subscriptions are not part of this integration.
+
 ## v1.17.0 - 2026-09-16
 
 ### Fixed
