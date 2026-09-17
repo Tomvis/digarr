@@ -26,6 +26,13 @@
  * strips a trailing parenthetical to match MusicBrainz release-group titles.
  * That is a disambiguation rule for one specific comparison, not a general
  * matching key, and folding it in here would change `matchSuggestedAlbum`.
+ *
+ * This is a deliberately conservative matching key: punctuation is NOT
+ * stripped (a title differing only by punctuation will not match), and a
+ * non-Latin script (Cyrillic, CJK, ...) passes through unchanged apart from
+ * `.toLowerCase()` -- there is no transliteration. Worth stating explicitly
+ * now that this module has a real consumer (the music-rater join): both
+ * properties bound what it will and won't match.
  */
 
 /** Ligatures NFKD leaves intact, which would otherwise split a match. */

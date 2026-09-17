@@ -34,8 +34,8 @@ export type MusicRaterAlbum = {
   sources: string[]
 }
 
-/** music-rater caps `limit` at 500. */
-export const MUSIC_RATER_PAGE_SIZE = 500
+/** music-rater caps `limit` at 500. Only consumed as this module's own default. */
+const MUSIC_RATER_PAGE_SIZE = 500
 
 function toAlbum(raw: RawAlbumSummary): MusicRaterAlbum {
   return {
