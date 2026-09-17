@@ -1,7 +1,8 @@
-import { and, asc, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
+import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 import type { MusicRaterAlbumRow } from '@/core/music-rater/sync'
 import type { Database } from '@/db'
-import { musicRaterAlbums } from '@/db/schema'
+import { libraryAlbums, libraryArtists, musicRaterAlbums } from '@/db/schema'
 
 /**
  * Upsert one synced page.
@@ -47,17 +48,66 @@ export type AcclaimedAlbumRow = {
 }
 
 /**
+ * Normalised `"<artist>::<title>"` keys for every album this user (or the
+ * global/null-owner library, same scoping as `listOwnedAlbumsForArtist`)
+ * already owns.
+ *
+ * Deliberately does NOT read `library_albums.title_normalized` /
+ * `library_artists.name_normalized`: those columns are produced by
+ * `src/core/library/normalize.ts`, a DIFFERENT normaliser from
+ * `src/core/matching/normalize.ts` (this join's normaliser, and the one
+ * `music_rater_albums.artist_name_normalized` / `album_title_normalized`
+ * are already stored with). The two disagree on real inputs -- e.g.
+ * `src/core/library/normalize.ts` strips "(Deluxe Edition)"-style
+ * parentheticals and leading "The "; `src/core/matching/normalize.ts` does
+ * neither. Comparing one side's library-normaliser output against the
+ * other's matching-normaliser output would silently under-match (owned
+ * albums slipping through as "new"), so both sides of this comparison are
+ * (re)computed here, from the raw names, with the same function.
+ */
+async function getOwnedAlbumNormalizedKeys(db: Database, userId: number): Promise<Set<string>> {
+  const rows = await db
+    .select({ artistName: libraryArtists.name, title: libraryAlbums.title })
+    .from(libraryAlbums)
+    .innerJoin(libraryArtists, eq(libraryAlbums.artistMbid, libraryArtists.mbid))
+    .where(
+      and(
+        // biome-ignore lint/style/noNonNullAssertion: or() with two non-null args always returns SQL, never undefined
+        or(eq(libraryAlbums.userId, userId), isNull(libraryAlbums.userId))!,
+        // biome-ignore lint/style/noNonNullAssertion: or() with two non-null args always returns SQL, never undefined
+        or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId))!,
+      ),
+    )
+  return new Set(
+    rows.map((row) => `${normalizeArtistName(row.artistName)}::${normalizeAlbumTitle(row.title)}`),
+  )
+}
+
+/**
  * The next slice of unowned, highly rated albums to resolve.
  *
  * `resolvedAt asc nulls first` is the rotation: never-attempted rows go
  * first, then the least recently attempted. Rows that already carry a
  * release-group MBID are excluded outright — they are done.
+ *
+ * Ownership is filtered HERE, before any MusicBrainz call is spent: a
+ * name-based match (both sides normalised with `src/core/matching/normalize.ts`,
+ * see `getOwnedAlbumNormalizedKeys`) against the album this row's `resolvedAt`
+ * position would otherwise waste a search+lookup pair resolving. This is a
+ * cheap, best-effort pass, not the definitive check -- a corpus row whose
+ * artist/title spelling differs from the library's (a real MusicBrainz-side
+ * name variant, an alias, a retitled reissue) will still pass through here.
+ * The definitive check is post-resolution, by exact release-group MBID (see
+ * `isReleaseGroupOwnedByUser`), once this row actually has one to check.
  */
 export async function getUnresolvedAcclaimedAlbums(
   db: Database,
   userId: number,
   opts: { minScoreRatio: number; minReleaseYear: number; limit: number },
 ): Promise<AcclaimedAlbumRow[]> {
+  const ownedKeys = await getOwnedAlbumNormalizedKeys(db, userId)
+  const compositeKey = sql`(${musicRaterAlbums.artistNameNormalized} || '::' || ${musicRaterAlbums.albumTitleNormalized})`
+
   return db
     .select({
       id: musicRaterAlbums.id,
@@ -72,10 +122,40 @@ export async function getUnresolvedAcclaimedAlbums(
         isNull(musicRaterAlbums.resolvedReleaseGroupMbid),
         gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
         gte(musicRaterAlbums.releaseYear, opts.minReleaseYear),
+        notInArray(compositeKey, Array.from(ownedKeys)),
       ),
     )
     .orderBy(sql`${musicRaterAlbums.resolvedAt} asc nulls first`, asc(musicRaterAlbums.id))
     .limit(opts.limit)
+}
+
+/**
+ * The definitive ownership check: does this user (or the global/null-owner
+ * library) already have an album with exactly this release-group MBID.
+ *
+ * Unlike the pre-resolution name filter, this cannot false-negative on a
+ * spelling difference -- it is the same MBID space `library_albums.album_mbid`
+ * is populated from (`src/core/library/album-reconciler.ts`'s
+ * `getReleaseGroups` lookups) and the same one `matchSuggestedAlbum` returns
+ * here. Called once a corpus row has actually resolved to a release group.
+ */
+export async function isReleaseGroupOwnedByUser(
+  db: Database,
+  userId: number,
+  releaseGroupMbid: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: libraryAlbums.id })
+    .from(libraryAlbums)
+    .where(
+      and(
+        eq(libraryAlbums.albumMbid, releaseGroupMbid),
+        // biome-ignore lint/style/noNonNullAssertion: or() with two non-null args always returns SQL, never undefined
+        or(eq(libraryAlbums.userId, userId), isNull(libraryAlbums.userId))!,
+      ),
+    )
+    .limit(1)
+  return rows.length > 0
 }
 
 /**

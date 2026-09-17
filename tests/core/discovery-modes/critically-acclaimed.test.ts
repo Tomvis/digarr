@@ -11,14 +11,24 @@ const acclaimed = [
   { id: 11, artistNameRaw: 'Boards of Canada', albumTitleRaw: 'Geogaddi', releaseYear: 2002 },
 ]
 
+/** Deps object with ownership always "not owned" unless overridden. */
+function baseDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    isAlbumOwned: vi.fn().mockResolvedValue(false),
+    ...overrides,
+  }
+}
+
 describe('createCriticallyAcclaimedMode', () => {
   it('emits a release candidate for each resolved album', async () => {
-    const mode = createCriticallyAcclaimedMode({
-      getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
-      resolveArtistMbid: vi.fn(async (name: string) => `mbid-${name}`),
-      matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-1', title: 'T' })),
-      markResolved: vi.fn().mockResolvedValue(undefined),
-    })
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
+        resolveArtistMbid: vi.fn(async (name: string) => `mbid-${name}`),
+        matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-1', title: 'T' })),
+        markResolved: vi.fn().mockResolvedValue(undefined),
+      }) as never,
+    )
 
     const { candidates } = await mode.executor(request())
 
@@ -35,12 +45,14 @@ describe('createCriticallyAcclaimedMode', () => {
 
   it('stamps an unresolvable album so the cursor still advances', async () => {
     const markResolved = vi.fn().mockResolvedValue(undefined)
-    const mode = createCriticallyAcclaimedMode({
-      getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue([acclaimed[0]]),
-      resolveArtistMbid: vi.fn(async () => null),
-      matchAlbum: vi.fn(),
-      markResolved,
-    })
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue([acclaimed[0]]),
+        resolveArtistMbid: vi.fn(async () => null),
+        matchAlbum: vi.fn(),
+        markResolved,
+      }) as never,
+    )
 
     const { candidates } = await mode.executor(request())
 
@@ -53,12 +65,14 @@ describe('createCriticallyAcclaimedMode', () => {
 
   it('does not emit a candidate when the title does not match a release group', async () => {
     const markResolved = vi.fn().mockResolvedValue(undefined)
-    const mode = createCriticallyAcclaimedMode({
-      getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue([acclaimed[0]]),
-      resolveArtistMbid: vi.fn(async () => 'mbid-a'),
-      matchAlbum: vi.fn(async () => ({ title: 'T' })),
-      markResolved,
-    })
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue([acclaimed[0]]),
+        resolveArtistMbid: vi.fn(async () => 'mbid-a'),
+        matchAlbum: vi.fn(async () => ({ title: 'T' })),
+        markResolved,
+      }) as never,
+    )
 
     const { candidates } = await mode.executor(request())
 
@@ -69,17 +83,48 @@ describe('createCriticallyAcclaimedMode', () => {
     })
   })
 
+  it('stamps a resolved-but-owned album as resolved, but emits no candidate', async () => {
+    const markResolved = vi.fn().mockResolvedValue(undefined)
+    const isAlbumOwned = vi.fn().mockResolvedValue(true)
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue([acclaimed[0]]),
+        resolveArtistMbid: vi.fn(async () => 'mbid-a'),
+        matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-owned', title: 'T' })),
+        markResolved,
+        isAlbumOwned,
+      }) as never,
+    )
+
+    const { candidates } = await mode.executor(request())
+
+    // The mode's whole promise is "albums you do not own yet" -- an owned
+    // album must never surface as a candidate, no matter how well it
+    // resolved or how high its critic score.
+    expect(candidates).toHaveLength(0)
+    // But it IS genuinely resolved, so it must leave the cursor exactly like
+    // a normal successful resolution -- not sit there being re-checked
+    // against MusicBrainz (and against the library) forever.
+    expect(markResolved).toHaveBeenCalledWith(10, {
+      artistMbid: 'mbid-a',
+      releaseGroupMbid: 'rg-owned',
+    })
+    expect(isAlbumOwned).toHaveBeenCalledWith(1, 'rg-owned')
+  })
+
   it('one album failing does not abort the rest of the slice', async () => {
     const markResolved = vi.fn().mockResolvedValue(undefined)
-    const mode = createCriticallyAcclaimedMode({
-      getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
-      resolveArtistMbid: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('MB down'))
-        .mockResolvedValueOnce('mbid-b'),
-      matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-2', title: 'T' })),
-      markResolved,
-    })
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums: vi.fn().mockResolvedValue(acclaimed),
+        resolveArtistMbid: vi
+          .fn()
+          .mockRejectedValueOnce(new Error('MB down'))
+          .mockResolvedValueOnce('mbid-b'),
+        matchAlbum: vi.fn(async () => ({ releaseGroupId: 'rg-2', title: 'T' })),
+        markResolved,
+      }) as never,
+    )
 
     const { candidates } = await mode.executor(request())
 
@@ -100,12 +145,14 @@ describe('createCriticallyAcclaimedMode', () => {
 
   it('honours maxAlbumsPerRun from the request settings', async () => {
     const getUnresolvedAcclaimedAlbums = vi.fn().mockResolvedValue([])
-    const mode = createCriticallyAcclaimedMode({
-      getUnresolvedAcclaimedAlbums,
-      resolveArtistMbid: vi.fn(),
-      matchAlbum: vi.fn(),
-      markResolved: vi.fn(),
-    })
+    const mode = createCriticallyAcclaimedMode(
+      baseDeps({
+        getUnresolvedAcclaimedAlbums,
+        resolveArtistMbid: vi.fn(),
+        matchAlbum: vi.fn(),
+        markResolved: vi.fn(),
+      }) as never,
+    )
 
     await mode.executor(request({ maxAlbumsPerRun: 5 }))
 

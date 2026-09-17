@@ -26,6 +26,15 @@ export type CriticallyAcclaimedDeps = {
     id: number,
     resolved: { artistMbid: string | null; releaseGroupMbid: string | null },
   ) => Promise<void>
+  /**
+   * Definitive ownership check by exact release-group MBID, against digarr's
+   * own library (never music-rater's `lidarr_synced` -- that reflects
+   * music-rater's Lidarr view, not digarr's). Called once a row has actually
+   * resolved to a release group; `getUnresolvedAcclaimedAlbums` already did a
+   * cheaper, best-effort name-based pass before spending any MusicBrainz
+   * budget, but this is the check that must never miss.
+   */
+  isAlbumOwned: (userId: number, releaseGroupMbid: string) => Promise<boolean>
 }
 
 async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
@@ -55,6 +64,8 @@ async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
     },
     matchAlbum: (title, artistMbid) => matchSuggestedAlbum(title, artistMbid, mb),
     markResolved: (id, resolved) => queries.markMusicRaterAlbumResolved(db, id, resolved),
+    isAlbumOwned: (userId, releaseGroupMbid) =>
+      queries.isReleaseGroupOwnedByUser(db, userId, releaseGroupMbid),
   }
 }
 
@@ -80,6 +91,12 @@ function numberSetting(value: unknown, fallback: number): number {
  * would put it at the head of the cursor forever and every subsequent run
  * would re-attempt the same permanently unmatchable rows, starving the rest
  * of the corpus.
+ *
+ * An album that DOES resolve but turns out to already be in the user's
+ * library is also stamped (it is genuinely resolved -- the cursor should
+ * move on) but emits no candidate: this mode promises albums the user does
+ * not own yet, and `getUnresolvedAcclaimedAlbums` only screens out owned
+ * albums it can catch by name before spending MusicBrainz budget on them.
  */
 export function createCriticallyAcclaimedMode(
   injected?: CriticallyAcclaimedDeps,
@@ -128,6 +145,13 @@ export function createCriticallyAcclaimedMode(
                 releaseGroupMbid: matched.releaseGroupId ?? null,
               })
               if (!matched.releaseGroupId) return []
+
+              // Definitive ownership check, by exact release-group MBID
+              // against digarr's own library. The row is genuinely resolved
+              // (already stamped above), so the cursor moves on either way;
+              // an owned album just never becomes a candidate.
+              const owned = await deps.isAlbumOwned(request.userId, matched.releaseGroupId)
+              if (owned) return []
 
               return [
                 {
