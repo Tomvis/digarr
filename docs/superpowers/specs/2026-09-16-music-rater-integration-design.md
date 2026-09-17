@@ -210,11 +210,20 @@ One row per (user, music-rater album).
 | `musicRaterAlbumId` | music-rater's `albums.id` |
 | `artistNameRaw` / `albumTitleRaw` | as music-rater has them |
 | `artistNameNormalized` / `albumTitleNormalized` | **digarr's** normalisation, applied to both sides of the score-signal match so digarr's and music-rater's normalisers never have to agree (see below) |
-| `releaseYear`, `maxScoreRatio`, `accolades`, `drValue`, `sourceSites` | the signal |
+| `releaseYear`, `maxScoreRatio`, `genreSlugs`, `drValue`, `sourceSites` | the signal |
 | `resolvedArtistMbid`, `resolvedReleaseGroupMbid`, `resolvedAt` | written back by the mode |
-| `ownedInLibrary` | denormalised from digarr's own library knowledge, not music-rater's `lidarr_synced` |
 
 Unique on `(userId, musicRaterAlbumId)`.
+
+As shipped, there is no `ownedInLibrary` column -- ownership is not
+denormalised onto this table at all. It's enforced by two separate checks in
+`src/db/queries/music-rater.ts`: a pre-resolution best-effort name match
+against the user's library (`getUnresolvedAcclaimedAlbums`, screening a row
+out before any MusicBrainz call is spent on it) and a post-resolution exact
+release-group-MBID check against `library_albums`
+(`isReleaseGroupOwnedByUser`), once a row has actually resolved. The name
+match can miss a real spelling variant or alias; the MBID check, being exact,
+cannot.
 
 ### A shared normaliser has to exist first
 
@@ -228,14 +237,35 @@ private ones, none exported:
   parenthetical, for matching MusicBrainz release-group titles
 
 The first two are the general-purpose matchers this feature needs on both sides
-of the join, so the implementation moves them into `src/core/matching/normalize.ts`
-as exported `normalizeArtistName` and `normalizeAlbumTitle`, updating their two
-existing call sites. The third stays where it is: it solves a different problem
-(release-group title disambiguation) and merging it would silently change
+of the join, so the implementation adds a new, exported pair --
+`normalizeArtistName` / `normalizeAlbumTitle` in `src/core/matching/normalize.ts`
+-- rather than promoting either existing private one in place.
+
+**As shipped, the two existing call sites were deliberately NOT migrated onto
+the shared module** -- unlike what this section originally proposed. Both
+stayed on their own local normalisers:
+
+- `normalizeTitle` in `albums/popular.ts` stays because it is intentionally
+  more aggressive than the shared module needs to be: it folds `&` to `and`
+  and strips everything but `[a-z0-9]`, which is correct for its own job
+  (Spotify ↔ MusicBrainz title matching) but would be a behaviour change if
+  swapped for the conservative shared normaliser.
+- `artistKey` in `pipeline/genre-backfill.ts` stays because it keys a
+  *persisted* cache table with deliberately no diacritic stripping.
+  `normalizeArtistName` strips diacritics; migrating the cache key onto it
+  would have silently orphaned every row cached under the old spelling, with
+  no way to distinguish "cache miss" from "cache key changed underneath me".
+
+`src/core/matching/normalize.ts`'s own docstring carries the full reasoning
+for both; this section restates the outcome, not a substitute for reading it.
+The third private normaliser (`resolve.ts`'s `normalizeTitle`) still stays put
+for the original, unrelated reason: it solves release-group title
+disambiguation, not general matching, and folding it in would silently change
 `matchSuggestedAlbum`'s behaviour.
 
-This is a prerequisite of Component 2, not a separate refactor, and it is the
-only existing-code change the feature makes.
+Adding the shared module was still a prerequisite of Component 2; only the
+"migrate the two existing call sites onto it" half of this plan was reverted
+before shipping.
 
 ### Sync
 
@@ -262,10 +292,12 @@ cursor, p-queue — with `resolvedAt` as the cursor instead of
 
 ```
 music_rater_albums
-  → filter: !ownedInLibrary, maxScoreRatio ≥ threshold, releaseYear ≥ N
+  → filter: not name-matched against the library (pre-resolution, best-effort),
+             maxScoreRatio ≥ threshold, releaseYear ≥ N
   → order by resolvedAt asc nulls first, take maxAlbumsPerRun (default 25)
   → artist name → artist MBID           (digarr's artists cache; usually a hit)
   → matchSuggestedAlbum(title, artistMbid, mb)
+  → exact release-group-MBID ownership check (post-resolution, definitive)
   → RawDiscoveryCandidate {
       candidateType: 'release',
       artistName, artistMbid, releaseGroupMbid,
