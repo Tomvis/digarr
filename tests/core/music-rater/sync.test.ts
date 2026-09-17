@@ -58,6 +58,29 @@ describe('syncMusicRaterCorpus', () => {
     expect(listScoredAlbums).toHaveBeenCalledTimes(1)
   })
 
+  it('FIX 5: a duplicate row across pages does not truncate the sync early', async () => {
+    // Simulates `sort_by=release_year&sort_dir=desc` with no tiebreaker: a
+    // row can be re-served across adjacent pages if the backend's ordering
+    // among ties isn't perfectly stable. Page 1 returns ids [1, 2]; page 2
+    // re-serves id 2 (a duplicate) alongside genuinely-new id 3; a raw item
+    // counter would read 2 + 2 = 4 >= total (4) and stop here, never
+    // fetching id 4's page -- silently dropping a real row from the corpus.
+    const listScoredAlbums = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [album(1), album(2)], total: 4 })
+      .mockResolvedValueOnce({ items: [album(2), album(3)], total: 4 })
+      .mockResolvedValueOnce({ items: [album(4)], total: 4 })
+    const upsert = vi.fn().mockResolvedValue(undefined)
+
+    const result = await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+
+    // All three pages must be fetched -- the loop must not stop after page 2.
+    expect(listScoredAlbums).toHaveBeenCalledTimes(3)
+    expect(upsert).toHaveBeenCalledTimes(3)
+    // `synced` counts DISTINCT ids (1, 2, 3, 4), not raw items received (5).
+    expect(result.synced).toBe(4)
+  })
+
   it('lets a failure propagate so the job is marked failed', async () => {
     const listScoredAlbums = vi.fn().mockRejectedValue(new Error('401'))
     const upsert = vi.fn()

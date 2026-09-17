@@ -53,13 +53,28 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
  * Errors propagate. A partial sync is visible in Job History as a failure,
  * and the previous corpus stays queryable, so a scan during an outage runs
  * against slightly stale data rather than nothing.
+ *
+ * Pagination tracks DISTINCT music-rater album ids seen, not a raw item
+ * counter. `listScoredAlbums` orders by `release_year desc` with no
+ * tiebreaker (music-rater's `/api/v1/albums` has no sortable column that is
+ * guaranteed unique -- see that client's own comment), so two rows tied on
+ * `release_year` can legally be served in either order across adjacent
+ * LIMIT/OFFSET pages; if the backend's tie order isn't perfectly stable
+ * between calls, the same row can be returned twice while a different one
+ * is skipped. A duplicate is harmless to `upsert` (it's a no-op re-write on
+ * the natural key), but a raw counter would count it as progress, reach
+ * `page.total` a page early, and stop before the tail of the corpus was
+ * ever fetched -- silently shrinking the synced corpus with no error. A
+ * distinct-id count can't be inflated by a duplicate, so it can't end the
+ * loop early; the empty-page check above remains the actual backstop
+ * against a bad or shrinking `total`.
  */
 export async function syncMusicRaterCorpus(
   deps: MusicRaterSyncDeps,
   userId: number,
 ): Promise<{ synced: number }> {
   let offset = 0
-  let synced = 0
+  const seenIds = new Set<number>()
 
   for (;;) {
     const page = await deps.client.listScoredAlbums(offset)
@@ -69,11 +84,11 @@ export async function syncMusicRaterCorpus(
     if (page.items.length === 0) break
 
     await deps.upsert(userId, page.items.map(toRow))
-    synced += page.items.length
+    for (const item of page.items) seenIds.add(item.id)
     offset += page.items.length
 
-    if (synced >= page.total) break
+    if (seenIds.size >= page.total) break
   }
 
-  return { synced }
+  return { synced: seenIds.size }
 }
