@@ -48,6 +48,7 @@ describe('multiselect rendering', () => {
     })
     expect(screen.getByRole('checkbox', { name: /Things You Might Have Missed/ })).toBeTruthy()
     expect(screen.getByRole('checkbox', { name: /Album of the Year/ })).toBeTruthy()
+    expect(screen.getByRole('group', { name: /Coverage/ })).toBeTruthy()
   })
 
   it('keeps the free-text input when the field supplies no options', () => {
