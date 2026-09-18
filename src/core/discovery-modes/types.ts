@@ -62,4 +62,15 @@ export type DiscoveryModeDefinition = {
   advancedFields: DiscoveryConfigField[]
   prepare?: (request: DiscoveryModeRequest) => Promise<DiscoveryModeRequest>
   executor: (request: DiscoveryModeRequest) => Promise<RawDiscoveryExecutionResult>
+  /**
+   * Per-user option lists for this mode's config fields, keyed by field key.
+   *
+   * Resolved by the modes route at request time and merged into the
+   * serialised fields, so the frontend renders them with no per-mode code.
+   * Modes without a resolver are untouched and cost no extra queries.
+   *
+   * A resolver MUST NOT be load-bearing for correctness: the route degrades
+   * to empty options when it throws, which renders as the free-text input.
+   */
+  resolveOptions?: (userId: number) => Promise<Record<string, DiscoveryConfigField['options']>>
 }
