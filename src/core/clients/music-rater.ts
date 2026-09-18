@@ -80,7 +80,7 @@ export function createMusicRaterClient(url: string, apiKey: string, skipTlsVerif
     }
   }
 
-  async function listScoredAlbums(
+  async function listAlbums(
     offset: number,
     limit: number = MUSIC_RATER_PAGE_SIZE,
   ): Promise<{ items: MusicRaterAlbum[]; total: number }> {
@@ -97,5 +97,5 @@ export function createMusicRaterClient(url: string, apiKey: string, skipTlsVerif
     return { items: (page.items ?? []).map(toAlbum), total: page.total ?? 0 }
   }
 
-  return { testConnection, listScoredAlbums }
+  return { testConnection, listAlbums }
 }

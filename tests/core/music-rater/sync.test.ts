@@ -20,28 +20,28 @@ function album(id: number, over: Partial<MusicRaterAlbum> = {}): MusicRaterAlbum
 
 describe('syncMusicRaterCorpus', () => {
   it('pages until it has every row and upserts each page', async () => {
-    const listScoredAlbums = vi
+    const listAlbums = vi
       .fn()
       .mockResolvedValueOnce({ items: [album(1), album(2)], total: 3 })
       .mockResolvedValueOnce({ items: [album(3)], total: 3 })
     const upsert = vi.fn().mockResolvedValue(undefined)
 
-    const result = await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 42)
+    const result = await syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 42)
 
     expect(result.synced).toBe(3)
-    expect(listScoredAlbums).toHaveBeenCalledTimes(2)
+    expect(listAlbums).toHaveBeenCalledTimes(2)
     expect(upsert).toHaveBeenCalledTimes(2)
     expect(upsert.mock.calls[0]?.[0]).toBe(42)
   })
 
   it('normalises both name fields with digarr normalisers', async () => {
-    const listScoredAlbums = vi.fn().mockResolvedValueOnce({
+    const listAlbums = vi.fn().mockResolvedValueOnce({
       items: [album(1, { artistName: 'Sigur Rós', albumTitle: 'Ágætis Byrjun' })],
       total: 1,
     })
     const upsert = vi.fn().mockResolvedValue(undefined)
 
-    await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+    await syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 1)
 
     const row = upsert.mock.calls[0]?.[1][0]
     expect(row.artistNameNormalized).toBe('sigur ros')
@@ -50,13 +50,13 @@ describe('syncMusicRaterCorpus', () => {
   })
 
   it('stops on an empty page rather than looping forever on a bad total', async () => {
-    const listScoredAlbums = vi.fn().mockResolvedValue({ items: [], total: 9999 })
+    const listAlbums = vi.fn().mockResolvedValue({ items: [], total: 9999 })
     const upsert = vi.fn().mockResolvedValue(undefined)
 
-    const result = await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+    const result = await syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 1)
 
     expect(result.synced).toBe(0)
-    expect(listScoredAlbums).toHaveBeenCalledTimes(1)
+    expect(listAlbums).toHaveBeenCalledTimes(1)
   })
 
   it('FIX 5: a duplicate row across pages does not truncate the sync early', async () => {
@@ -66,41 +66,39 @@ describe('syncMusicRaterCorpus', () => {
     // re-serves id 2 (a duplicate) alongside genuinely-new id 3; a raw item
     // counter would read 2 + 2 = 4 >= total (4) and stop here, never
     // fetching id 4's page -- silently dropping a real row from the corpus.
-    const listScoredAlbums = vi
+    const listAlbums = vi
       .fn()
       .mockResolvedValueOnce({ items: [album(1), album(2)], total: 4 })
       .mockResolvedValueOnce({ items: [album(2), album(3)], total: 4 })
       .mockResolvedValueOnce({ items: [album(4)], total: 4 })
     const upsert = vi.fn().mockResolvedValue(undefined)
 
-    const result = await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+    const result = await syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 1)
 
     // All three pages must be fetched -- the loop must not stop after page 2.
-    expect(listScoredAlbums).toHaveBeenCalledTimes(3)
+    expect(listAlbums).toHaveBeenCalledTimes(3)
     expect(upsert).toHaveBeenCalledTimes(3)
     // `synced` counts DISTINCT ids (1, 2, 3, 4), not raw items received (5).
     expect(result.synced).toBe(4)
   })
 
   it('carries coverage types onto the upserted row', async () => {
-    const listScoredAlbums = vi.fn().mockResolvedValueOnce({
+    const listAlbums = vi.fn().mockResolvedValueOnce({
       items: [album(1, { coverageTypes: ['tymhm', 'aoty'] })],
       total: 1,
     })
     const upsert = vi.fn().mockResolvedValue(undefined)
 
-    await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+    await syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 1)
 
     expect(upsert.mock.calls[0]?.[1][0].coverageTypes).toEqual(['tymhm', 'aoty'])
   })
 
   it('lets a failure propagate so the job is marked failed', async () => {
-    const listScoredAlbums = vi.fn().mockRejectedValue(new Error('401'))
+    const listAlbums = vi.fn().mockRejectedValue(new Error('401'))
     const upsert = vi.fn()
 
-    await expect(syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)).rejects.toThrow(
-      '401',
-    )
+    await expect(syncMusicRaterCorpus({ client: { listAlbums }, upsert }, 1)).rejects.toThrow('401')
     expect(upsert).not.toHaveBeenCalled()
   })
 })

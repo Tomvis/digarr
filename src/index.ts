@@ -1281,7 +1281,7 @@ async function executeMusicRaterSync(userId: number): Promise<void> {
     )
     const { synced } = await syncMusicRaterCorpus(
       {
-        client: { listScoredAlbums: (offset) => client.listScoredAlbums(offset) },
+        client: { listAlbums: (offset) => client.listAlbums(offset) },
         upsert: (uid, rows) => upsertMusicRaterAlbums(db, uid, rows),
       },
       userId,

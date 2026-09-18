@@ -17,7 +17,7 @@ export type MusicRaterAlbumRow = {
 
 export type MusicRaterSyncDeps = {
   client: {
-    listScoredAlbums(offset: number): Promise<{ items: MusicRaterAlbum[]; total: number }>
+    listAlbums(offset: number): Promise<{ items: MusicRaterAlbum[]; total: number }>
   }
   upsert(userId: number, rows: MusicRaterAlbumRow[]): Promise<void>
 }
@@ -44,7 +44,7 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
 }
 
 /**
- * Pull this user's scored music-rater corpus into `music_rater_albums`.
+ * Pull this user's music-rater corpus into `music_rater_albums`.
  *
  * Upserts page by page rather than accumulating and writing once: a 14k-row
  * corpus is small, but a mid-sync failure should leave the rows it already
@@ -57,7 +57,7 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
  * against slightly stale data rather than nothing.
  *
  * Pagination tracks DISTINCT music-rater album ids seen, not a raw item
- * counter. `listScoredAlbums` orders by `release_year desc` with no
+ * counter. `listAlbums` orders by `release_year desc` with no
  * tiebreaker (music-rater's `/api/v1/albums` has no sortable column that is
  * guaranteed unique -- see that client's own comment), so two rows tied on
  * `release_year` can legally be served in either order across adjacent
@@ -79,7 +79,7 @@ export async function syncMusicRaterCorpus(
   const seenIds = new Set<number>()
 
   for (;;) {
-    const page = await deps.client.listScoredAlbums(offset)
+    const page = await deps.client.listAlbums(offset)
     // An empty page terminates regardless of what `total` claims: trusting
     // `total` alone turns an off-by-one or a concurrent delete on the
     // music-rater side into an infinite request loop.

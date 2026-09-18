@@ -59,7 +59,7 @@ describe('createMusicRaterClient', () => {
       }),
     )
 
-    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(0)
+    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(0)
     expect(page.total).toBe(1)
     expect(page.items[0]).toEqual({
       id: 7,
@@ -76,7 +76,7 @@ describe('createMusicRaterClient', () => {
 
   it('requests all albums, newest first, at the requested offset', async () => {
     mockFetch.mockResolvedValueOnce(jsonOk({ items: [], total: 0, limit: 500, offset: 500 }))
-    await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(500)
+    await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(500)
 
     const url = mockFetch.mock.calls[0]?.[0] as string
     expect(url).toContain('/api/v1/albums')
@@ -93,7 +93,7 @@ describe('createMusicRaterClient', () => {
 
   it('no longer restricts the corpus to scored albums', async () => {
     mockFetch.mockResolvedValueOnce(jsonOk({ items: [], total: 0, limit: 500, offset: 0 }))
-    await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(0)
+    await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(0)
     const url = mockFetch.mock.calls[0]?.[0] as string
     expect(url).not.toContain('has_score')
   })
@@ -125,7 +125,7 @@ describe('createMusicRaterClient', () => {
         offset: 0,
       }),
     )
-    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(0)
+    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(0)
     expect(page.items[0]?.coverageTypes).toEqual(['tymhm'])
     expect(page.items[1]?.coverageTypes).toEqual([])
   })
