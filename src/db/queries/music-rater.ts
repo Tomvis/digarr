@@ -60,9 +60,14 @@ export async function upsertMusicRaterAlbums(
  * corpus, for the mode's option pickers.
  *
  * Deliberately corpus-derived rather than fetched from music-rater: digarr
- * then carries no copy of music-rater's taxonomy that can drift, and never
- * offers a value that would return zero results for this user (their corpus
- * is already narrowed by their followed sites and score thresholds).
+ * then carries no copy of music-rater's taxonomy that can drift, and the
+ * options come from this user's own corpus rather than a hardcoded or remote
+ * list -- their corpus is already narrowed by their followed sites. This is
+ * NOT a guarantee that every offered value returns a non-empty result: it
+ * ignores `resolved_release_group_mbid`, the ownership `NOT EXISTS`,
+ * `minReleaseYear` and the score gate that `getUnresolvedAcclaimedAlbums`
+ * itself applies, so e.g. a user whose only `doom-metal` album is already
+ * resolved is still offered "Doom Metal" and gets nothing.
  *
  * Returns every distinct value stored, `unknown` coverage type included --
  * this is a corpus inventory, not a UI-ready option list. It is the CALLER
