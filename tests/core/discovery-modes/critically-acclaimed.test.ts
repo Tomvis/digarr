@@ -27,6 +27,7 @@ function baseDeps(overrides: Partial<CriticallyAcclaimedDeps> = {}): CriticallyA
     markResolved: vi.fn(),
     isAlbumOwned: vi.fn().mockResolvedValue(false),
     recordResolutionFailure: vi.fn().mockResolvedValue(undefined),
+    getFilterOptions: vi.fn().mockResolvedValue({ genres: [], coverageTypes: [] }),
     ...overrides,
   }
 }
@@ -312,5 +313,68 @@ describe('createCriticallyAcclaimedMode', () => {
       1,
       expect.objectContaining({ includeUnscored: false }),
     )
+  })
+
+  describe('resolveOptions', () => {
+    it('labels a known coverage type and falls back to the raw slug for an unknown one', async () => {
+      const mode = createCriticallyAcclaimedMode(
+        baseDeps({
+          getFilterOptions: async () => ({
+            genres: ['death-metal'],
+            coverageTypes: ['tymhm', 'brand-new-thing'],
+          }),
+        }),
+      )
+      // biome-ignore lint/style/noNonNullAssertion: the mode always declares resolveOptions
+      const options = await mode.resolveOptions!(1)
+      expect(options.includeGenres).toEqual([{ value: 'death-metal', label: 'Death Metal' }])
+      expect(options.coverageTypes).toEqual([
+        { value: 'tymhm', label: 'discoveryMode.option.coverageTymhm' },
+        { value: 'brand-new-thing', label: 'brand-new-thing' },
+      ])
+    })
+
+    it('mirrors the same genre options into both includeGenres and excludeGenres', async () => {
+      const mode = createCriticallyAcclaimedMode(
+        baseDeps({
+          getFilterOptions: async () => ({
+            genres: ['doom-metal', 'power-metal'],
+            coverageTypes: [],
+          }),
+        }),
+      )
+      // biome-ignore lint/style/noNonNullAssertion: the mode always declares resolveOptions
+      const options = await mode.resolveOptions!(1)
+      expect(options.includeGenres).toEqual(options.excludeGenres)
+      expect(options.includeGenres).toEqual([
+        { value: 'doom-metal', label: 'Doom Metal' },
+        { value: 'power-metal', label: 'Power Metal' },
+      ])
+    })
+
+    /**
+     * MY RULING (task-6-report.md): `unknown` is a real, stored post_type --
+     * music-rater's parser assigns it on a decode/parse failure and reports
+     * it deliberately so its API stays honest about the data, and digarr
+     * keeps storing it for the same reason. But it is not a discovery
+     * intent anyone would pick, so the resolver -- not the sync, not the
+     * column, not getMusicRaterFilterOptions -- suppresses it from the
+     * OFFERED coverage-type options specifically.
+     */
+    it('excludes "unknown" from the offered coverage-type options', async () => {
+      const mode = createCriticallyAcclaimedMode(
+        baseDeps({
+          getFilterOptions: async () => ({
+            genres: [],
+            coverageTypes: ['review', 'unknown'],
+          }),
+        }),
+      )
+      // biome-ignore lint/style/noNonNullAssertion: the mode always declares resolveOptions
+      const options = await mode.resolveOptions!(1)
+      expect(options.coverageTypes).toEqual([
+        { value: 'review', label: 'discoveryMode.option.coverageReview' },
+      ])
+    })
   })
 })

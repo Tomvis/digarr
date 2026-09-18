@@ -8,6 +8,7 @@ import { criticScoreKey } from '@/core/pipeline/score'
 import type { Database } from '@/db'
 import {
   findMusicRaterScoresByNames,
+  getMusicRaterFilterOptions,
   getUnresolvedAcclaimedAlbums,
   isReleaseGroupOwnedByUser,
   markMusicRaterAlbumResolved,
@@ -805,5 +806,93 @@ describe('upsertMusicRaterAlbums (real db) — the resolution invariant it must 
     expect(reupserted.resolvedReleaseGroupMbid).toBe(releaseGroupMbid)
     expect(reupserted.resolvedAt?.getTime()).toBe(resolved.resolvedAt?.getTime())
     expect(reupserted.resolutionAttempts).toBe(1)
+  })
+})
+
+/**
+ * The corpus-derived option lists behind `critically-acclaimed`'s
+ * `resolveOptions` hook. Deliberately corpus-derived, not fetched from
+ * music-rater -- see the function's own docstring in db/queries/music-rater.ts.
+ */
+describe('getMusicRaterFilterOptions (real db)', () => {
+  let db: Database
+  let close: () => Promise<void>
+
+  beforeEach(async () => {
+    const testDb = await makeTestDb()
+    db = testDb.db as unknown as Database
+    close = testDb.close
+  })
+
+  afterEach(async () => {
+    await close()
+  })
+
+  it('offers only values present in that user’s corpus', async () => {
+    const [user1] = await db
+      .insert(users)
+      .values({ username: 'filter-opts-1', passwordHash: 'x' })
+      .returning({ id: users.id })
+    const [user2] = await db
+      .insert(users)
+      .values({ username: 'filter-opts-2', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user1 || !user2) throw new Error('test users were not created')
+
+    await upsertMusicRaterAlbums(db, user1.id, [
+      row({ musicRaterAlbumId: 1, genreSlugs: ['doom-metal'], coverageTypes: ['tymhm'] }),
+    ])
+    await upsertMusicRaterAlbums(db, user2.id, [
+      row({ musicRaterAlbumId: 1, genreSlugs: ['power-metal'], coverageTypes: ['aoty'] }),
+    ])
+
+    const opts = await getMusicRaterFilterOptions(db, user1.id)
+    expect(opts.genres).toEqual(['doom-metal'])
+    expect(opts.coverageTypes).toEqual(['tymhm'])
+  })
+
+  it('returns distinct values sorted alphabetically', async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'filter-opts-sort', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+
+    await upsertMusicRaterAlbums(db, user.id, [
+      row({ musicRaterAlbumId: 1, genreSlugs: ['doom-metal', 'black-metal'] }),
+      row({ musicRaterAlbumId: 2, genreSlugs: ['black-metal'] }),
+    ])
+    expect((await getMusicRaterFilterOptions(db, user.id)).genres).toEqual([
+      'black-metal',
+      'doom-metal',
+    ])
+  })
+
+  it('returns empty lists for a user with no synced corpus', async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'filter-opts-empty', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+
+    const opts = await getMusicRaterFilterOptions(db, user.id)
+    expect(opts).toEqual({ genres: [], coverageTypes: [] })
+  })
+
+  it('still reports a stored "unknown" coverage type -- this is a corpus inventory, not a UI filter', async () => {
+    // The resolver in critically-acclaimed.ts is responsible for hiding
+    // "unknown" from the picker (see its own docstring for why); this query
+    // must not do that filtering itself, or the mode-level suppression would
+    // have nothing real to suppress and a test asserting it would be vacuous.
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'filter-opts-unknown', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+
+    await upsertMusicRaterAlbums(db, user.id, [
+      row({ musicRaterAlbumId: 1, coverageTypes: ['unknown'] }),
+    ])
+    expect((await getMusicRaterFilterOptions(db, user.id)).coverageTypes).toEqual(['unknown'])
   })
 })

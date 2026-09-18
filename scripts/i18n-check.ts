@@ -50,6 +50,21 @@ const UNIVERSAL_SAME_AS_SOURCE_VALUES = new Set([
   // Canonical email placeholder; a format example, identical across locales.
   'you@example.com',
   'Radiohead, Portishead, Massive Attack',
+  // music-rater coverage-type option labels for AMG/TPS's own recurring
+  // editorial column names (verified against that repo's
+  // src/music_rater/models/enums.py and llm/prompt.py -- see
+  // task-6-report.md). These are proper nouns naming a specific English-
+  // language blog feature, not descriptive phrases with a natural
+  // translated equivalent (unlike "Album of the Year" / "Record of the
+  // Month", which DO get translated per locale) -- the site itself never
+  // publishes a localized name for them, so every locale keeps the exact
+  // English title, the same way a brand name is left untranslated.
+  'Things You Might Have Missed',
+  'Stuck in the Filter',
+  'Yer Metal Is Olde',
+  'Lost in Time',
+  'Contrite Metal Guy',
+  'Reports from the Underground',
 ])
 
 // Natural-language loanwords and unchanged labels are exceptions only for the

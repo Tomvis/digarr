@@ -55,6 +55,38 @@ export async function upsertMusicRaterAlbums(
     })
 }
 
+/**
+ * The distinct genre slugs and coverage types present in this user's synced
+ * corpus, for the mode's option pickers.
+ *
+ * Deliberately corpus-derived rather than fetched from music-rater: digarr
+ * then carries no copy of music-rater's taxonomy that can drift, and never
+ * offers a value that would return zero results for this user (their corpus
+ * is already narrowed by their followed sites and score thresholds).
+ *
+ * Returns every distinct value stored, `unknown` coverage type included --
+ * this is a corpus inventory, not a UI-ready option list. It is the CALLER
+ * (`critically-acclaimed.ts`'s `resolveOptions`) that suppresses `unknown`
+ * from what gets offered, since that is a presentation decision, not a fact
+ * about the corpus.
+ */
+export async function getMusicRaterFilterOptions(
+  db: Database,
+  userId: number,
+): Promise<{ genres: string[]; coverageTypes: string[] }> {
+  const result = await db.execute<{ genres: string[]; coverage_types: string[] }>(sql`
+    SELECT
+      (SELECT coalesce(array_agg(DISTINCT g ORDER BY g), '{}')
+         FROM ${musicRaterAlbums} a2, jsonb_array_elements_text(a2.genre_slugs) g
+        WHERE a2.user_id = ${userId}) AS genres,
+      (SELECT coalesce(array_agg(DISTINCT c ORDER BY c), '{}')
+         FROM ${musicRaterAlbums} a3, jsonb_array_elements_text(a3.coverage_types) c
+        WHERE a3.user_id = ${userId}) AS coverage_types
+  `)
+  const first = result.rows[0]
+  return { genres: first?.genres ?? [], coverageTypes: first?.coverage_types ?? [] }
+}
+
 export type AcclaimedAlbumRow = {
   id: number
   artistNameRaw: string

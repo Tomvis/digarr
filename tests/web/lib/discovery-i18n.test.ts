@@ -4,6 +4,7 @@ import {
   EMPTY_DISCOVERY_SNAPSHOT,
   evaluateDiscoveryModeAvailability,
 } from '@/core/discovery-modes/availability'
+import { COVERAGE_TYPE_MESSAGE_KEYS } from '@/core/discovery-modes/modes/critically-acclaimed'
 import { createDefaultDiscoveryModeRegistry } from '@/core/discovery-modes/registry'
 import { en } from '@/core/i18n/messages/en'
 import {
@@ -65,6 +66,12 @@ describe('discovery field and option translations', () => {
         for (const option of field.options ?? []) translateDiscoveryOption(t, option)
       }
     }
+
+    // critically-acclaimed's coverage-type options are minted per-user by
+    // `resolveOptions`, not declared as a static `field.options` array, so
+    // the static sweep above can never reach these keys on its own -- see
+    // `COVERAGE_TYPE_MESSAGE_KEYS`'s own docstring in critically-acclaimed.ts.
+    for (const key of COVERAGE_TYPE_MESSAGE_KEYS) used.add(key)
 
     const catalogKeys = Object.keys(en).filter((key) =>
       /^discoveryMode\.(?:[^.]+\.(?:label|description)|field\.[^.]+|option\.[^.]+)$/.test(key),

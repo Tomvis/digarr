@@ -51,6 +51,17 @@ export type CriticallyAcclaimedDeps = {
    * instead of being retried on every run forever.
    */
   recordResolutionFailure: (id: number) => Promise<void>
+  /**
+   * The distinct genre slugs and coverage types in this user's synced
+   * corpus, feeding `resolveOptions` below. Required, not optional, like
+   * every other dep here -- see this file's test suite baseDeps() comment
+   * for why a missing wiring should be a compile error, not a silent
+   * `undefined` swallowed somewhere at runtime. `resolveOptions` on the mode
+   * definition is itself optional and the route degrades to empty options
+   * when it throws (see DiscoveryModeDefinition), so this dep being required
+   * does not make it load-bearing for the mode's core executor.
+   */
+  getFilterOptions: (userId: number) => Promise<{ genres: string[]; coverageTypes: string[] }>
 }
 
 async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
@@ -66,6 +77,7 @@ async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
   return {
     getUnresolvedAcclaimedAlbums: (userId, opts) =>
       queries.getUnresolvedAcclaimedAlbums(db, userId, opts),
+    getFilterOptions: (userId) => queries.getMusicRaterFilterOptions(db, userId),
     resolveArtistMbid: async (artistName) => {
       // `searchArtist` returns MBSearchResult = { artists: [...] }, ordered by
       // MusicBrainz's own relevance score. Taking the top hit is deliberate
@@ -105,6 +117,72 @@ function listSetting(value: unknown): string[] {
     .map((item) => item.trim())
     .filter(Boolean)
 }
+
+/** `death-metal` -> `Death Metal`. A pure transform, so there is no genre
+ *  taxonomy to keep in sync and no i18n key per genre. */
+function genreLabel(slug: string): string {
+  return slug
+    .split('-')
+    .map((part) => {
+      const first = part.charAt(0)
+      return first ? first.toUpperCase() + part.slice(1) : part
+    })
+    .join(' ')
+}
+
+/**
+ * Coverage types get real names via i18n, unlike genres -- there are only a
+ * handful of these (one per music-rater `post_type`) and they are proper
+ * names (AMG/TPS series titles), not slugs a mechanical title-case would
+ * render sensibly ("Tymhm" is not "TYMHM"; "Sitf" is not "Stuck in the
+ * Filter"). Each English value and its expansion is verified against
+ * music-rater's own editorial naming in
+ * `src/music_rater/models/enums.py` (POST_TYPE_DISPLAY) and
+ * `src/music_rater/llm/prompt.py` (the per-post-type descriptions parsers
+ * and the LLM validator are built against) -- see task-6-report.md for the
+ * exact citations. Notably, two of this map's expansions are NOT what a
+ * plausible-sounding guess from the acronym would produce: `sitf` is AMG's
+ * "Stuck in the Filter" (not e.g. "Sophomore in the Foreground"), and `rfu`
+ * is TPS's "Reports from the (progressive metal) Underground" (not e.g.
+ * "Records for Us") -- both confirmed via the category/tag URL slugs in
+ * `src/music_rater/sources.py` and the parser module docstrings.
+ *
+ * An UNKNOWN slug (one with no entry here) falls through to itself rather
+ * than disappearing: if music-rater ever adds a post type, it still appears
+ * in the picker and still filters -- just unprettified, until this map is
+ * updated. `translateDiscoveryOption` (web/lib/discovery-i18n.ts) treats a
+ * label starting with `discoveryMode.` as a message key and falls back to
+ * the raw value, so returning the key directly here is the established
+ * idiom -- see that function's own docstring.
+ */
+const COVERAGE_TYPE_LABELS: Record<string, string> = {
+  review: 'discoveryMode.option.coverageReview',
+  tymhm: 'discoveryMode.option.coverageTymhm',
+  aoty: 'discoveryMode.option.coverageAoty',
+  aotm: 'discoveryMode.option.coverageAotm',
+  sitf: 'discoveryMode.option.coverageSitf',
+  ymio: 'discoveryMode.option.coverageYmio',
+  lit: 'discoveryMode.option.coverageLit',
+  contrite: 'discoveryMode.option.coverageContrite',
+  rfu: 'discoveryMode.option.coverageRfu',
+}
+
+function coverageLabel(slug: string): string {
+  return COVERAGE_TYPE_LABELS[slug] ?? slug
+}
+
+/**
+ * Every message key `COVERAGE_TYPE_LABELS` can produce, exported for i18n
+ * liveness checks that sweep the mode registry's STATIC `field.options`
+ * (`discovery-i18n.test.ts`'s registry-driven key test; `i18n-check.ts`'s
+ * orphan-key sweep already finds these by literal string search instead).
+ * This mode's real coverage-type options exist only per-user, minted by
+ * `resolveOptions` at request time -- a static sweep of `easyFields` /
+ * `advancedFields` (whose `coverageTypes` field declares no `options` of its
+ * own) can never reach them on its own, so they need to be handed over
+ * explicitly.
+ */
+export const COVERAGE_TYPE_MESSAGE_KEYS: string[] = Object.values(COVERAGE_TYPE_LABELS)
 
 /**
  * Turn music-rater's critically acclaimed albums the user does not own into
@@ -256,6 +334,29 @@ export function createCriticallyAcclaimedMode(
         candidates: perAlbum
           .filter((entry): entry is RawDiscoveryCandidate[] => Array.isArray(entry))
           .flat(),
+      }
+    },
+    resolveOptions: async (userId) => {
+      const deps = injected ?? (await defaultDeps())
+      const { genres, coverageTypes } = await deps.getFilterOptions(userId)
+      const genreOptions = genres.map((g) => ({ value: g, label: genreLabel(g) }))
+      return {
+        includeGenres: genreOptions,
+        excludeGenres: genreOptions,
+        // `unknown` is a real, stored post_type -- music-rater's parser
+        // assigns it on a decode/parse failure and reports it deliberately
+        // so its API stays honest about the data; digarr keeps storing it
+        // for the same reason (see getMusicRaterFilterOptions's docstring --
+        // this query does NOT filter it out, on purpose). But "albums whose
+        // coverage we failed to parse" is not a discovery intent anyone
+        // would pick, so it is suppressed from the OFFERED options here --
+        // a presentation decision, not a data one. Do not "fix" this by
+        // filtering the sync or the column instead, and do not remove this
+        // filter thinking it's redundant with the sync -- both directions
+        // have been considered and rejected; see task-6-report.md.
+        coverageTypes: coverageTypes
+          .filter((c) => c !== 'unknown')
+          .map((c) => ({ value: c, label: coverageLabel(c) })),
       }
     },
   }

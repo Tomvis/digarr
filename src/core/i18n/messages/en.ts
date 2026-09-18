@@ -979,6 +979,15 @@ export const en = {
   'discoveryMode.option.sibling': 'Sibling',
   'discoveryMode.option.married': 'Married',
   'discoveryMode.option.involvedWith': 'Involved with',
+  'discoveryMode.option.coverageReview': 'Review',
+  'discoveryMode.option.coverageTymhm': 'Things You Might Have Missed',
+  'discoveryMode.option.coverageAoty': 'Album of the Year',
+  'discoveryMode.option.coverageAotm': 'Record of the Month',
+  'discoveryMode.option.coverageSitf': 'Stuck in the Filter',
+  'discoveryMode.option.coverageYmio': 'Yer Metal Is Olde',
+  'discoveryMode.option.coverageLit': 'Lost in Time',
+  'discoveryMode.option.coverageContrite': 'Contrite Metal Guy',
+  'discoveryMode.option.coverageRfu': 'Reports from the Underground',
 
   // Import Artists
   'importArtists.title': 'Import Artists',
