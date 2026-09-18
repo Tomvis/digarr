@@ -952,6 +952,10 @@ export const ro = {
   'discoveryMode.field.minScoreRatio': 'Scor minim (0-1)',
   'discoveryMode.field.minReleaseYear': 'Lansat din',
   'discoveryMode.field.maxAlbumsPerRun': 'Albume rezolvate pe rulare',
+  'discoveryMode.field.includeGenres': 'Doar aceste genuri',
+  'discoveryMode.field.excludeGenres': 'Excludeți aceste genuri',
+  'discoveryMode.field.coverageTypes': 'Doar aceste tipuri de acoperire',
+  'discoveryMode.field.includeUnscored': 'Includeți recomandările nepunctate',
   'discoveryMode.field.helpArtistSeed': 'Numele artistului sau MBID pentru a porni radio-ul',
   'discoveryMode.field.helpConnectedAccount': 'Lasă necompletat pentru a folosi contul conectat',
   'discoveryMode.field.helpSimilarUsers':

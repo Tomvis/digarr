@@ -938,6 +938,10 @@ export const tr = {
   'discoveryMode.field.minScoreRatio': 'Minimum puan (0-1)',
   'discoveryMode.field.minReleaseYear': 'Şu yıldan itibaren yayımlanan',
   'discoveryMode.field.maxAlbumsPerRun': 'Çalışma başına çözümlenen albümler',
+  'discoveryMode.field.includeGenres': 'Yalnızca bu türler',
+  'discoveryMode.field.excludeGenres': 'Bu türleri hariç tut',
+  'discoveryMode.field.coverageTypes': 'Yalnızca bu kapsam türleri',
+  'discoveryMode.field.includeUnscored': 'Puansız önerileri dahil et',
   'discoveryMode.field.helpArtistSeed': 'Radyoyu beslemek için sanatçı adı veya MBID',
   'discoveryMode.field.helpConnectedAccount': 'Bağlı hesabınızı kullanmak için boş bırakın',
   'discoveryMode.field.helpSimilarUsers':

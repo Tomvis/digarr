@@ -960,6 +960,10 @@ export const de = {
   'discoveryMode.field.minScoreRatio': 'Mindestbewertung (0-1)',
   'discoveryMode.field.minReleaseYear': 'Veröffentlicht seit',
   'discoveryMode.field.maxAlbumsPerRun': 'Aufgelöste Alben pro Durchlauf',
+  'discoveryMode.field.includeGenres': 'Nur diese Genres',
+  'discoveryMode.field.excludeGenres': 'Nie diese Genres',
+  'discoveryMode.field.coverageTypes': 'Nur diese Berichterstattungsarten',
+  'discoveryMode.field.includeUnscored': 'Unbewertete Empfehlungen einbeziehen',
   'discoveryMode.field.helpArtistSeed': 'Künstlername oder MBID für das Radio',
   'discoveryMode.field.helpConnectedAccount': 'Leer lassen, um das verbundene Konto zu verwenden',
   'discoveryMode.field.helpSimilarUsers':

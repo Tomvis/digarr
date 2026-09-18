@@ -948,6 +948,10 @@ export const nl = {
   'discoveryMode.field.minScoreRatio': 'Minimale score (0-1)',
   'discoveryMode.field.minReleaseYear': 'Uitgebracht sinds',
   'discoveryMode.field.maxAlbumsPerRun': 'Opgeloste albums per run',
+  'discoveryMode.field.includeGenres': 'Alleen deze genres',
+  'discoveryMode.field.excludeGenres': 'Nooit deze genres',
+  'discoveryMode.field.coverageTypes': 'Alleen deze soorten berichtgeving',
+  'discoveryMode.field.includeUnscored': 'Ongescoorde aanbevelingen opnemen',
   'discoveryMode.field.helpArtistSeed': 'Artiestennaam of MBID voor de radio',
   'discoveryMode.field.helpConnectedAccount': 'Laat leeg om je gekoppelde account te gebruiken',
   'discoveryMode.field.helpSimilarUsers':

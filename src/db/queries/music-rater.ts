@@ -140,7 +140,23 @@ async function getOwnedAlbumNormalizedKeyPairs(
 export async function getUnresolvedAcclaimedAlbums(
   db: Database,
   userId: number,
-  opts: { minScoreRatio: number; minReleaseYear: number; limit: number },
+  opts: {
+    minScoreRatio: number
+    minReleaseYear: number
+    limit: number
+    /** Empty (the default) adds no SQL at all -- no constraint. */
+    includeGenres?: string[]
+    /** Empty (the default) adds no SQL at all -- no constraint. */
+    excludeGenres?: string[]
+    /** Empty (the default) adds no SQL at all -- no constraint. */
+    coverageTypes?: string[]
+    /**
+     * An unscored album is what the editorial columns (tymhm/sitf/ymio/lit)
+     * produce -- they carry no rating at all. Off by default so a corpus
+     * that grows to include them does not change what existing runs return.
+     */
+    includeUnscored?: boolean
+  },
 ): Promise<AcclaimedAlbumRow[]> {
   const owned = await getOwnedAlbumNormalizedKeyPairs(db, userId)
   const notOwned = sql`NOT EXISTS (
@@ -150,6 +166,39 @@ export async function getUnresolvedAcclaimedAlbums(
       AND owned_lib.title_norm = ${musicRaterAlbums.albumTitleNormalized}
   )`
 
+  const includeGenres = opts.includeGenres ?? []
+  const excludeGenres = opts.excludeGenres ?? []
+  const coverageTypes = opts.coverageTypes ?? []
+  const includeUnscored = opts.includeUnscored ?? false
+
+  const filters = [
+    eq(musicRaterAlbums.userId, userId),
+    isNull(musicRaterAlbums.resolvedReleaseGroupMbid),
+    gte(musicRaterAlbums.releaseYear, opts.minReleaseYear),
+    notOwned,
+  ]
+
+  filters.push(
+    includeUnscored
+      ? sql`(${musicRaterAlbums.maxScoreRatio} >= ${opts.minScoreRatio} OR ${musicRaterAlbums.maxScoreRatio} IS NULL)`
+      : gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
+  )
+
+  // `?|` matches any element of the stored JSON array against a text[]
+  // passed as ONE bound parameter -- never one parameter per value (see this
+  // file's `notOwned` docstring for why that matters at corpus scale).
+  // Exclude wins over include because both predicates are ANDed: an album
+  // matching both the include and exclude sets is dropped by the NOT below.
+  if (includeGenres.length > 0) {
+    filters.push(sql`${musicRaterAlbums.genreSlugs} ?| ${sql.param(includeGenres)}::text[]`)
+  }
+  if (excludeGenres.length > 0) {
+    filters.push(sql`NOT (${musicRaterAlbums.genreSlugs} ?| ${sql.param(excludeGenres)}::text[])`)
+  }
+  if (coverageTypes.length > 0) {
+    filters.push(sql`${musicRaterAlbums.coverageTypes} ?| ${sql.param(coverageTypes)}::text[]`)
+  }
+
   return db
     .select({
       id: musicRaterAlbums.id,
@@ -158,15 +207,7 @@ export async function getUnresolvedAcclaimedAlbums(
       releaseYear: musicRaterAlbums.releaseYear,
     })
     .from(musicRaterAlbums)
-    .where(
-      and(
-        eq(musicRaterAlbums.userId, userId),
-        isNull(musicRaterAlbums.resolvedReleaseGroupMbid),
-        gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
-        gte(musicRaterAlbums.releaseYear, opts.minReleaseYear),
-        notOwned,
-      ),
-    )
+    .where(and(...filters))
     .orderBy(sql`${musicRaterAlbums.resolvedAt} asc nulls first`, asc(musicRaterAlbums.id))
     .limit(opts.limit)
 }

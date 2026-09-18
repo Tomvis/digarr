@@ -955,6 +955,10 @@ export const ru = {
   'discoveryMode.field.minScoreRatio': 'Минимальная оценка (0-1)',
   'discoveryMode.field.minReleaseYear': 'Выпущено с',
   'discoveryMode.field.maxAlbumsPerRun': 'Альбомов разрешено за запуск',
+  'discoveryMode.field.includeGenres': 'Только эти жанры',
+  'discoveryMode.field.excludeGenres': 'Исключить эти жанры',
+  'discoveryMode.field.coverageTypes': 'Только эти типы освещения',
+  'discoveryMode.field.includeUnscored': 'Включить рекомендации без оценки',
   'discoveryMode.field.helpArtistSeed': 'Имя исполнителя или MBID для запуска радио',
   'discoveryMode.field.helpConnectedAccount':
     'Оставьте пустым, чтобы использовать подключённую учётную запись',

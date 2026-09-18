@@ -16,7 +16,15 @@ const DEFAULT_MIN_RELEASE_YEAR = 2000
 export type CriticallyAcclaimedDeps = {
   getUnresolvedAcclaimedAlbums: (
     userId: number,
-    opts: { minScoreRatio: number; minReleaseYear: number; limit: number },
+    opts: {
+      minScoreRatio: number
+      minReleaseYear: number
+      limit: number
+      includeGenres: string[]
+      excludeGenres: string[]
+      coverageTypes: string[]
+      includeUnscored: boolean
+    },
   ) => Promise<AcclaimedAlbumRow[]>
   resolveArtistMbid: (artistName: string) => Promise<string | null>
   matchAlbum: (
@@ -84,6 +92,21 @@ function numberSetting(value: unknown, fallback: number): number {
 }
 
 /**
+ * Multiselect fields without options (see `discovery-mode-form.tsx`) render
+ * as a free-text, comma-separated input, but the executor may also be
+ * called directly (tests, subscriptions replaying stored settings) with an
+ * actual `string[]`. Accept both, same shape as `parseRelationshipTypes` in
+ * `artist-relationships.ts`.
+ */
+function listSetting(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []
+  return items
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+/**
  * Turn music-rater's critically acclaimed albums the user does not own into
  * first-class album candidates.
  *
@@ -131,8 +154,14 @@ export function createCriticallyAcclaimedMode(
     easyFields: [
       { key: 'minScoreRatio', label: 'Minimum score (0-1)', type: 'number' },
       { key: 'minReleaseYear', label: 'Released since', type: 'number' },
+      { key: 'includeGenres', label: 'Only these genres', type: 'multiselect' },
+      { key: 'excludeGenres', label: 'Never these genres', type: 'multiselect' },
+      { key: 'coverageTypes', label: 'Only these kinds of coverage', type: 'multiselect' },
     ],
-    advancedFields: [{ key: 'maxAlbumsPerRun', label: 'Albums resolved per run', type: 'number' }],
+    advancedFields: [
+      { key: 'maxAlbumsPerRun', label: 'Albums resolved per run', type: 'number' },
+      { key: 'includeUnscored', label: 'Include unscored recommendations', type: 'toggle' },
+    ],
     executor: async (request) => {
       const deps = injected ?? (await defaultDeps())
       const settings = request.normalizedSettings
@@ -141,6 +170,10 @@ export function createCriticallyAcclaimedMode(
         minScoreRatio: numberSetting(settings.minScoreRatio, DEFAULT_MIN_SCORE_RATIO),
         minReleaseYear: numberSetting(settings.minReleaseYear, DEFAULT_MIN_RELEASE_YEAR),
         limit: numberSetting(settings.maxAlbumsPerRun, DEFAULT_MAX_ALBUMS_PER_RUN),
+        includeGenres: listSetting(settings.includeGenres),
+        excludeGenres: listSetting(settings.excludeGenres),
+        coverageTypes: listSetting(settings.coverageTypes),
+        includeUnscored: settings.includeUnscored === true,
       })
       if (albums.length === 0) return { candidates: [] }
 

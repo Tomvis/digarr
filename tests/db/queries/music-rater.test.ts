@@ -200,6 +200,14 @@ function row(
   }
 }
 
+const BASE = { minScoreRatio: 0.8, minReleaseYear: 2000, limit: 25 }
+const NO_FILTERS = {
+  includeGenres: [],
+  excludeGenres: [],
+  coverageTypes: [],
+  includeUnscored: false,
+}
+
 /**
  * FIX 1: an album already in the user's library must never be offered as a
  * candidate to resolve, let alone recommend. Two layers, tested separately:
@@ -442,6 +450,150 @@ describe('getUnresolvedAcclaimedAlbums (real db)', () => {
     })
 
     expect(found).toHaveLength(1)
+  })
+
+  it('treats empty filter arrays as no constraint', async () => {
+    // The default path. If this ever fails, the feature has stopped being
+    // inert for every user who has not touched the new fields.
+    await upsertMusicRaterAlbums(db, userId, [
+      row({
+        musicRaterAlbumId: 1,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        genreSlugs: ['doom-metal'],
+      }),
+      row({
+        musicRaterAlbumId: 2,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        genreSlugs: ['power-metal'],
+      }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, { ...BASE, ...NO_FILTERS })
+    expect(found).toHaveLength(2)
+  })
+
+  it('includes only albums overlapping includeGenres', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({
+        musicRaterAlbumId: 1,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Doomy',
+        genreSlugs: ['doom-metal'],
+      }),
+      row({
+        musicRaterAlbumId: 2,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Powery',
+        genreSlugs: ['power-metal'],
+      }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      includeGenres: ['doom-metal'],
+    })
+    expect(found.map((r) => r.albumTitleRaw)).toEqual(['Doomy'])
+  })
+
+  it('drops albums overlapping excludeGenres', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({
+        musicRaterAlbumId: 1,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Doomy',
+        genreSlugs: ['doom-metal'],
+      }),
+      row({
+        musicRaterAlbumId: 2,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Powery',
+        genreSlugs: ['power-metal'],
+      }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      excludeGenres: ['power-metal'],
+    })
+    expect(found.map((r) => r.albumTitleRaw)).toEqual(['Doomy'])
+  })
+
+  it('lets exclude win over include on the same album', async () => {
+    // Tagged BOTH. Include says yes, exclude says no -- exclude is the
+    // stronger statement, so the album must not be returned.
+    await upsertMusicRaterAlbums(db, userId, [
+      row({
+        musicRaterAlbumId: 1,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        genreSlugs: ['progressive-metal', 'swedish-metal'],
+      }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      includeGenres: ['progressive-metal'],
+      excludeGenres: ['swedish-metal'],
+    })
+    expect(found).toHaveLength(0)
+  })
+
+  it('includes only albums overlapping coverageTypes', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({
+        musicRaterAlbumId: 1,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Missed',
+        coverageTypes: ['tymhm'],
+      }),
+      row({
+        musicRaterAlbumId: 2,
+        maxScoreRatio: 0.9,
+        releaseYear: 2020,
+        albumTitleRaw: 'Reviewed',
+        coverageTypes: ['review'],
+      }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      coverageTypes: ['tymhm'],
+    })
+    expect(found.map((r) => r.albumTitleRaw)).toEqual(['Missed'])
+  })
+
+  it('admits unscored albums only when includeUnscored is true', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, maxScoreRatio: 0.9, releaseYear: 2020, albumTitleRaw: 'Scored' }),
+      row({
+        musicRaterAlbumId: 2,
+        maxScoreRatio: null,
+        releaseYear: 2020,
+        albumTitleRaw: 'Unscored',
+        coverageTypes: ['tymhm'],
+      }),
+    ])
+
+    const off = await getUnresolvedAcclaimedAlbums(db, userId, { ...BASE, ...NO_FILTERS })
+    expect(off.map((r) => r.albumTitleRaw)).toEqual(['Scored'])
+
+    const on = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      includeUnscored: true,
+    })
+    expect(on.map((r) => r.albumTitleRaw).sort()).toEqual(['Scored', 'Unscored'])
   })
 })
 

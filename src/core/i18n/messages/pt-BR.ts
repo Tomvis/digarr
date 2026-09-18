@@ -951,6 +951,10 @@ export const ptBR = {
   'discoveryMode.field.minScoreRatio': 'Pontuação mínima (0-1)',
   'discoveryMode.field.minReleaseYear': 'Lançado a partir de',
   'discoveryMode.field.maxAlbumsPerRun': 'Álbuns resolvidos por execução',
+  'discoveryMode.field.includeGenres': 'Somente estes gêneros',
+  'discoveryMode.field.excludeGenres': 'Nunca estes gêneros',
+  'discoveryMode.field.coverageTypes': 'Somente estes tipos de cobertura',
+  'discoveryMode.field.includeUnscored': 'Incluir recomendações sem pontuação',
   'discoveryMode.field.helpArtistSeed': 'Nome do artista ou MBID para semear o rádio',
   'discoveryMode.field.helpConnectedAccount': 'Deixe em branco para usar sua conta conectada',
   'discoveryMode.field.helpSimilarUsers':

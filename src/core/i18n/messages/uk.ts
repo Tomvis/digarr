@@ -949,6 +949,10 @@ export const uk = {
   'discoveryMode.field.minScoreRatio': 'Мінімальна оцінка (0-1)',
   'discoveryMode.field.minReleaseYear': 'Випущено з',
   'discoveryMode.field.maxAlbumsPerRun': 'Альбомів вирішено за запуск',
+  'discoveryMode.field.includeGenres': 'Лише ці жанри',
+  'discoveryMode.field.excludeGenres': 'Виключити ці жанри',
+  'discoveryMode.field.coverageTypes': 'Лише ці типи висвітлення',
+  'discoveryMode.field.includeUnscored': 'Включити рекомендації без оцінки',
   'discoveryMode.field.helpArtistSeed': "Ім'я виконавця або MBID для запуску радіо",
   'discoveryMode.field.helpConnectedAccount':
     'Залиште порожнім, щоб використати підключений обліковий запис',

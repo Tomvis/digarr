@@ -36,7 +36,15 @@ describe('multiselect rendering', () => {
     renderForm({
       fields: [
         {
-          key: 'coverageTypes',
+          // Deliberately not a real registered field key: this test is
+          // pinning generic multiselect-with-options rendering, not any
+          // one mode's field, so it must not collide with a real
+          // `discoveryMode.field.*` catalog key (e.g. `coverageTypes`,
+          // since `critically-acclaimed` now owns that key with its own
+          // translated label) -- a collision would make the form render
+          // the catalog's translation instead of this fixture's literal
+          // `label` below.
+          key: 'demoMultiselect',
           label: 'Coverage',
           type: 'multiselect',
           options: [
