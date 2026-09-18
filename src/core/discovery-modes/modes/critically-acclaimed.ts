@@ -236,7 +236,24 @@ export function createCriticallyAcclaimedMode(
       { key: 'excludeGenres', label: 'Never these genres', type: 'multiselect' },
       { key: 'coverageTypes', label: 'Only these kinds of coverage', type: 'multiselect' },
     ],
+    // A superset of easyFields, repeating each easy key verbatim before
+    // adding the advanced-only ones -- the same convention every other mode
+    // with distinct easy/advanced sets already follows (artist-relationships,
+    // labels, similar-artist-web, listenbrainz, release-radar). Advanced mode
+    // renders `advancedFields` INSTEAD OF `easyFields` (see
+    // discovery-mode-form.tsx's `getFields`), and a submission only carries
+    // whichever set is current (`buildSubmission`'s `fields`), so a key
+    // missing here is a key that can never reach the request payload from
+    // Advanced -- exactly the bug this fixes: `includeGenres`, `excludeGenres`
+    // and `coverageTypes` used to live in `easyFields` ONLY while
+    // `includeUnscored` lived in `advancedFields` ONLY, so the two could never
+    // be submitted together.
     advancedFields: [
+      { key: 'minScoreRatio', label: 'Minimum score (0-1)', type: 'number' },
+      { key: 'minReleaseYear', label: 'Released since', type: 'number' },
+      { key: 'includeGenres', label: 'Only these genres', type: 'multiselect' },
+      { key: 'excludeGenres', label: 'Never these genres', type: 'multiselect' },
+      { key: 'coverageTypes', label: 'Only these kinds of coverage', type: 'multiselect' },
       { key: 'maxAlbumsPerRun', label: 'Albums resolved per run', type: 'number' },
       { key: 'includeUnscored', label: 'Include unscored recommendations', type: 'toggle' },
     ],
