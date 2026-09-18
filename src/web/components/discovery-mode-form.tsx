@@ -295,9 +295,10 @@ function DiscoveryModeFields({
               />
             ) : field.type === 'multiselect' && (field.options?.length ?? 0) > 0 ? (
               <fieldset
+                id={inputId}
                 aria-labelledby={`${inputId}-label`}
                 aria-describedby={helpId}
-                className="flex flex-col gap-1 border-0 p-0 m-0"
+                className="flex max-h-[320px] flex-col gap-1 overflow-y-auto border-0 p-0 m-0"
               >
                 {(field.options ?? []).map((option) => {
                   const selected = String(value)
