@@ -246,7 +246,11 @@ function DiscoveryModeFields({
 
         return (
           <div key={field.key} className="block space-y-1">
-            <label htmlFor={inputId} className="block text-sm font-medium text-text">
+            <label
+              htmlFor={inputId}
+              id={`${inputId}-label`}
+              className="block text-sm font-medium text-text"
+            >
               {translateDiscoveryFieldLabel(tFn, field)}
             </label>
             {helpText && (
@@ -289,6 +293,36 @@ function DiscoveryModeFields({
                 helpId={helpId}
                 tFn={tFn}
               />
+            ) : field.type === 'multiselect' && (field.options?.length ?? 0) > 0 ? (
+              <fieldset
+                aria-labelledby={`${inputId}-label`}
+                aria-describedby={helpId}
+                className="flex flex-col gap-1 border-0 p-0 m-0"
+              >
+                {(field.options ?? []).map((option) => {
+                  const selected = String(value)
+                    .split(',')
+                    .map((v) => v.trim())
+                    .filter(Boolean)
+                  const checked = selected.includes(option.value)
+                  return (
+                    <label key={option.value} className="flex items-center gap-2 text-sm text-text">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? [...selected, option.value]
+                            : selected.filter((v) => v !== option.value)
+                          setValues((prev) => ({ ...prev, [field.key]: next.join(',') }))
+                        }}
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      {translateDiscoveryOption(tFn, option)}
+                    </label>
+                  )
+                })}
+              </fieldset>
             ) : (
               <input
                 id={inputId}
