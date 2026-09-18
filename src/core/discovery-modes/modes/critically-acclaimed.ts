@@ -135,17 +135,13 @@ function genreLabel(slug: string): string {
  * handful of these (one per music-rater `post_type`) and they are proper
  * names (AMG/TPS series titles), not slugs a mechanical title-case would
  * render sensibly ("Tymhm" is not "TYMHM"; "Sitf" is not "Stuck in the
- * Filter"). Each English value and its expansion is verified against
- * music-rater's own editorial naming in
- * `src/music_rater/models/enums.py` (POST_TYPE_DISPLAY) and
- * `src/music_rater/llm/prompt.py` (the per-post-type descriptions parsers
- * and the LLM validator are built against) -- see task-6-report.md for the
- * exact citations. Notably, two of this map's expansions are NOT what a
+ * Filter"). Notably, two of this map's expansions are NOT what a
  * plausible-sounding guess from the acronym would produce: `sitf` is AMG's
- * "Stuck in the Filter" (not e.g. "Sophomore in the Foreground"), and `rfu`
- * is TPS's "Reports from the (progressive metal) Underground" (not e.g.
- * "Records for Us") -- both confirmed via the category/tag URL slugs in
- * `src/music_rater/sources.py` and the parser module docstrings.
+ * "Stuck in the Filter" per music-rater's `parser/sitf.py` module docstring,
+ * and `rfu` is TPS's "Reports from the (progressive metal) Underground" per
+ * `parser/tps_rfu.py`'s module docstring (not e.g. "Sophomore in the
+ * Foreground" or "Records for Us" -- plausible-sounding guesses from the
+ * acronyms alone that are simply wrong).
  *
  * An UNKNOWN slug (one with no entry here) falls through to itself rather
  * than disappearing: if music-rater ever adds a post type, it still appears
@@ -370,7 +366,7 @@ export function createCriticallyAcclaimedMode(
         // a presentation decision, not a data one. Do not "fix" this by
         // filtering the sync or the column instead, and do not remove this
         // filter thinking it's redundant with the sync -- both directions
-        // have been considered and rejected; see task-6-report.md.
+        // have been considered and rejected.
         coverageTypes: coverageTypes
           .filter((c) => c !== 'unknown')
           .map((c) => ({ value: c, label: coverageLabel(c) })),
