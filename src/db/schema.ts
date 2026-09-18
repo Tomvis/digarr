@@ -856,6 +856,7 @@ export const musicRaterAlbums = pgTable(
     drValue: integer('dr_value'),
     genreSlugs: jsonb('genre_slugs').$type<string[]>(),
     sourceSites: jsonb('source_sites').$type<string[]>(),
+    coverageTypes: jsonb('coverage_types').$type<string[]>(),
     resolvedArtistMbid: text('resolved_artist_mbid'),
     resolvedReleaseGroupMbid: text('resolved_release_group_mbid'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),

@@ -49,6 +49,7 @@ export async function upsertMusicRaterAlbums(
         drValue: sql`excluded.dr_value`,
         genreSlugs: sql`excluded.genre_slugs`,
         sourceSites: sql`excluded.source_sites`,
+        coverageTypes: sql`excluded.coverage_types`,
         syncedAt: sql`now()`,
       },
     })

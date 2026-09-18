@@ -3,6 +3,7 @@
 import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
+import type { MusicRaterAlbumRow } from '@/core/music-rater/sync'
 import { criticScoreKey } from '@/core/pipeline/score'
 import type { Database } from '@/db'
 import {
@@ -75,6 +76,7 @@ describe('findMusicRaterScoresByNames (real db)', () => {
         drValue: null,
         genreSlugs: [],
         sourceSites: ['amg'],
+        coverageTypes: [],
       },
     ])
 
@@ -170,6 +172,32 @@ async function seedOwnedAlbum(
     artistMbid,
     albumMbid: opts.albumMbid === undefined ? crypto.randomUUID() : opts.albumMbid,
   })
+}
+
+/**
+ * Build a `MusicRaterAlbumRow` for `upsertMusicRaterAlbums`, the same shape
+ * `sync.ts`'s `toRow` produces -- unlike `seedAcclaimedRow` (which inserts
+ * directly via `db.insert`, bypassing the upsert path entirely), this goes
+ * through the real upsert, so it's what a sync-path test needs.
+ */
+function row(
+  overrides: Partial<MusicRaterAlbumRow> & { musicRaterAlbumId: number },
+): MusicRaterAlbumRow {
+  const artistNameRaw = overrides.artistNameRaw ?? `Artist ${overrides.musicRaterAlbumId}`
+  const albumTitleRaw = overrides.albumTitleRaw ?? `Album ${overrides.musicRaterAlbumId}`
+  return {
+    artistNameRaw,
+    albumTitleRaw,
+    artistNameNormalized: normalizeArtistName(artistNameRaw),
+    albumTitleNormalized: normalizeAlbumTitle(albumTitleRaw),
+    releaseYear: 2010,
+    maxScoreRatio: 0.9,
+    drValue: null,
+    genreSlugs: [],
+    sourceSites: ['amg'],
+    coverageTypes: [],
+    ...overrides,
+  }
 }
 
 /**
@@ -396,6 +424,25 @@ describe('getUnresolvedAcclaimedAlbums (real db)', () => {
 
     expect(result).toHaveLength(1)
   })
+
+  it('leaves unscored albums invisible to the mode by default', async () => {
+    // A corpus row with no score is exactly what the editorial columns
+    // (tymhm/sitf/ymio/lit) produce. Until includeUnscored is turned on it
+    // must not be a candidate, or dropping has_score=true would silently
+    // change what every existing run returns.
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, maxScoreRatio: null, releaseYear: 2020 }),
+      row({ musicRaterAlbumId: 2, maxScoreRatio: 0.95, releaseYear: 2020 }),
+    ])
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      minScoreRatio: 0.8,
+      minReleaseYear: 2000,
+      limit: 25,
+    })
+
+    expect(found).toHaveLength(1)
+  })
 })
 
 describe('isReleaseGroupOwnedByUser (real db)', () => {
@@ -556,6 +603,7 @@ describe('upsertMusicRaterAlbums (real db) — the resolution invariant it must 
       drValue: null,
       genreSlugs: [] as string[],
       sourceSites: ['amg'],
+      coverageTypes: [] as string[],
     }
 
     await upsertMusicRaterAlbums(db, userId, [row])

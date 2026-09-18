@@ -13,6 +13,7 @@ function album(id: number, over: Partial<MusicRaterAlbum> = {}): MusicRaterAlbum
     drValue: 10,
     genreSlugs: [],
     sources: ['amg'],
+    coverageTypes: [],
     ...over,
   }
 }
@@ -79,6 +80,18 @@ describe('syncMusicRaterCorpus', () => {
     expect(upsert).toHaveBeenCalledTimes(3)
     // `synced` counts DISTINCT ids (1, 2, 3, 4), not raw items received (5).
     expect(result.synced).toBe(4)
+  })
+
+  it('carries coverage types onto the upserted row', async () => {
+    const listScoredAlbums = vi.fn().mockResolvedValueOnce({
+      items: [album(1, { coverageTypes: ['tymhm', 'aoty'] })],
+      total: 1,
+    })
+    const upsert = vi.fn().mockResolvedValue(undefined)
+
+    await syncMusicRaterCorpus({ client: { listScoredAlbums }, upsert }, 1)
+
+    expect(upsert.mock.calls[0]?.[1][0].coverageTypes).toEqual(['tymhm', 'aoty'])
   })
 
   it('lets a failure propagate so the job is marked failed', async () => {

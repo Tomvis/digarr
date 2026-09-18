@@ -20,6 +20,7 @@ type RawAlbumSummary = {
   dr_value?: number | null
   genre_slugs?: string[]
   sources?: string[]
+  coverage_types?: string[]
 }
 
 export type MusicRaterAlbum = {
@@ -32,6 +33,14 @@ export type MusicRaterAlbum = {
   drValue: number | null
   genreSlugs: string[]
   sources: string[]
+  /**
+   * Distinct `posts.post_type` values covering this album, narrowed to the
+   * caller's followed sites (full `PostType` membership, including
+   * `unknown` -- music-rater's parser assigns that on decode/parse
+   * failure, and it is stored like any other value; deciding what to
+   * *offer* a user is a later, presentation-layer concern).
+   */
+  coverageTypes: string[]
 }
 
 /** music-rater caps `limit` at 500. Only consumed as this module's own default. */
@@ -47,6 +56,7 @@ function toAlbum(raw: RawAlbumSummary): MusicRaterAlbum {
     drValue: raw.dr_value ?? null,
     genreSlugs: raw.genre_slugs ?? [],
     sources: raw.sources ?? [],
+    coverageTypes: raw.coverage_types ?? [],
   }
 }
 
@@ -74,8 +84,15 @@ export function createMusicRaterClient(url: string, apiKey: string, skipTlsVerif
     offset: number,
     limit: number = MUSIC_RATER_PAGE_SIZE,
   ): Promise<{ items: MusicRaterAlbum[]; total: number }> {
+    // Deliberately NOT `has_score=true`: several editorial columns
+    // (`tymhm`, `sitf`, `ymio`, `lit`) carry no rating at all, so requiring
+    // a score made every album covered only by those columns permanently
+    // unreachable. The whole corpus is synced instead; unscored rows stay
+    // invisible to the discovery mode (via `getUnresolvedAcclaimedAlbums`'s
+    // `maxScoreRatio >= minScoreRatio`, which excludes NULL) until
+    // `includeUnscored` is turned on (Task 5).
     const page = await http.get<MusicRaterPage<RawAlbumSummary>>(
-      `/api/v1/albums?has_score=true&sort_by=release_year&sort_dir=desc&limit=${limit}&offset=${offset}`,
+      `/api/v1/albums?sort_by=release_year&sort_dir=desc&limit=${limit}&offset=${offset}`,
     )
     return { items: (page.items ?? []).map(toAlbum), total: page.total ?? 0 }
   }

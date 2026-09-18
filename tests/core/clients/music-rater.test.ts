@@ -50,6 +50,7 @@ describe('createMusicRaterClient', () => {
             dr_value: 12,
             genre_slugs: ['post-rock'],
             sources: ['amg'],
+            coverage_types: ['review'],
           },
         ],
         total: 1,
@@ -69,16 +70,16 @@ describe('createMusicRaterClient', () => {
       drValue: 12,
       genreSlugs: ['post-rock'],
       sources: ['amg'],
+      coverageTypes: ['review'],
     })
   })
 
-  it('requests only scored albums, newest first, at the requested offset', async () => {
+  it('requests all albums, newest first, at the requested offset', async () => {
     mockFetch.mockResolvedValueOnce(jsonOk({ items: [], total: 0, limit: 500, offset: 500 }))
     await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(500)
 
     const url = mockFetch.mock.calls[0]?.[0] as string
     expect(url).toContain('/api/v1/albums')
-    expect(url).toContain('has_score=true')
     // Load-bearing, not cosmetic: `sort_by`/`sort_dir` is a non-unique sort
     // key with no tiebreaker, and sync.ts's loop terminates on
     // `synced >= total`. Silently dropping the ordering would let duplicate
@@ -88,5 +89,44 @@ describe('createMusicRaterClient', () => {
     expect(url).toContain('sort_dir=desc')
     expect(url).toContain('limit=500')
     expect(url).toContain('offset=500')
+  })
+
+  it('no longer restricts the corpus to scored albums', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ items: [], total: 0, limit: 500, offset: 0 }))
+    await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(0)
+    const url = mockFetch.mock.calls[0]?.[0] as string
+    expect(url).not.toContain('has_score')
+  })
+
+  it('maps coverage_types through, defaulting to an empty array', async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonOk({
+        items: [
+          {
+            id: 7,
+            artist_name_raw: 'A',
+            album_title_raw: 'B',
+            release_year: 1999,
+            max_score_ratio: null,
+            genre_slugs: [],
+            sources: ['amg'],
+            coverage_types: ['tymhm'],
+          },
+          {
+            id: 8,
+            artist_name_raw: 'C',
+            album_title_raw: 'D',
+            release_year: 2000,
+            sources: [],
+          },
+        ],
+        total: 2,
+        limit: 500,
+        offset: 0,
+      }),
+    )
+    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listScoredAlbums(0)
+    expect(page.items[0]?.coverageTypes).toEqual(['tymhm'])
+    expect(page.items[1]?.coverageTypes).toEqual([])
   })
 })

@@ -1,0 +1,1 @@
+ALTER TABLE "music_rater_albums" ADD COLUMN IF NOT EXISTS "coverage_types" jsonb;

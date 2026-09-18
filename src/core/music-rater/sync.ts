@@ -12,6 +12,7 @@ export type MusicRaterAlbumRow = {
   drValue: number | null
   genreSlugs: string[]
   sourceSites: string[]
+  coverageTypes: string[]
 }
 
 export type MusicRaterSyncDeps = {
@@ -38,6 +39,7 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
     drValue: album.drValue,
     genreSlugs: album.genreSlugs,
     sourceSites: album.sources,
+    coverageTypes: album.coverageTypes,
   }
 }
 
