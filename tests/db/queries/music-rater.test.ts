@@ -106,6 +106,73 @@ describe('findMusicRaterScoresByNames (real db)', () => {
     ])
     expect(result.size).toBe(0)
   })
+
+  /**
+   * FIX 2 (final fix wave): the second of the two inertness properties named
+   * by the spec, and the only one with no test. Rows are keyed
+   * `(user_id, music_rater_album_id)`, but the LOOKUP key here is
+   * `artistNameNormalized::albumTitleNormalized` -- two distinct music-rater
+   * albums (different `musicRaterAlbumId`) can collapse onto the same
+   * normalized key, e.g. a scored original and an unscored remaster of the
+   * same artist/title. Before this branch dropped `has_score=true` from the
+   * sync, the unscored one never synced at all; now it does, and "Yer Metal
+   * Is Olde" is literally a retrospective column about old albums, so this
+   * collision is the expected shape, not a corner case. The function's only
+   * guard is `if (row.maxScoreRatio === null) continue` -- remove it and
+   * whichever row the (unordered) scan happens to yield last wins, so a null
+   * can clobber a real score with nothing failing anywhere.
+   */
+  it('FIX 2: a null-score row colliding on the same normalized key does not clobber the scored one', async () => {
+    const artistNameRaw = 'Boards of Canada'
+    const albumTitleRaw = 'Geogaddi'
+
+    // Two distinct music-rater albums (different musicRaterAlbumId) that
+    // normalize to the same lookup key -- e.g. a scored original (id 1) and
+    // an unscored remaster (id 2) of the same artist/title.
+    await upsertMusicRaterAlbums(db, userId, [
+      {
+        musicRaterAlbumId: 1,
+        artistNameRaw,
+        albumTitleRaw,
+        artistNameNormalized: normalizeArtistName(artistNameRaw),
+        albumTitleNormalized: normalizeAlbumTitle(albumTitleRaw),
+        releaseYear: 1998,
+        maxScoreRatio: 0.9,
+        drValue: null,
+        genreSlugs: [],
+        sourceSites: ['amg'],
+        coverageTypes: [],
+      },
+      {
+        musicRaterAlbumId: 2,
+        artistNameRaw,
+        albumTitleRaw,
+        artistNameNormalized: normalizeArtistName(artistNameRaw),
+        albumTitleNormalized: normalizeAlbumTitle(albumTitleRaw),
+        releaseYear: 2020,
+        maxScoreRatio: null,
+        drValue: null,
+        genreSlugs: [],
+        sourceSites: ['amg'],
+        coverageTypes: ['ymio'],
+      },
+    ])
+
+    const result = await findMusicRaterScoresByNames(db, userId, [
+      {
+        artistNormalized: normalizeArtistName(artistNameRaw),
+        titleNormalized: normalizeAlbumTitle(albumTitleRaw),
+      },
+    ])
+
+    // The map must hold the real score -- never null, and never simply
+    // absent (which `score.ts`'s `!== undefined` guard would treat the same
+    // as "no critic data", but a `null` stored under the key would sail
+    // straight through as `sourceScores.criticScore = null`, a field typed
+    // `number` silently holding null).
+    const expectedKey = criticScoreKey(artistNameRaw, albumTitleRaw)
+    expect(result.get(expectedKey)).toBe(0.9)
+  })
 })
 
 /** Insert a music_rater_albums row with full control, bypassing the sync path. */
