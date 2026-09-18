@@ -257,4 +257,60 @@ describe('createCriticallyAcclaimedMode', () => {
       expect.objectContaining({ limit: 5 }),
     )
   })
+
+  /**
+   * The UI persists these multiselect fields as a comma-separated STRING
+   * (see discovery-mode-form.tsx's `normalizeValue`), but the query layer
+   * (`getUnresolvedAcclaimedAlbums`) takes `string[]`. `listSetting` is the
+   * only thing bridging that gap, and nothing at the DB-query level
+   * exercises it -- those tests pass arrays directly. If `listSetting` ever
+   * stopped trimming or dropping empties, a stray leading space or an empty
+   * string would reach `?|` as a literal array element that can never
+   * overlap anything, silently starving the mode of results with nothing
+   * failing anywhere (the same class of silent under-match this branch has
+   * already hit twice).
+   */
+  it('parses comma-separated multiselect settings into trimmed, non-empty arrays', async () => {
+    const getUnresolvedAcclaimedAlbums = vi.fn().mockResolvedValue([])
+    const mode = createCriticallyAcclaimedMode(baseDeps({ getUnresolvedAcclaimedAlbums }))
+
+    await mode.executor(
+      request({
+        includeGenres: 'doom-metal, power-metal',
+        excludeGenres: '',
+        coverageTypes: 'tymhm,  review ',
+      }),
+    )
+
+    expect(getUnresolvedAcclaimedAlbums).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        // Pins trimming: a leading space on the second value must not
+        // survive into the array `?|` binds against.
+        includeGenres: ['doom-metal', 'power-metal'],
+        // Pins drop-empties: an empty string must become `[]`, never
+        // `['']` -- a stray empty element would make every `?|` overlap
+        // check against it fail, emptying the mode silently.
+        excludeGenres: [],
+        coverageTypes: ['tymhm', 'review'],
+      }),
+    )
+  })
+
+  it('reads includeUnscored as a boolean, true when set and false when absent', async () => {
+    const getUnresolvedAcclaimedAlbums = vi.fn().mockResolvedValue([])
+    const mode = createCriticallyAcclaimedMode(baseDeps({ getUnresolvedAcclaimedAlbums }))
+
+    await mode.executor(request({ includeUnscored: true }))
+    expect(getUnresolvedAcclaimedAlbums).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ includeUnscored: true }),
+    )
+
+    await mode.executor(request({}))
+    expect(getUnresolvedAcclaimedAlbums).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ includeUnscored: false }),
+    )
+  })
 })
