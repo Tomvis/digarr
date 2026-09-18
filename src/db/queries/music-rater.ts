@@ -225,7 +225,20 @@ export async function getUnresolvedAcclaimedAlbums(
     filters.push(sql`${musicRaterAlbums.genreSlugs} ?| ${sql.param(includeGenres)}::text[]`)
   }
   if (excludeGenres.length > 0) {
-    filters.push(sql`NOT (${musicRaterAlbums.genreSlugs} ?| ${sql.param(excludeGenres)}::text[])`)
+    // `coalesce` matters here: `NOT (NULL::jsonb ?| ARRAY[...])` evaluates to
+    // SQL NULL, not TRUE, so an un-coalesced predicate would silently DROP a
+    // row whose genre_slugs is NULL from an exclude filter's results -- a
+    // "no genres recorded" row overlaps nothing and must survive. `toRow`
+    // (core/music-rater/sync.ts) always writes `?? []`, so this column is
+    // never actually NULL on a synced row today, but the sibling
+    // `coverage_types` jsonb column IS NULL on every pre-existing row between
+    // migration 0054 and that row's first post-deploy sync -- proof this
+    // table really does carry NULL jsonb columns in production, not just in
+    // theory -- so this predicate is written defensively rather than relying
+    // on `toRow` never changing.
+    filters.push(
+      sql`NOT (coalesce(${musicRaterAlbums.genreSlugs}, '[]'::jsonb) ?| ${sql.param(excludeGenres)}::text[])`,
+    )
   }
   if (coverageTypes.length > 0) {
     filters.push(sql`${musicRaterAlbums.coverageTypes} ?| ${sql.param(coverageTypes)}::text[]`)

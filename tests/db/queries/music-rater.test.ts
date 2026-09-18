@@ -594,6 +594,44 @@ describe('getUnresolvedAcclaimedAlbums (real db)', () => {
     expect(found.map((r) => r.albumTitleRaw)).toEqual(['Doomy'])
   })
 
+  /**
+   * FIX 8 (final fix wave): `NOT (col ?| ARRAY[...])` evaluates to SQL NULL,
+   * not TRUE, when `col` is itself NULL -- verified under pglite:
+   * `SELECT NOT (NULL::jsonb ?| ARRAY['x']::text[])` yields NULL, so a naive
+   * predicate silently DROPS the row from an exclude filter's results. An
+   * album with no genres recorded overlaps nothing and must survive.
+   * `upsertMusicRaterAlbums`/`toRow` always write `genreSlugs: []`, so this
+   * is not reachable through the app today -- this seeds directly via
+   * `db.insert`, bypassing that path, the same way a pre-existing row from
+   * before genre_slugs had any writer (or migration 0054's coverage_types,
+   * SQL NULL on every row until that user's first post-deploy sync) would
+   * look.
+   */
+  it('FIX 8: an album with a NULL genre_slugs column survives an exclude-genre filter', async () => {
+    const artistNameRaw = 'No Genres Recorded'
+    const albumTitleRaw = 'Untagged'
+    await db.insert(musicRaterAlbums).values({
+      userId,
+      musicRaterAlbumId: 1,
+      artistNameRaw,
+      albumTitleRaw,
+      artistNameNormalized: normalizeArtistName(artistNameRaw),
+      albumTitleNormalized: normalizeAlbumTitle(albumTitleRaw),
+      releaseYear: 2020,
+      maxScoreRatio: 0.9,
+      genreSlugs: null,
+      sourceSites: ['amg'],
+    })
+
+    const found = await getUnresolvedAcclaimedAlbums(db, userId, {
+      ...BASE,
+      ...NO_FILTERS,
+      excludeGenres: ['doom-metal'],
+    })
+
+    expect(found.map((r) => r.artistNameRaw)).toEqual([artistNameRaw])
+  })
+
   it('lets exclude win over include on the same album', async () => {
     // Tagged BOTH. Include says yes, exclude says no -- exclude is the
     // stronger statement, so the album must not be returned.
