@@ -121,4 +121,20 @@ describe('critically-acclaimed advanced-mode field coverage (FIX 1)', () => {
     expect(call.normalizedSettings.coverageTypes).toEqual(['tymhm'])
     expect(call.normalizedSettings.includeUnscored).toBe(true)
   })
+
+  /**
+   * The test above proves the invariant end to end, but only for
+   * `coverageTypes` -- it is the key a user is most likely to combine with
+   * `includeUnscored`, not the only one at risk. Moving any OTHER easy key
+   * back out of `advancedFields` (say `excludeGenres`) would silently
+   * discard that filter for every Advanced-mode run while the end-to-end
+   * test stayed green. This states the invariant itself, so the guard does
+   * not depend on which key someone happens to break.
+   */
+  it('declares advancedFields as a superset of easyFields', () => {
+    const { easyFields, advancedFields } = createCriticallyAcclaimedMode()
+    expect(advancedFields.map((f) => f.key)).toEqual(
+      expect.arrayContaining(easyFields.map((f) => f.key)),
+    )
+  })
 })

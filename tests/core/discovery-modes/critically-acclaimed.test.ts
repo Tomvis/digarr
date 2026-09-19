@@ -353,7 +353,7 @@ describe('createCriticallyAcclaimedMode', () => {
     })
 
     /**
-     * MY RULING (task-6-report.md): `unknown` is a real, stored post_type --
+     * RULING: `unknown` is a real, stored post_type --
      * music-rater's parser assigns it on a decode/parse failure and reports
      * it deliberately so its API stays honest about the data, and digarr
      * keeps storing it for the same reason. But it is not a discovery
