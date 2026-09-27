@@ -380,4 +380,3 @@ MIT. See [LICENSE](LICENSE).
    <img alt="Star History Chart" src="https://api.star-history.com/image?repos=iuliandita/digarr&type=timeline&legend=top-left" />
  </picture>
 </a>
-
