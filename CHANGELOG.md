@@ -11,6 +11,38 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 - **A new music-rater integration surfaces critically acclaimed albums you don't already own, and lets critic ratings nudge every album recommendation.** Connect a music-rater instance from Settings > Your Connections with its URL and a `mr_` API key (encrypted at rest, with a Test Connection check). A nightly sync pulls your music-rater album corpus into digarr and shows up in Job History as its own job type. The new Critically Acclaimed discovery mode reads that corpus for highly rated albums you have not added, resolving each against MusicBrainz the first time it is seen so repeat runs only do new work. Once connected, matching critic ratings also fold into the score of album recommendations from any discovery mode or pipeline scan, not just Critically Acclaimed; the adjustment rides the existing bounded per-album score modifier, so nothing changes for anyone who has not connected music-rater. Like the other discovery modes, Critically Acclaimed can be saved as a subscription to run on its own schedule. Library sync and playlist export are not part of this integration.
 - **Critically Acclaimed can now be narrowed by genre and by coverage type.** Two new fields, `Only these genres` and `Never these genres` (exclude wins when an album matches both), filter on the genre slugs in your synced corpus, and a new `Only these kinds of coverage` field filters on which editorial columns covered an album -- Review, Album of the Year, Record of the Month, and more. All three option lists are drawn from your own synced corpus, not a fixed list and not looked up from music-rater live, so they only ever offer values that actually appear in your data. The nightly sync also now pulls every album music-rater knows about instead of only scored ones, which grows a typical corpus by roughly a third; the newly-reachable albums are exactly the ones editorial-only columns like Things You Might Have Missed, Stuck in the Filter, Yer Metal Is Olde, and Lost in Time produce, since those carry no rating at all. Because every other filter in this mode is a score threshold, those albums stay invisible by default -- the new advanced, default-off `Include unscored recommendations` toggle is the only way to reach them.
 
+## v1.18.0 - 2026-09-20
+
+### Security
+
+- Alpine images install patched OpenSSL libraries, and Debian images apply available distribution updates. The Debian fallback still carries upstream advisories without available patches.
+- slskd result identifiers use SHA-256.
+
+### Added
+
+- Plex listening sources use an explicit per-user server-account selection, isolated playback history, and Plex similar-artist metadata. Shared-library sync remains independent; existing connections need a listener selection for history. [#647](https://github.com/iuliandita/digarr/issues/647), [#684](https://github.com/iuliandita/digarr/issues/684).
+- Audition playlists select one track per pending artist without approving recommendations, with on-demand or scheduled generation and existing playlist targets. [#390](https://github.com/iuliandita/digarr/issues/390).
+
+### Fixed
+
+- The password-change hint now states the required 12-character minimum in all 15 locales. [#692](https://github.com/iuliandita/digarr/issues/692).
+- An expired session now returns to sign-in even when it expires immediately after authentication, instead of briefly opening registration. [#696](https://github.com/iuliandita/digarr/issues/696).
+- Key rotation now includes notification credentials and fails if any cannot be re-encrypted. [#694](https://github.com/iuliandita/digarr/issues/694).
+- Plex playlist exports send all selected track IDs in one content URI and report when no tracks exist in the Plex library. Plex, Jellyfin, and Navidrome playlist targets now use their provider connection tests. [#687](https://github.com/iuliandita/digarr/issues/687), [#688](https://github.com/iuliandita/digarr/issues/688).
+- slskd searches send the correct request field, and failed jobs retry after a cooldown without inserting a new row each time. [#677](https://github.com/iuliandita/digarr/issues/677).
+- Linked slskd downloads import into Lidarr only after every expected file succeeds and the release passes identification checks. Completion requires verified album track files. Existing linked targets must set `lidarrDownloadPath` to a completed-download directory visible to Lidarr, with the shared mount or path mapping configured before imports can resume. [#678](https://github.com/iuliandita/digarr/issues/678).
+- slskd release downloads are bounded to 500 files and 20 GiB, and oversized manifests are rejected before enqueue. [#685](https://github.com/iuliandita/digarr/issues/685).
+
+### Changed
+
+- Installation guides now spell out HTTP cookie settings, the 12-character password minimum, persistent backups, and database-backend choices. The README and project descriptions focus on discovery, review, and playlist workflows.
+- TIDAL Favorite Artists continues to ship as experimental without live-account validation. Authorization, refresh, and favorite-artist retrieval remain unverified; live testing is deferred to community feedback. The [README feedback guide](README.md#tidal-feedback) explains setup and what to report. [#553](https://github.com/iuliandita/digarr/issues/553).
+- Spotify setup documents the Premium app-owner requirement and Development Mode allowlist limits, with alternatives that do not need Spotify. [#395](https://github.com/iuliandita/digarr/issues/395).
+
+### Upgrade notes
+
+- Startup migrations add Plex listener fields and consolidate duplicate slskd retry jobs without deleting their history. Keep a pre-upgrade backup. Existing Plex connections need a listener selection for history; linked slskd targets need a completed-download path visible to Lidarr. See the [Plex](README.md#connecting-plex-listeners) and [slskd](README.md#importing-slskd-downloads-into-lidarr) setup notes.
+
 ## v1.17.0 - 2026-09-16
 
 ### Fixed
