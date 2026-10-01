@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#7aa2f7" />
+    <meta name="theme-color" content="#16222A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <title>Digarr</title>
   </head>
@@ -16,7 +16,7 @@
       // Apply theme before React mounts to prevent FOUC
       (() => {
         var m = localStorage.getItem('digarr-theme') || 'system';
-        var c = localStorage.getItem('digarr-color-theme') || 'tokyonight';
+        var c = localStorage.getItem('digarr-color-theme') || 'home';
         var resolved = m === 'system'
           ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
           : m;

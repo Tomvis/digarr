@@ -1,0 +1,61 @@
+/* Home theme (HW-48, Tomvis fork only): tokens from homelab-stacks theme/dist/tokens.resolved.json.
+   Slate = structure, mist/cloud = surface, cyan = "on right now" only (so no token here maps to it).
+   Kept in its own file so upstream merges of index.css don't conflict. */
+@font-face {
+  font-family: "Rubik";
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url("/fonts/Rubik-VF.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Rubik";
+  font-style: italic;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url("/fonts/Rubik-Italic-VF.woff2") format("woff2");
+}
+
+[data-theme^="home-"] {
+  /* controls 6px, containers 20px */
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 20px;
+  --radius-2xl: 20px;
+}
+[data-theme^="home-"] body {
+  font-family: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="home-dark"] {
+  color-scheme: dark;
+  --color-bg: #16222a;
+  --color-surface: #1f2f38;
+  --color-border: #3a525d;
+  --color-accent: #8db0bd;
+  --color-accent-fg: #16222a;
+  --color-approve: #36e0a0;
+  --color-reject: #ff8aa0;
+  --color-info: #bad2de;
+  --color-warning: #f5b14c;
+  --color-text: #eaf0f0;
+  --color-muted: #8ba4ae;
+}
+
+[data-theme="home-light"] {
+  color-scheme: light;
+  --color-bg: #eaf0f0;
+  --color-surface: #ffffff;
+  --color-border: #bad2de;
+  --color-accent: #466a77;
+  --color-accent-fg: #ffffff;
+  --color-approve: #0f6e4e;
+  --color-reject: #b0233d;
+  --color-info: #466a77;
+  --color-warning: #8a5300;
+  --color-text: #16222a;
+  --color-muted: #526d78;
+}

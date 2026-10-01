@@ -1,6 +1,7 @@
 export type Mode = 'dark' | 'light' | 'system'
 
 export type ColorTheme =
+  | 'home'
   | 'digarr'
   | 'tokyonight'
   | 'catppuccin'
@@ -19,6 +20,8 @@ export type ColorTheme =
   | 'tidarr'
 
 export const COLOR_THEMES: { id: ColorTheme; name: string; group?: string }[] = [
+  // Home theme (HW-48, fork default)
+  { id: 'home', name: 'Home', group: 'Home' },
   // Project signature
   { id: 'digarr', name: 'Digarr', group: 'Project' },
   // Editor themes
@@ -57,7 +60,7 @@ export function setStoredMode(mode: Mode): void {
 export function getStoredColorTheme(): ColorTheme {
   const stored = localStorage.getItem(COLOR_KEY)
   if (COLOR_THEMES.some((t) => t.id === stored)) return stored as ColorTheme
-  return 'youtarr'
+  return 'home'
 }
 
 export function setStoredColorTheme(theme: ColorTheme): void {

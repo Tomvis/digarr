@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./home-theme.css";
 
 /* Compact text sizes for badges, pills, labels */
 @utility text-micro {

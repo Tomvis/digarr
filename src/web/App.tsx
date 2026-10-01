@@ -264,6 +264,19 @@ function ThemePicker({
           })}
           <div className="border-t border-border my-1" />
           <div className="max-h-[320px] overflow-y-auto">
+            {/* Home theme (HW-48): own group, no header (its name says it all) */}
+            {COLOR_THEMES.filter((t) => t.group === 'Home').map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="menuitem"
+                onClick={() => onColorThemeChange(t.id)}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-bg transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px] ${colorTheme === t.id ? 'text-accent' : 'text-text'}`}
+              >
+                <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                {t.name}
+              </button>
+            ))}
             {(['Editor', 'Streaming'] as const).map((group) => (
               <div key={group}>
                 <div className="px-3 py-1.5 text-micro uppercase tracking-wider text-muted sticky top-0 bg-surface">
