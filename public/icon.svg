@@ -1,11 +1,96 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -68 707 707" width="707" height="707">
   <title>Home</title>
-  <style>.house{fill:#587E8D}.cut{fill:#FFFFFF}.line{fill:none;stroke:#FFFFFF}</style>
-  <rect class="house" x="352" y="92" width="48" height="140"/>
-  <polygon class="house" points="256,40 16,272 96,272 96,464 416,464 416,272 496,272"/>
-  <polyline class="line" points="72,258 256,82 440,258" stroke-width="30"/>
-  <g class="cut">
-    <rect x="196" y="250" width="54" height="54"/><rect x="262" y="250" width="54" height="54"/>
-    <rect x="196" y="316" width="54" height="54"/><rect x="262" y="316" width="54" height="54"/>
+  <style>.halo{fill:#FFFFFF;opacity:.75}.cloud{fill:url(#cloud-fill)}.puff{fill:url(#puff-fill)}.house{fill:url(#house-fill)}.cut{fill:#FFFFFF}.line{fill:none;stroke:#FFFFFF}.chimney{fill:url(#house-fill)}.flue{fill:url(#flue-fill)}</style>
+  <defs>
+    <linearGradient id="cloud-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".45" stop-color="#F4F8F9"/>
+      <stop offset=".72" stop-color="#DCE8EE"/><stop offset="1" stop-color="#B9D0DC"/>
+    </linearGradient>
+    <linearGradient id="puff-fill" x1="0" y1="360" x2="0" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#F7FAFB"/><stop offset="1" stop-color="#CFE0E8"/>
+    </linearGradient>
+    <linearGradient id="house-fill" x1="0" y1="0" x2=".35" y2="1">
+      <stop offset="0" stop-color="#628A99"/><stop offset="1" stop-color="#557684"/>
+    </linearGradient>
+    <linearGradient id="flue-fill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".7" stop-color="#F4F8F9"/><stop offset="1" stop-color="#D3E2E9"/>
+    </linearGradient>
+    <!-- Soft edge + blue shading inside the bottom of each lobe, like the original's airbrushed cloud. -->
+    <filter color-interpolation-filters="sRGB" id="cloud-soft" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="9" result="blur"/>
+      <feOffset in="blur" dy="-16" result="up"/>
+      <feComposite in="SourceAlpha" in2="up" operator="out" result="rim"/>
+      <feFlood flood-color="#BAD2DE" flood-opacity=".9"/>
+      <feComposite in2="rim" operator="in" result="shade"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="eblur"/>
+      <feComposite in="SourceAlpha" in2="eblur" operator="out" result="edge"/>
+      <feFlood flood-color="#B9D0DC" flood-opacity=".6"/>
+      <feComposite in2="edge" operator="in" result="edgeshade"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="shade"/><feMergeNode in="edgeshade"/></feMerge>
+      <feGaussianBlur stdDeviation="1.6"/>
+    </filter>
+    <filter color-interpolation-filters="sRGB" id="halo-blur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="7"/></filter>
+    <filter color-interpolation-filters="sRGB" id="lift" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#2E4650" flood-opacity=".28"/>
+    </filter>
+    <filter color-interpolation-filters="sRGB" id="puff-soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+      <feOffset in="blur" dx="6" dy="-12" result="up"/>
+      <feComposite in="SourceAlpha" in2="up" operator="out" result="rim"/>
+      <feFlood flood-color="#9FBCCA" flood-opacity=".75"/>
+      <feComposite in2="rim" operator="in" result="shade"/>
+      <feMerge result="puff"><feMergeNode in="SourceGraphic"/><feMergeNode in="shade"/></feMerge>
+      <feGaussianBlur in="puff" stdDeviation="2.2" result="softpuff"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="sblur"/>
+      <feOffset in="sblur" dx="-4" dy="6" result="soff"/>
+      <feFlood flood-color="#8FAFBE" flood-opacity=".55"/>
+      <feComposite in2="soff" operator="in" result="drop"/>
+      <feMerge><feMergeNode in="drop"/><feMergeNode in="softpuff"/></feMerge>
+    </filter>
+    <clipPath id="in-cloud">
+      <circle cx="360" cy="168" r="160"/><circle cx="190" cy="250" r="128"/><circle cx="552" cy="292" r="122"/>
+      <circle cx="112" cy="420" r="102"/><circle cx="596" cy="428" r="100"/><rect x="12" y="320" width="684" height="240" rx="100"/>
+    </clipPath>
+    <g id="cloud-shape">
+      <circle cx="360" cy="168" r="160"/><circle cx="190" cy="250" r="128"/><circle cx="552" cy="292" r="122"/>
+      <circle cx="112" cy="420" r="102"/><circle cx="596" cy="428" r="100"/><rect x="12" y="320" width="684" height="240" rx="100"/>
+    </g>
+  </defs>
+  <use href="#cloud-shape" class="halo" filter="url(#halo-blur)"/>
+  <use href="#cloud-shape" class="cloud" filter="url(#cloud-soft)"/>
+  <g class="puff" clip-path="url(#in-cloud)" filter="url(#puff-soft)">
+    <circle cx="118" cy="424" r="58"/><circle cx="58" cy="462" r="42"/><circle cx="104" cy="512" r="64"/>
+    <circle cx="592" cy="424" r="58"/><circle cx="652" cy="462" r="42"/><circle cx="606" cy="512" r="64"/>
+  </g>
+  <rect class="chimney" x="465" y="135" width="66" height="112"/>
+  <rect class="flue" x="478" y="149" width="45" height="98"/>
+  <polygon class="house" points="355,84 82,331 102,342 188,342 188,527 522,527 522,342 608,342 628,331"/>
+  <g filter="url(#lift)">
+    <polyline class="line" points="110,336 355,114 600,336" stroke-width="23" stroke-linejoin="miter"/>
+    <path class="line" d="M188 316 V517 H522 V316" stroke-width="20" stroke-linejoin="miter"/>
+    <g class="cut">
+      <rect x="320" y="210" width="31" height="32"/><rect x="360" y="210" width="31" height="32"/>
+      <rect x="320" y="252" width="31" height="32"/><rect x="360" y="252" width="31" height="32"/>
+      <!-- man -->
+      <circle cx="265.5" cy="288.5" r="23.5"/>
+      <rect x="223" y="322" width="83" height="40" rx="20"/>
+      <rect x="240" y="330" width="47" height="96" rx="6"/>
+      <rect x="240" y="410" width="19" height="83" rx="8"/><rect x="268" y="410" width="19" height="83" rx="8"/>
+      <!-- woman -->
+      <circle cx="443" cy="288.5" r="23"/>
+      <rect x="409" y="322" width="66" height="40" rx="20"/>
+      <path d="M416 345 H468 L486 433 H399 Z"/>
+      <rect x="423" y="425" width="16" height="68" rx="7"/><rect x="444" y="425" width="16" height="68" rx="7"/>
+      <!-- child -->
+      <circle cx="354.5" cy="378" r="16.5"/>
+      <rect x="336" y="400" width="35" height="54" rx="11"/>
+      <rect x="336" y="440" width="14" height="53" rx="6"/><rect x="357" y="440" width="14" height="53" rx="6"/>
+    </g>
+    <g class="line" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M228 340 L225 390" stroke-width="16"/>
+      <path d="M476 342 L484 386" stroke-width="13"/>
+      <path d="M300 340 L320 388 L342 410" stroke-width="15"/>
+      <path d="M412 340 L392 386 L368 410" stroke-width="15"/>
+    </g>
   </g>
 </svg>
