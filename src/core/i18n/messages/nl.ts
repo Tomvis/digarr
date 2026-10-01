@@ -256,6 +256,10 @@ export const nl = {
   'dashboard.genreCoverage': 'Genregegevens beschikbaar: {0}/{1}',
   'dashboard.genreCoveragePending': 'Openstaande updates van genregegevens: {0}',
   'dashboard.getStarted': 'Aan de slag',
+  'dashboard.listeningEmpty':
+    'Geen luistergeschiedenis voor deze periode. Probeer een andere periode.',
+  'dashboard.listeningFailed':
+    'De luistergeschiedenis kon niet worden geladen. Controleer je verbindingen of probeer het opnieuw.',
   'dashboard.listeningHistory': 'Luistergeschiedenis',
   'dashboard.recentPlays': 'Recent afgespeeld',
   'dashboard.recentPlaysEmpty': 'Geen recente afspelingen',
@@ -1377,6 +1381,12 @@ export const nl = {
   'jobHistory.cancelledLabel': 'geannuleerd',
   'jobHistory.errorLabel': 'Fout:',
   'jobHistory.sourceResultsLabel': 'Bronresultaten:',
+  'jobHistory.sourceSuccess': 'Geslaagd',
+  'jobHistory.sourceSkipped': 'Overgeslagen',
+  'jobHistory.sourceUnsupported': 'Zoeken naar vergelijkbare artiesten wordt niet ondersteund',
+  'jobHistory.sourceNoSeeds': 'Geen startartiesten beschikbaar',
+  'jobHistory.sourceExplicitRun': 'Deze uitvoering gebruikt opgegeven kandidaten',
+  'jobHistory.sourceNotConfigured': 'Bron is niet ingesteld',
   'jobHistory.metadataLabel': 'Metagegevens:',
   'jobHistory.artists': 'artiesten',
   'recommendation.ownStudioAlbums': 'Je bezit {0}/{1} studioalbums',

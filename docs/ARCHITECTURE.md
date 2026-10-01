@@ -107,6 +107,10 @@ and skip their ticks while it is set. The routes are
 [`docs/guides/switching-backends.md`](guides/switching-backends.md) for the
 operator walkthrough.
 
+## Dashboard listening history
+
+Listening routes preserve configuration, empty-result, and failure outcomes separately from their returned entries. A successful fallback with entries wins; without entries, any attempted source failure produces an error outcome. ListenBrainz artist statistics map HTTP 204 to an empty result locally, while the shared JSON transport continues to reject missing response bodies elsewhere. The dashboard distinguishes loading, unconfigured, empty, and failed history and retries failed queries on request. Failed refreshes keep cached entries visible with a failure notice.
+
 ## Pipeline
 
 Seven stages:
@@ -130,6 +134,10 @@ alias when the listening source has no MBID. Listening-artist genre data in the
 artist cache uses its own freshness timestamp, so unrelated image or metadata
 refreshes cannot extend the 180-day genre TTL. Enrichment from
 `artist_metadata` still runs between resolve and score.
+
+Discovery queries only listening sources declaring `similarArtists`. Job results distinguish unsupported capabilities, explicit discovery modes, missing seeds, successful empty lookups, and upstream failures. A seed lookup failure remains visible even when other seeds contribute candidates. These outcomes describe discovery, independently of profile analysis and library sync.
+
+AI discovery retains comparisons to listening-profile artists. Its description guard only checks likely shared-name collisions: an unquoted seed name without the recommended name can be rejected. Prompts ask for the exact recommended name in the first sentence. This heuristic cannot establish artist identity or factual accuracy; MusicBrainz resolution remains a separate stage.
 
 The filter stage partitions candidates by `kind`. Artist-kind candidates run the
 full artist-existence / library / top-artist filters. Album-kind candidates

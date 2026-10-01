@@ -68,7 +68,7 @@ For these routes, non-integer `limit` values return `400`. `meta.nextCursor` is 
 Offset-paginated routes:
 - `GET /api/v1/recommendations` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
 - `GET /api/v1/jobs` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
-- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null }`
+- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null, "status": "not_configured" }`
 
 ---
 
@@ -868,12 +868,14 @@ covered artists when a populated cache entry is due for refresh.
 - `offset` - 0-10000 (default 0)
 - `limit` - 1-50 (default 5)
 
-Response: `{ tracks, total, offset, limit, source }`. `source` is `"listenbrainz"`, `"lastfm"`, `"plex"`, or `null`. Last.fm periods are rolling windows (`7day`, `1month`, `12month`, `overall`) and map approximately to the requested calendar range.
+Response: `{ tracks, total, offset, limit, source, status }`. `source` is `"listenbrainz"`, `"lastfm"`, `"plex"`, or `null`. Last.fm periods are rolling windows (`7day`, `1month`, `12month`, `overall`) and map approximately to the requested calendar range.
 
 **GET /api/v1/listening/recent-tracks** query params:
 - `limit` - 1-50 (default 5)
 
-Response: `{ tracks, hasSource, source }`. `hasSource` is `false` when no scrobble-capable source is connected (UI should hide the tile). `source` identifies which source served the data.
+Response: `{ tracks, hasSource, source, status }`. `hasSource` is `false` when no scrobble-capable source is connected (UI should hide the tile). `source` identifies the last successful source attempt, including an empty result.
+
+Both listening endpoints return `status`: `not_configured` means no eligible source or application settings; `empty` means attempts succeeded but returned no entries; `error` means no entries were available and at least one attempted source failed; `ok` means entries were returned, including a successful fallback after another source failed. Existing fallback priorities are unchanged. Raw upstream errors are not returned. ListenBrainz artist-statistics HTTP 204 responses count as empty success.
 
 ---
 
@@ -891,6 +893,8 @@ Response: `{ tracks, hasSource, source }`. `hasSource` is `false` when no scrobb
 - `limit` - 1-100 (default 50)
 - `offset` - pagination offset (minimum 0)
 - Invalid `type` or `status` values return `400`
+
+Pipeline job `sourceResults` describe each source's discovery contribution. Configured listening sources without `similarArtists` report `{ "status": "skipped", "reason": "unsupported_capability" }`. Supported sources not queried because of an explicit discovery mode or an empty seed list use `explicit_run` or `no_seeds`; absent connections use `not_configured`. Successful similarity lookups use `ok` with an `artists` count, including zero. Any failed seed lookup uses `error` with the redacted upstream message, even when other seeds return candidates. Profile collection and library sync are separate operations. Existing job records retain their recorded outcomes.
 
 ---
 

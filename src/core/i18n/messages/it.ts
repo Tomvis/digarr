@@ -256,6 +256,10 @@ export const it = {
   'dashboard.genreCoverage': 'Dati sui generi disponibili: {0}/{1}',
   'dashboard.genreCoveragePending': 'Aggiornamenti dei dati sui generi in attesa: {0}',
   'dashboard.getStarted': 'Inizia',
+  'dashboard.listeningEmpty':
+    'Nessuna cronologia di ascolto per questo periodo. Prova un altro periodo.',
+  'dashboard.listeningFailed':
+    'Impossibile caricare la cronologia di ascolto. Controlla le connessioni o riprova.',
   'dashboard.listeningHistory': 'Cronologia di ascolto',
   'dashboard.recentPlays': 'Riprodotti di recente',
   'dashboard.recentPlaysEmpty': 'Nessun ascolto recente',
@@ -1386,6 +1390,12 @@ export const it = {
   'jobHistory.cancelledLabel': 'annullato',
   'jobHistory.errorLabel': 'Errore:',
   'jobHistory.sourceResultsLabel': 'Risultati sorgente:',
+  'jobHistory.sourceSuccess': 'Riuscito',
+  'jobHistory.sourceSkipped': 'Saltato',
+  'jobHistory.sourceUnsupported': 'La ricerca di artisti simili non è supportata',
+  'jobHistory.sourceNoSeeds': 'Nessun artista di riferimento disponibile',
+  'jobHistory.sourceExplicitRun': 'Questa esecuzione usa candidati espliciti',
+  'jobHistory.sourceNotConfigured': 'La sorgente non è configurata',
   'jobHistory.metadataLabel': 'Metadati:',
   'jobHistory.artists': 'artisti',
   'recommendation.ownStudioAlbums': 'Possiedi {0}/{1} album in studio',

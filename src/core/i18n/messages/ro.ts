@@ -256,6 +256,10 @@ export const ro = {
   'dashboard.genreCoverage': 'Date despre gen disponibile: {0}/{1}',
   'dashboard.genreCoveragePending': 'Actualizări ale datelor despre gen în așteptare: {0}',
   'dashboard.getStarted': 'Începeți',
+  'dashboard.listeningEmpty':
+    'Nu există istoric de ascultare pentru această perioadă. Încearcă altă perioadă.',
+  'dashboard.listeningFailed':
+    'Istoricul de ascultare nu a putut fi încărcat. Verifică conexiunile sau încearcă din nou.',
   'dashboard.listeningHistory': 'Istoric ascultare',
   'dashboard.recentPlays': 'Redate recent',
   'dashboard.recentPlaysEmpty': 'Nicio redare recentă',
@@ -1384,6 +1388,12 @@ export const ro = {
   'jobHistory.cancelledLabel': 'anulat',
   'jobHistory.errorLabel': 'Eroare:',
   'jobHistory.sourceResultsLabel': 'Rezultate sursa:',
+  'jobHistory.sourceSuccess': 'Reușit',
+  'jobHistory.sourceSkipped': 'Omis',
+  'jobHistory.sourceUnsupported': 'Căutarea artiștilor similari nu este disponibilă',
+  'jobHistory.sourceNoSeeds': 'Nu există artiști de referință',
+  'jobHistory.sourceExplicitRun': 'Această rulare folosește candidați expliciți',
+  'jobHistory.sourceNotConfigured': 'Sursa nu este configurată',
   'jobHistory.metadataLabel': 'Metadate:',
   'jobHistory.artists': 'artisti',
   'recommendation.ownStudioAlbums': 'Detii {0}/{1} albume de studio',

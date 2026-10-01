@@ -30,7 +30,9 @@
 - **Choose where approvals go.** Use Lidarr, queue releases through slskd, or keep a discovery-only setup. Auto-approval is available if you want high-scoring recommendations sent to targets without manual review.
 - **Share an instance.** Each user has their own queue, connections, preferences, and assigned targets. Sign in with a local account or OIDC/SSO. The interface and AI discovery output support 15 languages, with light and dark themes.
 
-Digarr manages recommendations and calls your connected services. It does not include a music downloader or a full music player. AI suggestions and MusicBrainz matches can be wrong; review the artist and release before approving.
+Digarr manages recommendations and calls your connected services. It does not include a music downloader or a full music player. AI suggestions and MusicBrainz matches can be wrong; review the artist and release before approving. AI explanations may compare a recommendation with artists in your listening profile. The name-confusion check is a limited heuristic and cannot verify those claims.
+
+Dashboard listening history asks you to connect an account only when no eligible source is configured. An empty period suggests trying another period; a failed request shows a retry action. Recently Played also distinguishes empty history from a failure. A failed refresh keeps the last loaded entries visible with a failure notice.
 
 ### Connections at a glance
 
@@ -124,7 +126,7 @@ For local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 3. Run a scan from Dashboard or Discover. Digarr builds a taste profile, gathers candidates, resolves MusicBrainz identities, scores them, and removes duplicates and blocked results.
 4. Preview and approve suggestions, reject them, or adjust the scoring weights. Use Release Radar or Library Gap-Fill for albums; the normal scan is artist-focused unless you enable net-new album discovery.
 
-Admins can inspect failures in Settings > Job History and System Health. A source can fail while the scan completes using the remaining sources; check the job details if results look incomplete. The [architecture guide](docs/ARCHITECTURE.md#pipeline) describes the pipeline stages.
+Admins can inspect failures in Settings > Job History and System Health. A source can fail while the scan completes using the remaining sources; check the job details if results look incomplete. Listening sources that do not support similar-artist discovery are skipped for that stage, while their taste-profile and library-sync functions remain available. A successful lookup with no matches reports zero artists. The [architecture guide](docs/ARCHITECTURE.md#pipeline) describes the pipeline stages.
 
 ## Requirements
 
