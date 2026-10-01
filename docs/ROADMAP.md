@@ -68,6 +68,10 @@ Low confidence. Would build only with real demand.
 - Native desktop client (Linux/Mac/Windows) - PWA install already covers most of this
 - Native mobile apps (Android/iOS) - PWA is already installable; native value is mostly reliable push notifications
 
+## Recommendation evaluation
+
+The [evaluation guide](RECOMMENDATION-QUALITY.md) describes production-prompt cases and replayable contract reports. Recommendation fit, catalog identity, previews, and delivery still need separate human and end-to-end evaluation before ranking changes.
+
 ## Release history
 
 [CHANGELOG.md](../CHANGELOG.md) records shipped changes by version. Release automation opens a deployment-pin update after publishing an image; maintainers review and merge it before treating those examples as updated.
