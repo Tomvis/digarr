@@ -378,7 +378,9 @@ const storeDb: StoreDb = {
 
 jobRecorder = createJobRecorder(db)
 // Mark stuck jobs at startup
-jobRecorder.markStuck().catch((err) => console.error('[startup] Stuck detection failed:', err))
+jobRecorder
+  .markStuck({ all: true })
+  .catch((err) => console.error('[startup] Stuck detection failed:', err))
 // Reset any library_sync_state rows left in 'running' from a previous crash/restart.
 // The orchestrator never finishes those, so the UI would show a permanent "running" badge.
 librarySyncStore

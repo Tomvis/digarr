@@ -3,10 +3,14 @@ import type { Database } from '@/db'
 import { jobRuns } from '@/db/schema'
 import type { CompleteJobParams, JobRecorder, StartJobParams } from './types'
 
+// A live scan routinely takes 30-90 min (MusicBrainz-bound resolve), and
+// subscriptions/discovery runs now queue behind it (orchestrator.runQueued),
+// so short thresholds labelled healthy runs "stuck". Restart-orphaned rows are
+// caught at boot instead (markStuck({ all: true })).
 const STUCK_THRESHOLDS_MS: Record<string, number> = {
-  pipeline: 10 * 60 * 1000,
-  quick_discover: 5 * 60 * 1000,
-  subscription: 5 * 60 * 1000,
+  pipeline: 4 * 60 * 60 * 1000,
+  quick_discover: 4 * 60 * 60 * 1000,
+  subscription: 6 * 60 * 60 * 1000,
   target: 2 * 60 * 1000,
   playlist: 2 * 60 * 1000,
   library_sync: 90 * 60 * 1000,
@@ -80,10 +84,11 @@ export function createJobRecorder(db: Database): JobRecorder {
         .where(eq(jobRuns.id, jobId))
     },
 
-    async markStuck(): Promise<number> {
+    async markStuck(options?: { all?: boolean }): Promise<number> {
       let totalMarked = 0
       for (const [type, thresholdMs] of Object.entries(STUCK_THRESHOLDS_MS)) {
-        const cutoff = new Date(Date.now() - thresholdMs)
+        // At boot nothing from before can still be running in this process.
+        const cutoff = new Date(Date.now() - (options?.all ? 0 : thresholdMs))
         try {
           const result = await db
             .update(jobRuns)

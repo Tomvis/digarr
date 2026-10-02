@@ -51,5 +51,6 @@ export interface JobRecorder {
   complete(jobId: number, params?: CompleteJobParams): Promise<void>
   fail(jobId: number, error: string): Promise<void>
   cancel(jobId: number): Promise<void>
-  markStuck(): Promise<number>
+  /** `all`: mark every running row regardless of age (process start). */
+  markStuck(options?: { all?: boolean }): Promise<number>
 }
