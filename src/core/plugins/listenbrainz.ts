@@ -10,7 +10,10 @@ export function createListenBrainzSource(username: string, token: string): Disco
     capabilities: ['topArtists', 'similarArtists', 'listeningActivity'],
 
     async getTopArtists() {
-      const artists = await client.getTopArtists('month')
+      // A quiet month (or a new account) has no stats; the year still says
+      // something about taste.
+      let artists = await client.getTopArtists('month')
+      if (artists.length === 0) artists = await client.getTopArtists('year')
       return artists.map((a) => ({
         name: a.name,
         mbid: a.mbid,

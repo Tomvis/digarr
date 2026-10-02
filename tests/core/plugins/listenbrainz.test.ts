@@ -57,6 +57,17 @@ describe('createListenBrainzSource()', () => {
     })
   })
 
+  it('getTopArtists() falls back to the year when the month has no stats', async () => {
+    const client = mockClient()
+    client.getTopArtists
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ name: 'Zivert', mbid: 'z', playCount: 3, source: 'listenbrainz' }])
+    const artists = await createListenBrainzSource('user', 'token').getTopArtists()
+    expect(client.getTopArtists).toHaveBeenNthCalledWith(2, 'year')
+    expect(artists.map((a) => a.name)).toEqual(['Zivert'])
+  })
+
   it('getSimilarArtists() maps score to similarityScore', async () => {
     mockClient()
     const source = createListenBrainzSource('user', 'token')

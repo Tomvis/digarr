@@ -164,9 +164,14 @@ export function createListenBrainzClient(username: string, token: string) {
   })
 
   async function getTopArtists(range: ListenBrainzRange): Promise<TopArtist[]> {
-    const res = await http.get<LbTopArtistsResponse>(
-      `/1/stats/user/${username}/artists?range=${range}`,
-    )
+    let res: LbTopArtistsResponse
+    try {
+      res = await http.get<LbTopArtistsResponse>(`/1/stats/user/${username}/artists?range=${range}`)
+    } catch (err: unknown) {
+      // 204 = no stats for this range yet (new or quiet account).
+      if (err instanceof HttpError && err.status === 204) return []
+      throw err
+    }
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,
