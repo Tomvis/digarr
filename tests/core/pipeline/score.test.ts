@@ -376,6 +376,47 @@ describe('score()', () => {
     expect(scored?.sourceScores.criticScore).toBe(0.75)
   })
 
+  it('an old, acclaimed album with unknown popularity is boosted, not dragged down', () => {
+    const artist = makeArtist({
+      name: 'Wilderun',
+      kind: 'album' as const,
+      releaseDate: '2019-11-01',
+      suggestedAlbum: { title: 'Veil of Imagination' },
+      discoveries: [{ name: 'Wilderun', similarityScore: 0.7, source: 'music-rater' }],
+    })
+    const now = new Date('2026-10-03')
+    const plain = score([artist], [], defaultWeights, new Map(), new Map(), now)
+    const [scored] = score(
+      [artist],
+      [],
+      defaultWeights,
+      new Map(),
+      new Map(),
+      now,
+      new Map([[criticScoreKey('Wilderun', 'Veil of Imagination'), 0.9]]),
+    )
+    const base = plain[0]?.score ?? 0
+    expect(scored?.score).toBeGreaterThan(base)
+  })
+
+  it('artist critic weight ranks a well-reviewed artist above an unreviewed one', () => {
+    const weights = { ...defaultWeights, consensus: 0.2, criticScore: 0.3 }
+    const reviewed = makeArtist({ name: 'Ulcerate', mbid: 'a' })
+    const unknown = makeArtist({ name: 'Nobody', mbid: 'b' })
+    const scored = score(
+      [unknown, reviewed],
+      [],
+      weights,
+      new Map(),
+      undefined,
+      undefined,
+      undefined,
+      new Map([['ulcerate', 0.9]]),
+    )
+    expect(scored[0]?.name).toBe('Ulcerate')
+    expect(scored[0]?.sourceScores.artistCritic).toBe(0.9)
+  })
+
   it('leaves artist-kind candidates untouched even when the critic map has a matching entry', () => {
     const artist = makeArtist({ name: 'Radiohead' })
     const criticScoreMap = new Map([[criticScoreKey('Radiohead', ''), 1]])

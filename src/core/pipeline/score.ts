@@ -220,7 +220,18 @@ export function score(
       const albumCritic = criticScoreMap?.get(
         criticScoreKey(artist.name, artist.suggestedAlbum?.title ?? ''),
       )
-      finalScore = applyAlbumModifier(baseScore, { recency, popularity, criticScore: albumCritic })
+      // Missing data is absent, not bad: an unknown popularity is not 0, and
+      // an older release is not a worse one -- recency only boosts new
+      // releases. Feeding 0s in dragged acclaimed back-catalogue albums
+      // (music-rater) under the threshold.
+      const knownPopularity = popularityMap?.has(artist.name.trim().toLowerCase())
+        ? popularity
+        : undefined
+      finalScore = applyAlbumModifier(baseScore, {
+        recency: recency !== undefined && recency > 0.5 ? recency : undefined,
+        popularity: knownPopularity,
+        criticScore: albumCritic,
+      })
       if (recency !== undefined) sourceScores.recency = recency
       if (albumCritic !== undefined) sourceScores.criticScore = albumCritic
     }

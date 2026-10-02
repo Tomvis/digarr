@@ -342,7 +342,29 @@ export class PipelineOrchestrator extends EventEmitter {
       )
       const ownArtists = libraryArtists.filter((a) => a.userId === userIdForSync)
       const tasteArtists = ownArtists.length > 0 ? ownArtists : libraryArtists
-      const libraryGenres = [...new Set(tasteArtists.flatMap((a) => a.genres ?? []))]
+      // Own rows from tagless sources (Subsonic carries no genres) borrow them
+      // by MBID from any visible row that has them (the shared Lidarr) and
+      // from the artist genre cache -- else the genre reference goes empty and
+      // every candidate's genreOverlap is 0.
+      const genresByMbid = new Map<string, string[]>()
+      for (const a of libraryArtists) {
+        if (a.mbid && a.genres?.length) genresByMbid.set(a.mbid, a.genres)
+      }
+      const missingGenreMbids = tasteArtists
+        .map((a) => a.mbid)
+        .filter((m): m is string => m !== null && !genresByMbid.has(m))
+      if (missingGenreMbids.length > 0 && db.getArtistGenreCacheByMbids) {
+        for (const row of await db.getArtistGenreCacheByMbids(missingGenreMbids)) {
+          if (row.genres?.length) genresByMbid.set(row.mbid, row.genres)
+        }
+      }
+      const libraryGenres = [
+        ...new Set(
+          tasteArtists.flatMap((a) =>
+            a.genres?.length ? a.genres : a.mbid ? (genresByMbid.get(a.mbid) ?? []) : [],
+          ),
+        ),
+      ]
       const librarySeeds = tasteArtists
         .filter((a): a is typeof a & { mbid: string } => a.mbid !== null)
         .map((a) => ({ mbid: a.mbid, name: a.name }))
