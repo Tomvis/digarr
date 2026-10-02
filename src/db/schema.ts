@@ -107,6 +107,8 @@ export const users = pgTable(
     embyApiKey: text('emby_api_key'),
     embyUserId: text('emby_user_id'),
     embyLibraryId: text('emby_library_id'),
+    /** Navidrome library (Subsonic music folder) to scope this user to; NULL = all. */
+    subsonicMusicFolderId: text('subsonic_music_folder_id'),
     discogsToken: text('discogs_token'),
     discogsUsername: text('discogs_username'),
     subsonicUrl: text('subsonic_url'),

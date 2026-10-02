@@ -95,6 +95,7 @@ describe('subsonic-starred mode – executor', () => {
       subsonicUrl: 'https://music.example.com',
       subsonicUsername: 'alice',
       subsonicPassword: 'secret',
+      subsonicMusicFolderId: null,
     })
     mockGetDiscoveryModeSkipTlsVerify.mockResolvedValue(false)
     mockGetStarredArtists.mockResolvedValue([
@@ -135,7 +136,7 @@ describe('subsonic-starred mode – executor', () => {
       'https://music.example.com',
       'alice',
       'secret',
-      { skipTlsVerify: value },
+      expect.objectContaining({ skipTlsVerify: value }),
     )
   })
 
@@ -172,6 +173,7 @@ describe('subsonic-starred mode – executor', () => {
       subsonicUrl: 'https://music.example.com',
       subsonicUsername: null,
       subsonicPassword: null,
+      subsonicMusicFolderId: null,
       musicRaterUrl: null,
       musicRaterApiKey: null,
     })

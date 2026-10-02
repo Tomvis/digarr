@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "subsonic_music_folder_id" text;

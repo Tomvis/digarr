@@ -293,6 +293,7 @@ export type UserConnections = {
   subsonicUrl: string | null
   subsonicUsername: string | null
   subsonicPassword: string | null
+  subsonicMusicFolderId: string | null
   musicRaterUrl: string | null
   musicRaterApiKey: string | null
 }
@@ -326,6 +327,7 @@ export async function getUserConnections(
       subsonicUrl: users.subsonicUrl,
       subsonicUsername: users.subsonicUsername,
       subsonicPassword: users.subsonicPassword,
+      subsonicMusicFolderId: users.subsonicMusicFolderId,
       musicRaterUrl: users.musicRaterUrl,
       musicRaterApiKey: users.musicRaterApiKey,
     })

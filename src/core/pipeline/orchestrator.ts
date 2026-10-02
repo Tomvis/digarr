@@ -262,7 +262,15 @@ export class PipelineOrchestrator extends EventEmitter {
       const subUser = userConnections?.subsonicUsername
       const subPass = userConnections?.subsonicPassword
       if (subUrl && subUser && subPass) {
-        registry.register(createSubsonicSource(subUrl, subUser, subPass, settings.skipTlsVerify))
+        registry.register(
+          createSubsonicSource(
+            subUrl,
+            subUser,
+            subPass,
+            settings.skipTlsVerify,
+            userConnections?.subsonicMusicFolderId,
+          ),
+        )
       }
 
       const aiProvider =

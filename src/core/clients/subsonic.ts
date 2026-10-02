@@ -44,6 +44,10 @@ type ArtistsBody = {
   artists?: { index?: Array<{ artist?: RawArtist[] }> }
 }
 
+type MusicFoldersBody = {
+  musicFolders?: { musicFolder?: Array<{ id?: string | number; name?: string }> }
+}
+
 type ArtistBody = {
   artist?: { id?: string | number; name?: string; album?: RawAlbum[] }
 }
@@ -52,8 +56,19 @@ export function createSubsonicClient(
   url: string,
   username: string,
   password: string,
-  options?: { baseUrl?: string; skipTlsVerify?: boolean; salt?: string },
+  options?: {
+    baseUrl?: string
+    skipTlsVerify?: boolean
+    salt?: string
+    /**
+     * Restrict artist listings and stars to one music folder (a Navidrome
+     * library). Unset = every folder the account can see -- which, for a
+     * shared or admin account, mixes in other people's libraries.
+     */
+    musicFolderId?: string | null
+  },
 ) {
+  const folder = options?.musicFolderId ? { musicFolderId: options.musicFolderId } : undefined
   const baseUrl = options?.baseUrl ?? url
 
   const http = createHttpClient({
@@ -89,7 +104,7 @@ export function createSubsonicClient(
 
   async function getStarredArtists(): Promise<SubsonicArtist[]> {
     const body = unwrapSubsonicResponse(
-      await get<SubsonicEnvelope<StarredBody>>(restPath('getStarred2')),
+      await get<SubsonicEnvelope<StarredBody>>(restPath('getStarred2', folder)),
       'Subsonic request failed',
     )
     return (body.starred2?.artist ?? []).filter((a) => a.id != null).map(mapArtist)
@@ -97,7 +112,7 @@ export function createSubsonicClient(
 
   async function getAllArtists(): Promise<SubsonicArtist[]> {
     const body = unwrapSubsonicResponse(
-      await get<SubsonicEnvelope<ArtistsBody>>(restPath('getArtists')),
+      await get<SubsonicEnvelope<ArtistsBody>>(restPath('getArtists', folder)),
       'Subsonic request failed',
     )
     return (body.artists?.index?.flatMap((i) => i.artist ?? []) ?? [])
@@ -126,10 +141,28 @@ export function createSubsonicClient(
         await get<SubsonicEnvelope<Record<string, never>>>(restPath('ping')),
         'Subsonic ping failed',
       )
+      // Folder list feeds the library picker; best-effort, a server without
+      // getMusicFolders still connects.
+      let libraries: Array<{ id: string; name: string }> | undefined
+      try {
+        const folders = unwrapSubsonicResponse(
+          await get<SubsonicEnvelope<MusicFoldersBody>>(restPath('getMusicFolders')),
+          'Subsonic request failed',
+        )
+        libraries = (folders.musicFolders?.musicFolder ?? [])
+          .filter((f) => f.id != null)
+          .map((f) => ({ id: String(f.id), name: f.name ?? String(f.id) }))
+      } catch {
+        libraries = undefined
+      }
       return {
         success: true,
         message: `Connected to Subsonic${body.type ? ` (${body.type})` : ''}`,
-        details: { version: body.version, type: body.type },
+        details: {
+          version: body.version,
+          type: body.type,
+          ...(libraries ? { libraries } : {}),
+        },
       }
     } catch (e: unknown) {
       return { success: false, message: errMsg(e) }

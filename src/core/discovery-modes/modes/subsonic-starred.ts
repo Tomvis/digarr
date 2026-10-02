@@ -36,7 +36,7 @@ export function createSubsonicStarredMode(): DiscoveryModeDefinition {
         conns.subsonicUrl,
         conns.subsonicUsername,
         conns.subsonicPassword,
-        { skipTlsVerify },
+        { skipTlsVerify, musicFolderId: conns.subsonicMusicFolderId },
       )
       const starred = await client.getStarredArtists()
 

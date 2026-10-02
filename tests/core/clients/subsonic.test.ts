@@ -236,3 +236,52 @@ describe('subsonic client auth params', () => {
     expect(salts[1]).toBe(salts[0])
   })
 })
+
+describe('subsonic music folder scoping (MUSIC-25)', () => {
+  it('passes musicFolderId to getArtists and getStarred2, and the artist MBID through', async () => {
+    const client = createSubsonicClient('http://nav:4533', 'lera', 'secret', { musicFolderId: '2' })
+    mockGet.mockResolvedValue({
+      'subsonic-response': {
+        status: 'ok',
+        artists: {
+          index: [{ name: 'Z', artist: [{ id: 'z1', name: 'Zivert', musicBrainzId: 'mb-z' }] }],
+        },
+        starred2: { artist: [] },
+      },
+    })
+
+    expect(await client.getAllArtists()).toEqual([{ id: 'z1', name: 'Zivert', mbid: 'mb-z' }])
+    await client.getStarredArtists()
+    expect(mockGet.mock.calls[0]?.[0]).toMatch(/^\/rest\/getArtists\?.*musicFolderId=2/)
+    expect(mockGet.mock.calls[1]?.[0]).toMatch(/^\/rest\/getStarred2\?.*musicFolderId=2/)
+  })
+
+  it('omits musicFolderId when unset', async () => {
+    const client = createSubsonicClient('http://nav:4533', 'tom', 'secret')
+    mockGet.mockResolvedValue({ 'subsonic-response': { status: 'ok', artists: { index: [] } } })
+    await client.getAllArtists()
+    expect(mockGet.mock.calls[0]?.[0]).not.toContain('musicFolderId')
+  })
+
+  it('reports music folders from testConnection for the library picker', async () => {
+    const client = createSubsonicClient('http://nav:4533', 'tom', 'secret')
+    mockGet
+      .mockResolvedValueOnce({ 'subsonic-response': { status: 'ok', type: 'navidrome' } })
+      .mockResolvedValueOnce({
+        'subsonic-response': {
+          status: 'ok',
+          musicFolders: {
+            musicFolder: [
+              { id: 1, name: 'Tom' },
+              { id: 2, name: 'Lera' },
+            ],
+          },
+        },
+      })
+    const result = await client.testConnection()
+    expect(result.details?.libraries).toEqual([
+      { id: '1', name: 'Tom' },
+      { id: '2', name: 'Lera' },
+    ])
+  })
+})

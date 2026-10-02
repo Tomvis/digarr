@@ -223,6 +223,7 @@ async function buildSettingsResponse(
       response.discogsUsername = userConns.discogsUsername ?? ''
       response.discogsToken = userConns.discogsToken
       response._discogsScope = 'user'
+      response.subsonicMusicFolderId = userConns.subsonicMusicFolderId ?? ''
       response.subsonicUrl = userConns.subsonicUrl ?? ''
       response.subsonicUsername = userConns.subsonicUsername ?? ''
       response.subsonicPassword = userConns.subsonicPassword
@@ -310,6 +311,7 @@ export function settingsRoutes(deps: AppDependencies) {
     'subsonicUrl',
     'subsonicUsername',
     'subsonicPassword',
+    'subsonicMusicFolderId',
     'musicRaterUrl',
     'musicRaterApiKey',
   ])
@@ -744,7 +746,14 @@ export function settingsRoutes(deps: AppDependencies) {
         }
         const { createSubsonicClient } = await import('@/core/clients/subsonic')
         const skipTls = body.skipTlsVerify ?? (stored?.skipTlsVerify as boolean) ?? false
-        const client = createSubsonicClient(url, user, password, { skipTlsVerify: skipTls })
+        const musicFolderId =
+          typeof body.libraryId === 'string'
+            ? body.libraryId
+            : (userConns?.subsonicMusicFolderId ?? null)
+        const client = createSubsonicClient(url, user, password, {
+          skipTlsVerify: skipTls,
+          musicFolderId,
+        })
         return runProbe(c, () => client.testConnection(), messages['common.unknownError'])
       }
       case 'music-rater': {

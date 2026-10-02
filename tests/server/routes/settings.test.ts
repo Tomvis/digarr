@@ -36,6 +36,7 @@ const { mockGetUserConnections, mockUpdateUserConnections } = vi.hoisted(() => (
     subsonicUrl: null as string | null,
     subsonicUsername: null as string | null,
     subsonicPassword: null as string | null,
+    subsonicMusicFolderId: null as string | null,
     musicRaterUrl: null as string | null,
     musicRaterApiKey: null as string | null,
   })),
@@ -227,6 +228,7 @@ const defaultUserConnections: UserConnections = {
   subsonicUrl: null,
   subsonicUsername: null,
   subsonicPassword: null,
+  subsonicMusicFolderId: null,
   musicRaterUrl: null,
   musicRaterApiKey: null,
 }
@@ -303,6 +305,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      subsonicMusicFolderId: null,
       musicRaterUrl: null,
       musicRaterApiKey: null,
       createdAt: new Date(),
@@ -339,6 +342,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      subsonicMusicFolderId: null,
       musicRaterUrl: null,
       musicRaterApiKey: null,
       createdAt: new Date(),
@@ -813,6 +817,7 @@ describe('PATCH /api/v1/settings', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          subsonicMusicFolderId: null,
           musicRaterUrl: null,
           musicRaterApiKey: null,
           createdAt: new Date(),
@@ -986,6 +991,7 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          subsonicMusicFolderId: null,
           musicRaterUrl: null,
           musicRaterApiKey: null,
           createdAt: new Date(),
@@ -1355,6 +1361,7 @@ describe('POST /api/v1/settings/test/:service', () => {
     expect(res.status).toBe(200)
     expect(mockCreateSubsonicClient).toHaveBeenCalledWith('http://127.0.0.1:4533', 'admin', 'pw', {
       skipTlsVerify: false,
+      musicFolderId: null,
     })
     const body = await res.json()
     expect(body.message).toBe('Connected to Subsonic')
@@ -1512,6 +1519,7 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          subsonicMusicFolderId: null,
           musicRaterUrl: null,
           musicRaterApiKey: null,
           createdAt: new Date(),
@@ -1575,6 +1583,7 @@ describe('POST /api/v1/settings/test/:service', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          subsonicMusicFolderId: null,
           musicRaterUrl: null,
           musicRaterApiKey: null,
           createdAt: new Date(),
@@ -1712,6 +1721,7 @@ describe('per-user listening source connections', () => {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      subsonicMusicFolderId: null,
       musicRaterUrl: null,
       musicRaterApiKey: null,
     })
@@ -1749,6 +1759,7 @@ describe('per-user listening source connections', () => {
           subsonicUrl: null,
           subsonicUsername: null,
           subsonicPassword: null,
+          subsonicMusicFolderId: null,
           musicRaterUrl: null,
           musicRaterApiKey: null,
           createdAt: new Date(),

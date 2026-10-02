@@ -123,6 +123,7 @@ type Settings = {
   subsonicUrl?: string
   subsonicUsername?: string
   subsonicPassword?: string
+  subsonicMusicFolderId?: string
   musicRaterUrl?: string
   musicRaterApiKey?: string
   librarySyncIntervalHours?: number
@@ -841,6 +842,12 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
     settings.discogsToken === '***' ? '' : (settings.discogsToken ?? ''),
   )
   const [subsonicUrl, setSubsonicUrl] = useState(settings.subsonicUrl ?? '')
+  const [subsonicMusicFolderId, setSubsonicMusicFolderId] = useState(
+    settings.subsonicMusicFolderId ?? '',
+  )
+  const [subsonicLibraries, setSubsonicLibraries] = useState<Array<{ id: string; name: string }>>(
+    [],
+  )
   const [subsonicUsername, setSubsonicUsername] = useState(settings.subsonicUsername ?? '')
   const [subsonicPassword, setSubsonicPassword] = useState(
     settings.subsonicPassword === '***' ? '' : (settings.subsonicPassword ?? ''),
@@ -1107,18 +1114,22 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
     updateSettings({ discogsUsername, discogsToken: discogsToken || undefined }),
   )
 
-  const testSubsonic = createTester('subsonic', 'Subsonic', () =>
-    testService('subsonic', {
+  const testSubsonic = createTester('subsonic', 'Subsonic', async () => {
+    const res = await testService('subsonic', {
       url: subsonicUrl,
       username: subsonicUsername,
       password: subsonicPassword,
-    }),
-  )
+      libraryId: subsonicMusicFolderId,
+    })
+    if (Array.isArray(res.libraries)) setSubsonicLibraries(res.libraries)
+    return res
+  })
   const saveSubsonic = createSaver('subsonic', 'Subsonic', () =>
     updateSettings({
       subsonicUrl,
       subsonicUsername,
       subsonicPassword: subsonicPassword || undefined,
+      subsonicMusicFolderId: subsonicMusicFolderId || null,
     }),
   )
 
@@ -2288,6 +2299,27 @@ function ConnectionsTab({ settings, onSaved }: { settings: Settings; onSaved: ()
               value={subsonicPassword}
               onChange={(e) => setSubsonicPassword(e.target.value)}
             />
+          </Field>
+          <Field label={t('settings.musicLibrary')} id="subsonic-library">
+            <Select
+              id="subsonic-library"
+              value={subsonicMusicFolderId}
+              onChange={(e) => setSubsonicMusicFolderId(e.target.value)}
+            >
+              <option value="">{t('settings.musicLibraryAll')}</option>
+              {subsonicLibraries.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+              {subsonicMusicFolderId &&
+                !subsonicLibraries.some((l) => l.id === subsonicMusicFolderId) && (
+                  <option value={subsonicMusicFolderId}>
+                    {t('settings.musicLibraryId').replace('{0}', subsonicMusicFolderId)}
+                  </option>
+                )}
+            </Select>
+            <p className="text-xs text-muted mt-1">{t('settings.musicLibraryHint')}</p>
           </Field>
           <div className="flex justify-end gap-2 pt-1">
             {canTestUserConnections && (

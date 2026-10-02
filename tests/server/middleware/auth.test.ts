@@ -77,6 +77,7 @@ function makeDeps(overrides: Partial<import('@/server').AppDependencies> = {}) {
       subsonicUrl: null,
       subsonicUsername: null,
       subsonicPassword: null,
+      subsonicMusicFolderId: null,
       musicRaterUrl: null,
       musicRaterApiKey: null,
       createdAt: new Date(),

@@ -605,7 +605,9 @@ async function buildPerUserLibrarySources(userId: number) {
   if (conns.subsonicUrl && conns.subsonicUsername && conns.subsonicPassword) {
     sources.push(
       createSubsonicLibrarySource(
-        createSubsonicClient(conns.subsonicUrl, conns.subsonicUsername, conns.subsonicPassword),
+        createSubsonicClient(conns.subsonicUrl, conns.subsonicUsername, conns.subsonicPassword, {
+          musicFolderId: conns.subsonicMusicFolderId,
+        }),
         userId,
       ),
     )

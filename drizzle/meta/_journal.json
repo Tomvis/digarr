@@ -407,6 +407,13 @@
       "when": 1790961094510,
       "tag": "0901_music_rater_site_scores",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790965017899,
+      "tag": "0902_subsonic_music_folder",
+      "breakpoints": true
     }
   ]
 }

@@ -86,6 +86,7 @@ function emptyConnections() {
     subsonicUrl: null,
     subsonicUsername: null,
     subsonicPassword: null,
+    subsonicMusicFolderId: null,
     musicRaterUrl: null,
     musicRaterApiKey: null,
   }

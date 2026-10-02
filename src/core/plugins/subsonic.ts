@@ -6,8 +6,9 @@ export function createSubsonicSource(
   username: string,
   password: string,
   skipTlsVerify?: boolean,
+  musicFolderId?: string | null,
 ): DiscoverySource {
-  const client = createSubsonicClient(url, username, password, { skipTlsVerify })
+  const client = createSubsonicClient(url, username, password, { skipTlsVerify, musicFolderId })
 
   return {
     id: 'subsonic',
