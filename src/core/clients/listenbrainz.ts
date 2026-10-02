@@ -219,9 +219,16 @@ export function createListenBrainzClient(username: string, token: string) {
   }
 
   async function getListeningActivity(): Promise<ListeningActivityEntry[]> {
-    const res = await http.get<LbListeningActivityResponse>(
-      `/1/stats/user/${username}/listening-activity?range=month`,
-    )
+    let res: LbListeningActivityResponse
+    try {
+      res = await http.get<LbListeningActivityResponse>(
+        `/1/stats/user/${username}/listening-activity?range=month`,
+      )
+    } catch (err: unknown) {
+      // 204 = no activity stats yet; must not fail the whole LB source.
+      if (err instanceof HttpError && err.status === 204) return []
+      throw err
+    }
     return res.payload.listening_activity
   }
 

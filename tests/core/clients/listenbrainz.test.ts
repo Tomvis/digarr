@@ -123,6 +123,13 @@ describe('createListenBrainzClient', () => {
   })
 
   describe('getListeningActivity()', () => {
+    it('returns [] when there are no activity stats yet (HTTP 204)', async () => {
+      const { HttpError } = await import('@/core/clients/http')
+      mockGet.mockRejectedValueOnce(new HttpError(204, 'Expected JSON response body', 'u'))
+      const client = createListenBrainzClient(TEST_USERNAME, TEST_TOKEN)
+      await expect(client.getListeningActivity()).resolves.toEqual([])
+    })
+
     it('GETs /1/stats/user/{username}/listening-activity?range=month', async () => {
       const mockActivity = [
         { listen_count: 50, from_ts: 1700000000, to_ts: 1702678400 },
