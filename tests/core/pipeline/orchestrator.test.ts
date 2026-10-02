@@ -672,6 +672,51 @@ describe('PipelineOrchestrator', () => {
     await vi.waitFor(() => expect(orchestrator.isRunning).toBe(false))
   })
 
+  it('runQueued waits for the in-flight run instead of throwing, then resolves with its own result', async () => {
+    const db = makeDb()
+    let resolveAnalyze!: () => void
+    mockAnalyze.mockReturnValueOnce(
+      new Promise<typeof tasteProfile>((res) => {
+        resolveAnalyze = () => res(tasteProfile)
+      }),
+    )
+    const deps = {
+      db,
+      settings: defaultSettings,
+      providerRegistry,
+      librarySync: { syncForUser },
+      userId: 1,
+    }
+    const first = orchestrator.runQueued(deps)
+    const second = orchestrator.runQueued(deps)
+    expect(orchestrator.queueLength).toBe(1)
+
+    await vi.waitFor(() => expect(mockAnalyze).toHaveBeenCalled())
+    resolveAnalyze()
+    await expect(first).resolves.toHaveProperty('batchId')
+    await expect(second).resolves.toHaveProperty('batchId')
+    expect(orchestrator.isRunning).toBe(false)
+  })
+
+  it('cancel rejects runQueued callers still waiting in the queue', async () => {
+    const db = makeDb()
+    mockAnalyze.mockReturnValueOnce(new Promise<typeof tasteProfile>(() => {}))
+    const deps = {
+      db,
+      settings: defaultSettings,
+      providerRegistry,
+      librarySync: { syncForUser },
+      userId: 1,
+    }
+    void orchestrator.runQueued(deps).catch(() => {})
+    const waiting = orchestrator.runQueued(deps)
+    // Cancel only once the hanging analyze has been consumed, so its
+    // once-value cannot leak into the next test.
+    await vi.waitFor(() => expect(mockAnalyze).toHaveBeenCalled())
+    orchestrator.cancel()
+    await expect(waiting).rejects.toThrow()
+  })
+
   it('drains the queue and starts the next run even when the in-flight run FAILS', async () => {
     // Regression guard: drainQueue() must stay in the `finally` block. If it ever
     // moves into the success branch, a failed run would never release the queue

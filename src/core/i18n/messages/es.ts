@@ -936,6 +936,14 @@ export const es = {
   'discoveryMode.reason.releaseRadarFallback':
     'Usando proveedores de respaldo para descubrir lanzamientos.',
   'discoveryMode.reason.libraryRequired': 'Sincroniza primero una biblioteca para usar este modo.',
+  'discoveryMode.field.siteEnabled': 'Usar este sitio',
+  'discoveryMode.field.siteMinScore': 'Puntuación mínima',
+  'discoveryMode.field.siteIncludeUnscored':
+    'Incluir selecciones sin puntuación (listas, columnas)',
+  'discoveryMode.field.coverageTypes': 'Solo estos tipos de cobertura',
+  'discoveryMode.field.siteMatch': 'Cuando varios sitios cubren un álbum',
+  'discoveryMode.option.any': 'Basta con un sitio activado',
+  'discoveryMode.option.all': 'Todos los sitios activados deben aprobarlo',
   'discoveryMode.field.feed': 'Origen del feed',
   'discoveryMode.field.artist': 'Artista',
   'discoveryMode.field.adventurousness': 'Aventura',
@@ -951,13 +959,10 @@ export const es = {
   'discoveryMode.field.releaseWindow': 'Ventana de lanzamiento',
   'discoveryMode.field.relationships': 'Relaciones',
   'discoveryMode.field.maxArtistsPerRun': 'Artistas revisados por ejecución',
-  'discoveryMode.field.minScoreRatio': 'Puntuación mínima (0-1)',
   'discoveryMode.field.minReleaseYear': 'Publicado desde',
   'discoveryMode.field.maxAlbumsPerRun': 'Álbumes resueltos por ejecución',
   'discoveryMode.field.includeGenres': 'Solo estos géneros',
   'discoveryMode.field.excludeGenres': 'Nunca estos géneros',
-  'discoveryMode.field.coverageTypes': 'Solo estos tipos de cobertura',
-  'discoveryMode.field.includeUnscored': 'Incluir recomendaciones sin puntuación',
   'discoveryMode.field.helpArtistSeed': 'Nombre del artista o MBID para iniciar la radio',
   'discoveryMode.field.helpConnectedAccount': 'Déjalo en blanco para usar tu cuenta conectada',
   'discoveryMode.field.helpSimilarUsers':
@@ -1191,6 +1196,9 @@ export const es = {
   'settings.popularity': 'Popularidad',
   'settings.popularityHelp':
     '0 = ignorar popularidad, más alto = preferir artistas populares. Requiere importar metadatos de artistas.',
+  'settings.criticScore': 'Valoración de la crítica (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = desactivado, más alto = preferir artistas bien valorados por tus sitios de reseñas. Requiere music-rater conectado.',
   'settings.autoApprove': 'Aprobación automática',
   'settings.autoApproveDescription':
     'Añade automáticamente las recomendaciones con mayor puntuación a tus destinos tras cada escaneo. Solo funciona cuando hay destinos configurados.',
@@ -1537,6 +1545,7 @@ export const es = {
   'analytics.source.consensus': 'Consenso',
   'analytics.source.genreOverlap': 'Coincidencia de géneros',
   'analytics.source.popularity': 'Popularidad',
+  'analytics.source.artistCritic': 'Valoración de la crítica',
   'errorBoundary.title': 'Algo salió mal',
   'errorBoundary.retry': 'Reintentar',
   'errorBoundary.home': 'Ir al inicio',

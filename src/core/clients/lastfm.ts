@@ -31,7 +31,7 @@ export type LastFmPagedTopArtists = {
 
 // Raw Last.fm response shapes
 type LfmSimilarArtistsResponse = {
-  similarartists: {
+  similarartists?: {
     artist: Array<{ name: string; match: string; mbid: string }>
   }
 }
@@ -108,6 +108,9 @@ export function createLastFmClient(username: string, apiKey: string) {
     const params: Record<string, string> = { method: 'artist.getSimilar', artist }
     if (mbid) params.mbid = mbid
     const res = await get<LfmSimilarArtistsResponse>(params)
+    // Last.fm answers unknown artists with HTTP 200 + {error, message} and no
+    // `similarartists` key: treat as "no similar artists", not a crash.
+    if (!res.similarartists?.artist) return []
     return res.similarartists.artist.map((a) => ({
       name: a.name,
       mbid: a.mbid || undefined,

@@ -3258,6 +3258,7 @@ function RecommendationsTabInner({
   const [aiConfidence, setAiConfidence] = useState(weights.aiConfidence)
   const [feedbackBoost, setFeedbackBoost] = useState(weights.feedbackBoost)
   const [popularity, setPopularity] = useState(weights.popularity ?? 0)
+  const [criticScore, setCriticScore] = useState(weights.criticScore ?? 0)
   const [rejectionCooldown, setRejectionCooldown] = useState(
     String((prefs.rejectionCooldownDays as number) ?? 90),
   )
@@ -3303,7 +3304,7 @@ function RecommendationsTabInner({
   }, [targetsNetNewAlbumDiscovery])
 
   const weightSum =
-    consensus + similarity + genreOverlap + aiConfidence + feedbackBoost + popularity
+    consensus + similarity + genreOverlap + aiConfidence + feedbackBoost + popularity + criticScore
   const weightsOk = Math.abs(weightSum - 1.0) < 0.01
 
   async function handleSave() {
@@ -3318,6 +3319,7 @@ function RecommendationsTabInner({
           aiConfidence,
           feedbackBoost,
           popularity,
+          criticScore,
         },
         rejectionCooldownDays:
           parseInt(rejectionCooldown, 10) || (prefs.rejectionCooldownDays as number),
@@ -3434,6 +3436,16 @@ function RecommendationsTabInner({
             onChange={setPopularity}
           />
           <p className="text-xs text-muted">{t('settings.popularityHelp')}</p>
+          <SliderField
+            label={t('settings.criticScore')}
+            id="w-critic"
+            value={criticScore}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={setCriticScore}
+          />
+          <p className="text-xs text-muted">{t('settings.criticScoreHelp')}</p>
         </div>
       </CollapsibleSection>
 

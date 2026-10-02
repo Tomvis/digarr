@@ -1,4 +1,4 @@
-import type { MusicRaterAlbum } from '@/core/clients/music-rater'
+import type { MusicRaterAlbum, MusicRaterSiteScore } from '@/core/clients/music-rater'
 import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
 
 export type MusicRaterAlbumRow = {
@@ -13,6 +13,7 @@ export type MusicRaterAlbumRow = {
   genreSlugs: string[]
   sourceSites: string[]
   coverageTypes: string[]
+  siteScores?: MusicRaterSiteScore[]
 }
 
 export type MusicRaterSyncDeps = {
@@ -40,6 +41,7 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
     genreSlugs: album.genreSlugs,
     sourceSites: album.sources,
     coverageTypes: album.coverageTypes,
+    siteScores: album.siteScores,
   }
 }
 

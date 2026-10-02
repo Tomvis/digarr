@@ -84,7 +84,7 @@ describe('multiselect rendering', () => {
  * field sets ever go disjoint.
  */
 describe('critically-acclaimed advanced-mode field coverage (FIX 1)', () => {
-  it('a single advanced-mode submission carries both a coverage filter and includeUnscored', async () => {
+  it('a single advanced-mode submission carries per-site coverage, unscored and score settings (MUSIC-26)', async () => {
     const acclaimedMode = createCriticallyAcclaimedMode()
     const mode: DiscoveryModeResponse = {
       id: acclaimedMode.id,
@@ -102,24 +102,28 @@ describe('critically-acclaimed advanced-mode field coverage (FIX 1)', () => {
       </I18nProvider>,
     )
 
-    // Set the coverage-type filter while still in Easy mode -- that's where
-    // it lives today. No options are attached to this field in this test (no
-    // resolveOptions call), so it renders as the free-text comma-separated
-    // fallback input.
-    fireEvent.change(screen.getByLabelText(/Only these kinds of coverage/), {
-      target: { value: 'tymhm' },
-    })
+    // Set AMG's coverage filter in Easy mode (no options attached here, so it
+    // renders as the free-text fallback). AMG's section comes first.
+    const coverageInputs = screen.getAllByLabelText(/Only these kinds of coverage/)
+    fireEvent.change(coverageInputs[0] as HTMLElement, { target: { value: 'tymhm' } })
 
-    // Switch to Advanced, where includeUnscored lives, and turn it on.
+    // Switch to Advanced; per-site settings carry over, then change two more.
     fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: /Include unscored recommendations/ }))
+    const unscored = screen.getAllByRole('checkbox', { name: /Include unscored picks/ })
+    fireEvent.click(unscored[0] as HTMLElement)
+    const minScores = screen.getAllByLabelText(/^Minimum score$/)
+    fireEvent.change(minScores[0] as HTMLElement, { target: { value: '3.5' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'Run discovery' }))
 
     await waitFor(() => expect(onRun).toHaveBeenCalled())
     const call = onRun.mock.calls[0]?.[0] as { normalizedSettings: Record<string, unknown> }
-    expect(call.normalizedSettings.coverageTypes).toEqual(['tymhm'])
-    expect(call.normalizedSettings.includeUnscored).toBe(true)
+    expect(call.normalizedSettings.amgCoverageTypes).toEqual(['tymhm'])
+    expect(call.normalizedSettings.amgIncludeUnscored).toBe(false)
+    expect(call.normalizedSettings.amgMinScore).toBe(3.5)
+    // Untouched sites keep their defaults: on, native default bar.
+    expect(call.normalizedSettings.tpsEnabled).toBe(true)
+    expect(call.normalizedSettings.tpsMinScore).toBe(8)
   })
 
   /**

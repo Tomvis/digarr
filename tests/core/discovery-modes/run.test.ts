@@ -69,7 +69,7 @@ describe('runDiscoveryMode', () => {
     }
 
     const orchestrator = {
-      run: vi.fn(async () => ({ batchId: 42 })),
+      runQueued: vi.fn(async () => ({ batchId: 42 })),
     }
 
     const registry = {
@@ -102,7 +102,7 @@ describe('runDiscoveryMode', () => {
     expect(jobRecorder.start).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'quick_discover' }),
     )
-    expect(orchestrator.run).toHaveBeenCalledWith(
+    expect(orchestrator.runQueued).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 7,
         trigger: 'manual',
@@ -138,7 +138,7 @@ describe('runDiscoveryMode', () => {
       markStuck: vi.fn(async () => 0),
     }
     const orchestrator = {
-      run: vi.fn(async () => ({ batchId: 99 })),
+      runQueued: vi.fn(async () => ({ batchId: 99 })),
     }
     const registry = {
       get: vi.fn().mockReturnValue({
@@ -165,7 +165,7 @@ describe('runDiscoveryMode', () => {
     })
 
     expect(run).toEqual({ batchId: 99, artistsFound: 1 })
-    expect(orchestrator.run).toHaveBeenCalledOnce()
+    expect(orchestrator.runQueued).toHaveBeenCalledOnce()
     expect(jobRecorder.complete).not.toHaveBeenCalled()
     expect(jobRecorder.fail).not.toHaveBeenCalled()
   })
@@ -181,7 +181,7 @@ describe('runDiscoveryMode', () => {
       markStuck: vi.fn(async () => 0),
     }
     const orchestrator = {
-      run: vi.fn(async () => ({ batchId: 1 })),
+      runQueued: vi.fn(async () => ({ batchId: 1 })),
     }
     const registry = {
       get: vi.fn().mockReturnValue({
@@ -206,7 +206,7 @@ describe('runDiscoveryMode', () => {
       expect.objectContaining({ type: 'quick_discover' }),
     )
     expect(jobRecorder.fail).toHaveBeenCalledWith(22, 'executor blew up')
-    expect(orchestrator.run).not.toHaveBeenCalled()
+    expect(orchestrator.runQueued).not.toHaveBeenCalled()
     expect(jobRecorder.complete).not.toHaveBeenCalled()
   })
 })

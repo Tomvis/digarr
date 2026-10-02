@@ -51,7 +51,7 @@ export interface StoreDb {
     kind?: 'artist' | 'album'
   }) => Promise<void>
 
-  getRejectedMbids: (cooldownDays: number) => Promise<Set<string>>
+  getRejectedMbids: (cooldownDays: number, userId?: number) => Promise<Set<string>>
 
   getBlockedMbids: (userId: number) => Promise<Set<string>>
 
@@ -72,6 +72,15 @@ export interface StoreDb {
   findMusicRaterScoresByNames?: (
     userId: number,
     keys: import('@/db/queries/music-rater').CriticScoreKey[],
+  ) => Promise<Map<string, number>>
+
+  /**
+   * Artist-level music-rater signal (0..1) keyed by normalised artist name,
+   * for the `criticScore` scoring weight. Only queried when that weight is > 0.
+   */
+  findMusicRaterArtistScores?: (
+    userId: number,
+    artistNamesNormalized: string[],
   ) => Promise<Map<string, number>>
 
   getLibraryArtistsForUser?: (

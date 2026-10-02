@@ -945,6 +945,14 @@ export const de = {
     'Fallback-Anbieter werden für die Release-Entdeckung verwendet.',
   'discoveryMode.reason.libraryRequired':
     'Synchronisiere zuerst eine Bibliothek, um diesen Modus zu nutzen.',
+  'discoveryMode.field.siteEnabled': 'Diese Seite verwenden',
+  'discoveryMode.field.siteMinScore': 'Mindestbewertung',
+  'discoveryMode.field.siteIncludeUnscored':
+    'Unbewertete Empfehlungen einbeziehen (Listen, Kolumnen)',
+  'discoveryMode.field.coverageTypes': 'Nur diese Berichterstattungsarten',
+  'discoveryMode.field.siteMatch': 'Wenn mehrere Seiten ein Album abdecken',
+  'discoveryMode.option.any': 'Eine aktivierte Seite reicht',
+  'discoveryMode.option.all': 'Jede aktivierte Seite muss zustimmen',
   'discoveryMode.field.feed': 'Feed-Quelle',
   'discoveryMode.field.artist': 'Künstler',
   'discoveryMode.field.adventurousness': 'Abenteuerlust',
@@ -960,13 +968,10 @@ export const de = {
   'discoveryMode.field.releaseWindow': 'Veröffentlichungszeitraum',
   'discoveryMode.field.relationships': 'Beziehungen',
   'discoveryMode.field.maxArtistsPerRun': 'Geprüfte Künstler pro Durchlauf',
-  'discoveryMode.field.minScoreRatio': 'Mindestbewertung (0-1)',
   'discoveryMode.field.minReleaseYear': 'Veröffentlicht seit',
   'discoveryMode.field.maxAlbumsPerRun': 'Aufgelöste Alben pro Durchlauf',
   'discoveryMode.field.includeGenres': 'Nur diese Genres',
   'discoveryMode.field.excludeGenres': 'Nie diese Genres',
-  'discoveryMode.field.coverageTypes': 'Nur diese Berichterstattungsarten',
-  'discoveryMode.field.includeUnscored': 'Unbewertete Empfehlungen einbeziehen',
   'discoveryMode.field.helpArtistSeed': 'Künstlername oder MBID für das Radio',
   'discoveryMode.field.helpConnectedAccount': 'Leer lassen, um das verbundene Konto zu verwenden',
   'discoveryMode.field.helpSimilarUsers':
@@ -1201,6 +1206,9 @@ export const de = {
   'settings.popularity': 'Popularität',
   'settings.popularityHelp':
     '0 = Popularität ignorieren, höher = beliebte Künstler bevorzugen. Erfordert Import von Künstlermetadaten.',
+  'settings.criticScore': 'Kritikerbewertung (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = aus, höher = Künstler bevorzugen, die deine Review-Seiten gut bewerten. Erfordert eine music-rater-Verbindung.',
   'settings.autoApprove': 'Auto-Genehmigung',
   'settings.autoApproveDescription':
     'Hochbewertete Empfehlungen nach jedem Scan automatisch zu deinen Zielen hinzufügen. Läuft nur, wenn Ziele konfiguriert sind.',
@@ -1553,6 +1561,7 @@ export const de = {
   'analytics.source.consensus': 'Konsens',
   'analytics.source.genreOverlap': 'Genre-Überlappung',
   'analytics.source.popularity': 'Popularität',
+  'analytics.source.artistCritic': 'Kritikerbewertung',
   'errorBoundary.title': 'Etwas ist schiefgelaufen',
   'errorBoundary.retry': 'Erneut versuchen',
   'errorBoundary.home': 'Zur Startseite',

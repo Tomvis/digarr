@@ -1,5 +1,6 @@
 import type { DiscoveryConfigField } from '@/core/discovery-modes/types'
 import type { MessageKey } from '@/core/i18n/messages/types'
+import { REVIEW_SITES } from '@/core/music-rater/sites'
 
 type Translate = (key: MessageKey) => string
 
@@ -67,7 +68,15 @@ function normalizeModeId(modeId: string): string {
   return MODE_ID_ALIASES[modeId] ?? modeId
 }
 
+// Per-review-site keys (`amgMinScore`, `tpsEnabled`...) share one message per
+// setting; the site's name and scale are in the section heading instead.
+const SITE_FIELD_KEY = new RegExp(
+  `^(?:${REVIEW_SITES.map((site) => site.id).join('|')})(Enabled|MinScore|IncludeUnscored|CoverageTypes)$`,
+)
+
 function normalizeFieldKey(fieldKey: string): string {
+  const site = SITE_FIELD_KEY.exec(fieldKey)
+  if (site) return site[1] === 'CoverageTypes' ? 'coverageTypes' : `site${site[1]}`
   return FIELD_KEY_ALIASES[fieldKey] ?? fieldKey
 }
 

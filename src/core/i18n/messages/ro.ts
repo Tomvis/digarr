@@ -937,6 +937,13 @@ export const ro = {
     'Se folosesc furnizori de rezervă pentru descoperirea lansărilor.',
   'discoveryMode.reason.libraryRequired':
     'Sincronizează mai întâi o bibliotecă pentru a folosi acest mod.',
+  'discoveryMode.field.siteEnabled': 'Folosește acest site',
+  'discoveryMode.field.siteMinScore': 'Scor minim',
+  'discoveryMode.field.siteIncludeUnscored': 'Include alegerile fără notă (liste, rubrici)',
+  'discoveryMode.field.coverageTypes': 'Doar aceste tipuri de acoperire',
+  'discoveryMode.field.siteMatch': 'Când mai multe site-uri acoperă un album',
+  'discoveryMode.option.any': 'Ajunge un site activat',
+  'discoveryMode.option.all': 'Fiecare site activat trebuie să aprobe',
   'discoveryMode.field.feed': 'Flux',
   'discoveryMode.field.artist': 'Nume artist',
   'discoveryMode.field.adventurousness': 'Aventurism',
@@ -952,13 +959,10 @@ export const ro = {
   'discoveryMode.field.releaseWindow': 'Fereastră de lansare',
   'discoveryMode.field.relationships': 'Relații',
   'discoveryMode.field.maxArtistsPerRun': 'Artiști verificați pe rulare',
-  'discoveryMode.field.minScoreRatio': 'Scor minim (0-1)',
   'discoveryMode.field.minReleaseYear': 'Lansat din',
   'discoveryMode.field.maxAlbumsPerRun': 'Albume rezolvate pe rulare',
   'discoveryMode.field.includeGenres': 'Doar aceste genuri',
   'discoveryMode.field.excludeGenres': 'Excludeți aceste genuri',
-  'discoveryMode.field.coverageTypes': 'Doar aceste tipuri de acoperire',
-  'discoveryMode.field.includeUnscored': 'Includeți recomandările nepunctate',
   'discoveryMode.field.helpArtistSeed': 'Numele artistului sau MBID pentru a porni radio-ul',
   'discoveryMode.field.helpConnectedAccount': 'Lasă necompletat pentru a folosi contul conectat',
   'discoveryMode.field.helpSimilarUsers':
@@ -1194,6 +1198,9 @@ export const ro = {
   'settings.popularity': 'Popularitate',
   'settings.popularityHelp':
     '0 = ignorați popularitatea, mai mare = preferați artiști populari. Necesită importul metadatelor artiștilor.',
+  'settings.criticScore': 'Nota criticilor (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = dezactivat, mai mare = preferați artiștii bine notați de site-urile de recenzii. Necesită music-rater conectat.',
   'settings.autoApprove': 'Aprobare automată',
   'settings.autoApproveDescription':
     'Adaugă automat recomandările cu cel mai mare punctaj la destinațiile dvs. după fiecare scanare. Funcționează doar când sunt configurate destinații.',
@@ -1537,6 +1544,7 @@ export const ro = {
   'analytics.source.consensus': 'Consens',
   'analytics.source.genreOverlap': 'Suprapunere genuri',
   'analytics.source.popularity': 'Popularitate',
+  'analytics.source.artistCritic': 'Nota criticilor',
   'errorBoundary.title': 'A apărut o problemă',
   'errorBoundary.retry': 'Încearcă din nou',
   'errorBoundary.home': 'Mergi la început',

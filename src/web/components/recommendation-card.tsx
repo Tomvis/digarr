@@ -103,6 +103,7 @@ const ANALYTICS_SOURCE_KEYS: Partial<Record<string, MessageKey>> = {
   consensus: 'analytics.source.consensus',
   genreOverlap: 'analytics.source.genreOverlap',
   popularity: 'analytics.source.popularity',
+  artistCritic: 'analytics.source.artistCritic',
 }
 
 function formatSourceLabel(sourceKey: string, t: (key: MessageKey) => string): string {

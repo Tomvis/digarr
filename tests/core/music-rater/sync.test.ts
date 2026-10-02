@@ -14,6 +14,7 @@ function album(id: number, over: Partial<MusicRaterAlbum> = {}): MusicRaterAlbum
     genreSlugs: [],
     sources: ['amg'],
     coverageTypes: [],
+    siteScores: [],
     ...over,
   }
 }

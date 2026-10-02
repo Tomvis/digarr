@@ -38,6 +38,15 @@ describe('createLastFmClient', () => {
   })
 
   describe('getSimilarArtists(artist)', () => {
+    it('returns [] for an unknown artist (HTTP 200 with an error body)', async () => {
+      mockGet.mockResolvedValueOnce({
+        error: 6,
+        message: 'The artist you supplied could not be found',
+      })
+      const client = createLastFmClient(TEST_USERNAME, TEST_API_KEY)
+      await expect(client.getSimilarArtists('Nobody')).resolves.toEqual([])
+    })
+
     it('GETs artist.getSimilar with api_key in query params', async () => {
       mockGet.mockResolvedValueOnce({
         similarartists: {

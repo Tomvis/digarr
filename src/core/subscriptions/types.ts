@@ -93,7 +93,7 @@ export type SubscriptionRunDeps = {
   discoveryModeRunner?: typeof runDiscoveryMode
   discoveryModeRegistry?: DiscoveryModeRegistry
   getDiscoveryConnectionSnapshot?: (userId: number) => Promise<DiscoveryConnectionSnapshot>
-  pipelineOrchestrator?: Pick<PipelineOrchestrator, 'run'>
+  pipelineOrchestrator?: Pick<PipelineOrchestrator, 'runQueued'>
   discoveryModePipelineDeps?: Omit<
     PipelineDeps,
     'explicitCandidates' | 'explicitDiscoveryMode' | 'jobRecorder' | 'trigger' | 'userId'

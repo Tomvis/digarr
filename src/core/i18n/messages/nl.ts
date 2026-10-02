@@ -933,6 +933,13 @@ export const nl = {
     'Fallbackproviders worden gebruikt voor release-ontdekking.',
   'discoveryMode.reason.libraryRequired':
     'Synchroniseer eerst een bibliotheek om deze modus te gebruiken.',
+  'discoveryMode.field.siteEnabled': 'Deze site gebruiken',
+  'discoveryMode.field.siteMinScore': 'Minimale score',
+  'discoveryMode.field.siteIncludeUnscored': 'Keuzes zonder score meenemen (lijsten, rubrieken)',
+  'discoveryMode.field.coverageTypes': 'Alleen deze soorten aandacht',
+  'discoveryMode.field.siteMatch': 'Als meerdere sites een album bespreken',
+  'discoveryMode.option.any': 'Eén ingeschakelde site is genoeg',
+  'discoveryMode.option.all': 'Elke ingeschakelde site moet akkoord zijn',
   'discoveryMode.field.feed': 'Feedbron',
   'discoveryMode.field.artist': 'Artiest',
   'discoveryMode.field.adventurousness': 'Avontuurlijkheid',
@@ -948,13 +955,10 @@ export const nl = {
   'discoveryMode.field.releaseWindow': 'Releasevenster',
   'discoveryMode.field.relationships': 'Relaties',
   'discoveryMode.field.maxArtistsPerRun': 'Gecontroleerde artiesten per run',
-  'discoveryMode.field.minScoreRatio': 'Minimale score (0-1)',
   'discoveryMode.field.minReleaseYear': 'Uitgebracht sinds',
   'discoveryMode.field.maxAlbumsPerRun': 'Opgeloste albums per run',
   'discoveryMode.field.includeGenres': 'Alleen deze genres',
   'discoveryMode.field.excludeGenres': 'Nooit deze genres',
-  'discoveryMode.field.coverageTypes': 'Alleen deze soorten berichtgeving',
-  'discoveryMode.field.includeUnscored': 'Ongescoorde aanbevelingen opnemen',
   'discoveryMode.field.helpArtistSeed': 'Artiestennaam of MBID voor de radio',
   'discoveryMode.field.helpConnectedAccount': 'Laat leeg om je gekoppelde account te gebruiken',
   'discoveryMode.field.helpSimilarUsers':
@@ -1186,6 +1190,9 @@ export const nl = {
   'settings.popularity': 'Populariteit',
   'settings.popularityHelp':
     '0 = populariteit negeren, hoger = populaire artiesten verkiezen. Vereist import van artiestmetadata.',
+  'settings.criticScore': 'Recensiescore (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = uit, hoger = artiesten verkiezen die je recensiesites goed beoordelen. Vereist een music-rater-koppeling.',
   'settings.autoApprove': 'Automatisch goedkeuren',
   'settings.autoApproveDescription':
     'Aanbevelingen met hoge score automatisch toevoegen aan je doelen na elke scan. Werkt alleen als er doelen zijn geconfigureerd.',
@@ -1534,6 +1541,7 @@ export const nl = {
   'analytics.source.consensus': 'Overeenstemming',
   'analytics.source.genreOverlap': 'Genre-overlap',
   'analytics.source.popularity': 'Populariteit',
+  'analytics.source.artistCritic': 'Recensiescore',
   'errorBoundary.title': 'Er is iets misgegaan',
   'errorBoundary.retry': 'Opnieuw proberen',
   'errorBoundary.home': 'Naar startpagina',

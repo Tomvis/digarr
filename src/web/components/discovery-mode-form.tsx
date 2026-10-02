@@ -37,6 +37,7 @@ function serializeValue(field: DiscoveryConfigField, value: unknown): DiscoveryM
 }
 
 function getDefaultValue(field: DiscoveryConfigField): boolean | string {
+  if (field.defaultValue !== undefined) return field.defaultValue
   if (field.type === 'toggle') return false
   if (field.type === 'select') return field.options?.[0]?.value ?? ''
   if (field.type === 'tags') return JSON.stringify([{ tag: '', weight: 1 }])
@@ -238,14 +239,20 @@ function DiscoveryModeFields({
 
   return (
     <div className="space-y-3">
-      {fields.map((field) => {
+      {fields.map((field, index) => {
         const value = values[field.key] ?? getDefaultValue(field)
         const inputId = `${baseId}-${field.key}`
         const helpText = translateDiscoveryFieldHelp(tFn, field)
         const helpId = helpText ? `${inputId}-help` : undefined
+        const startsSection = field.section && field.section !== fields[index - 1]?.section
 
         return (
           <div key={field.key} className="block space-y-1">
+            {startsSection && (
+              <h4 className="border-t border-border pt-3 text-sm font-semibold text-text">
+                {field.section}
+              </h4>
+            )}
             <label
               htmlFor={inputId}
               id={`${inputId}-label`}
@@ -328,6 +335,9 @@ function DiscoveryModeFields({
               <input
                 id={inputId}
                 type={field.type === 'number' ? 'number' : 'text'}
+                min={field.min}
+                max={field.max}
+                step={field.step}
                 value={String(value)}
                 aria-describedby={helpId}
                 onChange={(event) =>

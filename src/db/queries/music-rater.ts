@@ -1,5 +1,6 @@
-import { and, asc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNull, or, type SQL, sql } from 'drizzle-orm'
 import { normalizeAlbumTitle, normalizeArtistName } from '@/core/matching/normalize'
+import type { SiteFilter, SiteMatch } from '@/core/music-rater/sites'
 import type { MusicRaterAlbumRow } from '@/core/music-rater/sync'
 import type { Database } from '@/db'
 import { libraryAlbums, libraryArtists, musicRaterAlbums } from '@/db/schema'
@@ -50,6 +51,7 @@ export async function upsertMusicRaterAlbums(
         genreSlugs: sql`excluded.genre_slugs`,
         sourceSites: sql`excluded.source_sites`,
         coverageTypes: sql`excluded.coverage_types`,
+        siteScores: sql`excluded.site_scores`,
         syncedAt: sql`now()`,
       },
     })
@@ -78,18 +80,37 @@ export async function upsertMusicRaterAlbums(
 export async function getMusicRaterFilterOptions(
   db: Database,
   userId: number,
-): Promise<{ genres: string[]; coverageTypes: string[] }> {
-  const result = await db.execute<{ genres: string[]; coverage_types: string[] }>(sql`
+): Promise<{
+  genres: string[]
+  coverageTypes: string[]
+  coverageTypesBySite: Record<string, string[]>
+}> {
+  const result = await db.execute<{
+    genres: string[]
+    coverage_types: string[]
+    by_site: Record<string, string[]> | null
+  }>(sql`
     SELECT
       (SELECT coalesce(array_agg(DISTINCT g ORDER BY g), '{}')
          FROM ${musicRaterAlbums} a2, jsonb_array_elements_text(a2.genre_slugs) g
         WHERE a2.user_id = ${userId}) AS genres,
       (SELECT coalesce(array_agg(DISTINCT c ORDER BY c), '{}')
          FROM ${musicRaterAlbums} a3, jsonb_array_elements_text(a3.coverage_types) c
-        WHERE a3.user_id = ${userId}) AS coverage_types
+        WHERE a3.user_id = ${userId}) AS coverage_types,
+      (SELECT jsonb_object_agg(site, types) FROM (
+         SELECT e->>'site' AS site, jsonb_agg(DISTINCT c ORDER BY c) AS types
+           FROM ${musicRaterAlbums} a4,
+                jsonb_array_elements(coalesce(a4.site_scores, '[]'::jsonb)) e,
+                jsonb_array_elements_text(e->'coverageTypes') c
+          WHERE a4.user_id = ${userId}
+          GROUP BY 1) s) AS by_site
   `)
   const first = result.rows[0]
-  return { genres: first?.genres ?? [], coverageTypes: first?.coverage_types ?? [] }
+  return {
+    genres: first?.genres ?? [],
+    coverageTypes: first?.coverage_types ?? [],
+    coverageTypesBySite: first?.by_site ?? {},
+  }
 }
 
 export type AcclaimedAlbumRow = {
@@ -193,6 +214,13 @@ export async function getUnresolvedAcclaimedAlbums(
      * that grows to include them does not change what existing runs return.
      */
     includeUnscored?: boolean
+    /**
+     * Per-site bars in each site's native units (MUSIC-26). When present they
+     * REPLACE `minScoreRatio` / `coverageTypes` / `includeUnscored`, which
+     * remain only for subscriptions saved before per-site settings existed.
+     */
+    siteFilters?: SiteFilter[]
+    siteMatch?: SiteMatch
   },
 ): Promise<AcclaimedAlbumRow[]> {
   const owned = await getOwnedAlbumNormalizedKeyPairs(db, userId)
@@ -215,11 +243,15 @@ export async function getUnresolvedAcclaimedAlbums(
     notOwned,
   ]
 
-  filters.push(
-    includeUnscored
-      ? sql`(${musicRaterAlbums.maxScoreRatio} >= ${opts.minScoreRatio} OR ${musicRaterAlbums.maxScoreRatio} IS NULL)`
-      : gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
-  )
+  if (opts.siteFilters) {
+    filters.push(siteFilterPredicate(opts.siteFilters, opts.siteMatch ?? 'any'))
+  } else {
+    filters.push(
+      includeUnscored
+        ? sql`(${musicRaterAlbums.maxScoreRatio} >= ${opts.minScoreRatio} OR ${musicRaterAlbums.maxScoreRatio} IS NULL)`
+        : gte(musicRaterAlbums.maxScoreRatio, opts.minScoreRatio),
+    )
+  }
 
   // `?|` matches any element of the stored JSON array against a text[]
   // passed as ONE bound parameter -- never one parameter per value (see this
@@ -245,21 +277,57 @@ export async function getUnresolvedAcclaimedAlbums(
       sql`NOT (coalesce(${musicRaterAlbums.genreSlugs}, '[]'::jsonb) ?| ${sql.param(excludeGenres)}::text[])`,
     )
   }
-  if (coverageTypes.length > 0) {
+  if (coverageTypes.length > 0 && !opts.siteFilters) {
     filters.push(sql`${musicRaterAlbums.coverageTypes} ?| ${sql.param(coverageTypes)}::text[]`)
   }
 
-  return db
-    .select({
-      id: musicRaterAlbums.id,
-      artistNameRaw: musicRaterAlbums.artistNameRaw,
-      albumTitleRaw: musicRaterAlbums.albumTitleRaw,
-      releaseYear: musicRaterAlbums.releaseYear,
-    })
-    .from(musicRaterAlbums)
-    .where(and(...filters))
-    .orderBy(sql`${musicRaterAlbums.resolvedAt} asc nulls first`, asc(musicRaterAlbums.id))
-    .limit(opts.limit)
+  return (
+    db
+      .select({
+        id: musicRaterAlbums.id,
+        artistNameRaw: musicRaterAlbums.artistNameRaw,
+        albumTitleRaw: musicRaterAlbums.albumTitleRaw,
+        releaseYear: musicRaterAlbums.releaseYear,
+      })
+      .from(musicRaterAlbums)
+      .where(and(...filters))
+      // Best-rated first within the rotation, so a bounded slice spends its
+      // MusicBrainz budget on the albums most worth recommending.
+      .orderBy(
+        sql`${musicRaterAlbums.resolvedAt} asc nulls first`,
+        sql`${musicRaterAlbums.maxScoreRatio} desc nulls last`,
+        asc(musicRaterAlbums.id),
+      )
+      .limit(opts.limit)
+  )
+}
+
+/**
+ * Per-site pass/fail over `site_scores` (native units). One element per site;
+ * `any` needs one passing enabled site, `all` additionally rejects an album
+ * that any enabled site covers without passing. A row with NULL site_scores
+ * (not yet re-synced) passes nothing.
+ */
+function siteFilterPredicate(siteFilters: SiteFilter[], siteMatch: SiteMatch): SQL {
+  if (siteFilters.length === 0) return sql`false`
+  const passes = sql.join(
+    siteFilters.map((f) => {
+      const scorePass = f.includeUnscored
+        ? sql`((e->>'score')::float8 >= ${f.minScore} OR e->>'score' IS NULL)`
+        : sql`(e->>'score')::float8 >= ${f.minScore}`
+      const coveragePass =
+        f.coverageTypes.length > 0
+          ? sql` AND e->'coverageTypes' ?| ${sql.param(f.coverageTypes)}::text[]`
+          : sql``
+      return sql`(e->>'site' = ${f.site} AND ${scorePass}${coveragePass})`
+    }),
+    sql` OR `,
+  )
+  const elements = sql`jsonb_array_elements(coalesce(${musicRaterAlbums.siteScores}, '[]'::jsonb)) e`
+  const anyPass = sql`EXISTS (SELECT 1 FROM ${elements} WHERE ${passes})`
+  if (siteMatch === 'any') return anyPass
+  const sites = siteFilters.map((f) => f.site)
+  return sql`(${anyPass} AND NOT EXISTS (SELECT 1 FROM ${elements} WHERE e->>'site' = ANY(${sql.param(sites)}::text[]) AND NOT (${passes})))`
 }
 
 /**
@@ -375,4 +443,55 @@ export async function findMusicRaterScoresByNames(
     out.set(`${row.artistNameNormalized}::${row.albumTitleNormalized}`, row.maxScoreRatio)
   }
   return out
+}
+
+/** Editorial picks that carry no score but are an endorsement in themselves. */
+const ENDORSING_UNSCORED_TYPES = ['aoty', 'aotm', 'tymhm', 'sitf', 'ymio', 'contrite', 'lit']
+/** What an unscored endorsement (year-end list, TYMHM pick...) counts as. */
+const UNSCORED_PICK_RATIO = 0.8
+
+/**
+ * How well critics rate each artist, 0..1: the mean of the artist's three best
+ * album ratios in this user's corpus, where an unscored editorial pick counts
+ * as UNSCORED_PICK_RATIO. Keyed by digarr-normalised artist name. One query
+ * per scan.
+ */
+export async function findMusicRaterArtistScores(
+  db: Database,
+  userId: number,
+  artistNamesNormalized: string[],
+): Promise<Map<string, number>> {
+  if (artistNamesNormalized.length === 0) return new Map()
+  const result = await db.execute<{ artist: string; score: number }>(sql`
+    SELECT artist, avg(r)::float8 AS score FROM (
+      SELECT artist, r, row_number() OVER (PARTITION BY artist ORDER BY r DESC) AS rn
+        FROM (
+          SELECT artist_name_normalized AS artist,
+                 coalesce(
+                   max_score_ratio,
+                   CASE WHEN coverage_types ?| ${sql.param(ENDORSING_UNSCORED_TYPES)}::text[]
+                        THEN ${UNSCORED_PICK_RATIO}::float8 END) AS r
+            FROM music_rater_albums
+           WHERE user_id = ${userId}
+             AND artist_name_normalized = ANY(${sql.param(artistNamesNormalized)}::text[])
+        ) rated
+       WHERE r IS NOT NULL
+    ) ranked
+    WHERE rn <= 3
+    GROUP BY artist
+  `)
+  return new Map(result.rows.map((row) => [row.artist, Number(row.score)]))
+}
+
+/** True while any of this user's corpus rows predates per-site scores. */
+export async function hasMusicRaterRowsMissingSiteScores(
+  db: Database,
+  userId: number,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: musicRaterAlbums.id })
+    .from(musicRaterAlbums)
+    .where(and(eq(musicRaterAlbums.userId, userId), isNull(musicRaterAlbums.siteScores)))
+    .limit(1)
+  return rows.length > 0
 }

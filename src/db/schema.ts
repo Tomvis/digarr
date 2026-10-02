@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import type { MusicRaterSiteScore } from '@/core/clients/music-rater'
 import type { HealthCheckResult, UnreconciledReason } from '@/core/library/types'
 import type { NotificationChannel } from '@/core/notifications/types'
 import type { GenreCoverage } from '@/core/types'
@@ -570,6 +571,8 @@ export type Preferences = {
     aiConfidence: number
     feedbackBoost: number
     popularity: number
+    /** Artist-level music-rater rating (MUSIC-25); 0 = off. */
+    criticScore?: number
   }
   rejectionCooldownDays: number
   topArtistsLimit: number
@@ -605,6 +608,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     aiConfidence: 0.15,
     feedbackBoost: 0.1,
     popularity: 0.0,
+    criticScore: 0.0,
   },
   rejectionCooldownDays: 90,
   topArtistsLimit: 30,
@@ -865,6 +869,8 @@ export const musicRaterAlbums = pgTable(
     genreSlugs: jsonb('genre_slugs').$type<string[]>(),
     sourceSites: jsonb('source_sites').$type<string[]>(),
     coverageTypes: jsonb('coverage_types').$type<string[]>(),
+    /** Per-site native-scale scores; NULL until the first sync after 0901. */
+    siteScores: jsonb('site_scores').$type<MusicRaterSiteScore[]>(),
     resolvedArtistMbid: text('resolved_artist_mbid'),
     resolvedReleaseGroupMbid: text('resolved_release_group_mbid'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),

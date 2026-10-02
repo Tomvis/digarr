@@ -106,6 +106,11 @@ export function shouldDropAlbumCandidate(
 interface QueuedRun {
   userId: number | undefined
   deps: PipelineDeps
+  /** Set by runQueued(): the caller awaits this run's own result. */
+  waiter?: {
+    resolve: (result: { batchId: number }) => void
+    reject: (err: unknown) => void
+  }
 }
 
 export type EnqueueResult = {
@@ -355,7 +360,7 @@ export class PipelineOrchestrator extends EventEmitter {
         ),
       })
 
-      const rejectedMbids = await db.getRejectedMbids(prefs.rejectionCooldownDays)
+      const rejectedMbids = await db.getRejectedMbids(prefs.rejectionCooldownDays, userIdForSync)
       const blockedMbids = await db.getBlockedMbids(userIdForSync)
       const feedbackHistory = await db.getFeedbackHistory(userIdForSync)
 
@@ -497,6 +502,13 @@ export class PipelineOrchestrator extends EventEmitter {
             titleNormalized: normalizeAlbumTitle(r.suggestedAlbum?.title ?? ''),
           })),
         )) ?? new Map<string, number>()
+      // Artist-level critic signal, only when this user weights it (MUSIC-25).
+      const artistCriticMap =
+        (prefs.scoringWeights.criticScore ?? 0) > 0 && deps.userId != null
+          ? ((await db.findMusicRaterArtistScores?.(deps.userId, [
+              ...new Set(resolved.map((r) => normalizeArtistName(r.name))),
+            ])) ?? new Map<string, number>())
+          : undefined
       const referenceGenres =
         libraryGenres.length > 0 ? libraryGenres : tasteProfile.topGenres.map((g) => g.name)
       const scored = score(
@@ -507,6 +519,7 @@ export class PipelineOrchestrator extends EventEmitter {
         popularityMap,
         undefined,
         criticScoreMap,
+        artistCriticMap,
       )
 
       ckpt()
@@ -690,17 +703,34 @@ export class PipelineOrchestrator extends EventEmitter {
       return { status: 'started', position: 0 }
     }
     if (this._currentUserId === deps.userId) return { status: 'duplicate', position: 0 }
-    const existing = this.queue.findIndex((q) => q.userId === deps.userId)
+    const existing = this.queue.findIndex((q) => q.userId === deps.userId && !q.waiter)
     if (existing >= 0) return { status: 'duplicate', position: existing + 1 }
     this.queue.push({ userId: deps.userId, deps })
     return { status: 'queued', position: this.queue.length }
   }
 
-  private startRun(deps: PipelineDeps): void {
-    this.run(deps).catch((err: unknown) => {
-      if (err instanceof PipelineCancelledError) return
-      console.error('[orchestrator] queued run failed:', err)
+  /**
+   * Like run(), but waits its turn instead of throwing 'Pipeline already
+   * running'. For callers that need the result (discovery-mode runs,
+   * subscriptions): several of those firing together used to fail all but
+   * the first. Never deduped -- each call is a distinct run.
+   */
+  runQueued(deps: PipelineDeps): Promise<{ batchId: number }> {
+    if (!this.running) return this.run(deps)
+    return new Promise((resolve, reject) => {
+      this.queue.push({ userId: deps.userId, deps, waiter: { resolve, reject } })
     })
+  }
+
+  private startRun(deps: PipelineDeps, waiter?: QueuedRun['waiter']): void {
+    this.run(deps).then(
+      (result) => waiter?.resolve(result),
+      (err: unknown) => {
+        if (waiter) return waiter.reject(err)
+        if (err instanceof PipelineCancelledError) return
+        console.error('[orchestrator] queued run failed:', err)
+      },
+    )
   }
 
   /**
@@ -713,6 +743,7 @@ export class PipelineOrchestrator extends EventEmitter {
    */
   cancel(): { cancelled: boolean } {
     // Always clear the queue so pending runs don't start after a stop.
+    for (const q of this.queue) q.waiter?.reject(new PipelineCancelledError())
     this.queue = []
     if (!this.running) return { cancelled: false }
     const cancelledRunId = this.activeRunId
@@ -734,7 +765,7 @@ export class PipelineOrchestrator extends EventEmitter {
 
   private drainQueue(): void {
     const next = this.queue.shift()
-    if (next) this.startRun(next.deps)
+    if (next) this.startRun(next.deps, next.waiter)
   }
 
   get isRunning(): boolean {

@@ -940,6 +940,13 @@ export const ru = {
     'Для поиска релизов используются резервные провайдеры.',
   'discoveryMode.reason.libraryRequired':
     'Сначала синхронизируйте библиотеку, чтобы использовать этот режим.',
+  'discoveryMode.field.siteEnabled': 'Использовать этот сайт',
+  'discoveryMode.field.siteMinScore': 'Минимальная оценка',
+  'discoveryMode.field.siteIncludeUnscored': 'Включать выбор без оценки (списки, рубрики)',
+  'discoveryMode.field.coverageTypes': 'Только эти виды публикаций',
+  'discoveryMode.field.siteMatch': 'Если альбом освещают несколько сайтов',
+  'discoveryMode.option.any': 'Достаточно одного включённого сайта',
+  'discoveryMode.option.all': 'Каждый включённый сайт должен одобрить',
   'discoveryMode.field.feed': 'Лента',
   'discoveryMode.field.artist': 'Исполнитель',
   'discoveryMode.field.adventurousness': 'Авантюризм',
@@ -955,13 +962,10 @@ export const ru = {
   'discoveryMode.field.releaseWindow': 'Окно релизов',
   'discoveryMode.field.relationships': 'Связи',
   'discoveryMode.field.maxArtistsPerRun': 'Проверяемых исполнителей за запуск',
-  'discoveryMode.field.minScoreRatio': 'Минимальная оценка (0-1)',
   'discoveryMode.field.minReleaseYear': 'Выпущено с',
   'discoveryMode.field.maxAlbumsPerRun': 'Альбомов разрешено за запуск',
   'discoveryMode.field.includeGenres': 'Только эти жанры',
   'discoveryMode.field.excludeGenres': 'Исключить эти жанры',
-  'discoveryMode.field.coverageTypes': 'Только эти типы освещения',
-  'discoveryMode.field.includeUnscored': 'Включить рекомендации без оценки',
   'discoveryMode.field.helpArtistSeed': 'Имя исполнителя или MBID для запуска радио',
   'discoveryMode.field.helpConnectedAccount':
     'Оставьте пустым, чтобы использовать подключённую учётную запись',
@@ -1197,6 +1201,9 @@ export const ru = {
   'settings.popularity': 'Популярность',
   'settings.popularityHelp':
     '0 = игнорировать популярность, выше = предпочитать популярных. Требует импорта метаданных исполнителей.',
+  'settings.criticScore': 'Оценка критиков (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = выкл., выше = предпочитать исполнителей с высокими оценками ваших сайтов рецензий. Требуется подключение music-rater.',
   'settings.autoApprove': 'Автоодобрение',
   'settings.autoApproveDescription':
     'Автоматически добавлять высокооцененные рекомендации в назначения после каждого сканирования. Работает только если настроены назначения.',
@@ -1542,6 +1549,7 @@ export const ru = {
   'analytics.source.consensus': 'Консенсус',
   'analytics.source.genreOverlap': 'Совпадение жанров',
   'analytics.source.popularity': 'Популярность',
+  'analytics.source.artistCritic': 'Оценка критиков',
   'errorBoundary.title': 'Что-то пошло не так',
   'errorBoundary.retry': 'Повторить',
   'errorBoundary.home': 'На главную',

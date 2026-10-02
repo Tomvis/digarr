@@ -14,6 +14,7 @@ const scoringWeightsSchema = z
     aiConfidence: z.number().min(0).max(1).optional(),
     feedbackBoost: z.number().min(0).max(1).optional(),
     popularity: z.number().min(0).max(1).optional(),
+    criticScore: z.number().min(0).max(1).optional(),
   })
   .strict()
 

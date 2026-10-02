@@ -928,6 +928,13 @@ export const en = {
   'discoveryMode.reason.connectMusicRater': 'Connect music-rater to use this mode.',
   'discoveryMode.reason.releaseRadarFallback': 'Using fallback providers for release discovery.',
   'discoveryMode.reason.libraryRequired': 'Sync a library first to use this mode.',
+  'discoveryMode.field.siteEnabled': 'Use this site',
+  'discoveryMode.field.siteMinScore': 'Minimum score',
+  'discoveryMode.field.siteIncludeUnscored': 'Include unscored picks (lists, editorial columns)',
+  'discoveryMode.field.coverageTypes': 'Only these kinds of coverage',
+  'discoveryMode.field.siteMatch': 'When several sites cover an album',
+  'discoveryMode.option.any': 'Any enabled site passing is enough',
+  'discoveryMode.option.all': 'Every enabled site covering it must pass',
   'discoveryMode.field.feed': 'Feed',
   'discoveryMode.field.artist': 'Artist',
   'discoveryMode.field.adventurousness': 'Adventurousness',
@@ -943,13 +950,10 @@ export const en = {
   'discoveryMode.field.releaseWindow': 'Release window',
   'discoveryMode.field.relationships': 'Relationships',
   'discoveryMode.field.maxArtistsPerRun': 'Artists checked per run',
-  'discoveryMode.field.minScoreRatio': 'Minimum score (0-1)',
   'discoveryMode.field.minReleaseYear': 'Released since',
   'discoveryMode.field.maxAlbumsPerRun': 'Albums resolved per run',
   'discoveryMode.field.includeGenres': 'Only these genres',
   'discoveryMode.field.excludeGenres': 'Never these genres',
-  'discoveryMode.field.coverageTypes': 'Only these kinds of coverage',
-  'discoveryMode.field.includeUnscored': 'Include unscored recommendations',
   'discoveryMode.field.helpArtistSeed': 'Artist name or MBID to seed the radio',
   'discoveryMode.field.helpConnectedAccount': 'Leave blank to use your connected account',
   'discoveryMode.field.helpSimilarUsers': 'How many similar users to pull top artists from (1-10)',
@@ -1184,6 +1188,9 @@ export const en = {
   'settings.popularity': 'Popularity',
   'settings.popularityHelp':
     '0 = ignore popularity, higher = prefer popular artists. Requires artist metadata import.',
+  'settings.criticScore': 'Critic rating (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = off, higher = prefer artists your review sites rate well. Needs music-rater connected.',
   'settings.autoApprove': 'Auto-Approve',
   'settings.autoApproveDescription':
     'Automatically add high-scoring recommendations to your targets after each scan. Only runs when targets are configured.',
@@ -1543,6 +1550,7 @@ export const en = {
   'analytics.source.consensus': 'Consensus',
   'analytics.source.genreOverlap': 'Genre Overlap',
   'analytics.source.popularity': 'Popularity',
+  'analytics.source.artistCritic': 'Critic rating',
 
   // Error boundary
   'errorBoundary.title': 'Something went wrong',

@@ -264,6 +264,7 @@ function SourceScores({
     consensus: 'analytics.source.consensus',
     genreOverlap: 'analytics.source.genreOverlap',
     popularity: 'analytics.source.popularity',
+    artistCritic: 'analytics.source.artistCritic',
   }
 
   return (

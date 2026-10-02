@@ -4,10 +4,11 @@ import type { LibraryAlbum, LibraryArtist, LibrarySource } from './types'
 type SubsonicClient = ReturnType<typeof createSubsonicClient>
 
 /**
- * Wraps the existing Subsonic client as a LibrarySource. Subsonic ID3
- * artists/albums do not carry MBIDs, so mbidQuality is 'low' - the
- * reconciler will name-match against MusicBrainz and anchor against
- * Lidarr/Jellyfin rows when possible.
+ * Wraps the existing Subsonic client as a LibrarySource. Plain Subsonic ID3
+ * artists carry no MBIDs; OpenSubsonic servers (Navidrome) send the artist's
+ * `musicBrainzId`, which is passed through so the reconciler can skip its
+ * MusicBrainz name search for that artist. Still 'low' quality overall: the
+ * field is optional and only as good as the server's tags.
  *
  * Subsonic is per-user (each Digarr user can configure their own
  * Subsonic/Navidrome server).
@@ -18,14 +19,14 @@ export function createSubsonicLibrarySource(client: SubsonicClient, userId: numb
     name: 'Subsonic',
     capabilities: ['listArtists', 'listAlbums'],
     userId,
-    mbidQuality: 'low', // Subsonic ID3 artists carry no MBIDs; reconciler name-matches
+    mbidQuality: 'low', // MBIDs only when the server is OpenSubsonic; reconciler name-matches the rest
 
     async listArtists(): Promise<LibraryArtist[]> {
       const artists = await client.getAllArtists()
       return artists.map((a) => ({
         sourceArtistId: a.id,
         name: a.name,
-        mbid: undefined,
+        mbid: a.mbid,
       }))
     },
 

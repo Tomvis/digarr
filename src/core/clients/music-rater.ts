@@ -21,6 +21,24 @@ type RawAlbumSummary = {
   genre_slugs?: string[]
   sources?: string[]
   coverage_types?: string[]
+  site_scores?: Array<{
+    source_site: string
+    score?: number | null
+    score_scale?: number
+    coverage_types?: string[]
+  }>
+}
+
+/**
+ * One review site's view of an album in that site's OWN units (AMG 0-5,
+ * TPS 0-10). `score` is null when the site only covers it unscored (a TYMHM
+ * pick, a year-end list entry).
+ */
+export type MusicRaterSiteScore = {
+  site: string
+  score: number | null
+  scale: number
+  coverageTypes: string[]
 }
 
 export type MusicRaterAlbum = {
@@ -41,6 +59,8 @@ export type MusicRaterAlbum = {
    * *offer* a user is a later, presentation-layer concern).
    */
   coverageTypes: string[]
+  /** Per-site breakdown (music-rater >= 1.13); empty from older servers. */
+  siteScores: MusicRaterSiteScore[]
 }
 
 /** music-rater caps `limit` at 500. Only consumed as this module's own default. */
@@ -57,6 +77,12 @@ function toAlbum(raw: RawAlbumSummary): MusicRaterAlbum {
     genreSlugs: raw.genre_slugs ?? [],
     sources: raw.sources ?? [],
     coverageTypes: raw.coverage_types ?? [],
+    siteScores: (raw.site_scores ?? []).map((s) => ({
+      site: s.source_site,
+      score: s.score ?? null,
+      scale: s.score_scale ?? 5,
+      coverageTypes: s.coverage_types ?? [],
+    })),
   }
 }
 

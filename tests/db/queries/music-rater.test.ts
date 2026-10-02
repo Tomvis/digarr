@@ -7,9 +7,11 @@ import type { MusicRaterAlbumRow } from '@/core/music-rater/sync'
 import { criticScoreKey } from '@/core/pipeline/score'
 import type { Database } from '@/db'
 import {
+  findMusicRaterArtistScores,
   findMusicRaterScoresByNames,
   getMusicRaterFilterOptions,
   getUnresolvedAcclaimedAlbums,
+  hasMusicRaterRowsMissingSiteScores,
   isReleaseGroupOwnedByUser,
   markMusicRaterAlbumResolved,
   recordMusicRaterResolutionFailure,
@@ -981,7 +983,7 @@ describe('getMusicRaterFilterOptions (real db)', () => {
     if (!user) throw new Error('test user was not created')
 
     const opts = await getMusicRaterFilterOptions(db, user.id)
-    expect(opts).toEqual({ genres: [], coverageTypes: [] })
+    expect(opts).toEqual({ genres: [], coverageTypes: [], coverageTypesBySite: {} })
   })
 
   it('still reports a stored "unknown" coverage type -- this is a corpus inventory, not a UI filter', async () => {
@@ -999,5 +1001,135 @@ describe('getMusicRaterFilterOptions (real db)', () => {
       row({ musicRaterAlbumId: 1, coverageTypes: ['unknown'] }),
     ])
     expect((await getMusicRaterFilterOptions(db, user.id)).coverageTypes).toEqual(['unknown'])
+  })
+})
+
+describe('per-site music-rater filters and artist scores (real db, MUSIC-25/26)', () => {
+  let db: Database
+  let close: () => Promise<void>
+  let userId: number
+
+  beforeEach(async () => {
+    const testDb = await makeTestDb()
+    db = testDb.db as unknown as Database
+    close = testDb.close
+    const [user] = await db
+      .insert(users)
+      .values({ username: 'site-test', passwordHash: 'x' })
+      .returning({ id: users.id })
+    if (!user) throw new Error('test user was not created')
+    userId = user.id
+  })
+
+  afterEach(async () => {
+    await close()
+  })
+
+  const amg = (score: number | null, coverageTypes = ['review']) => ({
+    site: 'amg',
+    score,
+    scale: 5,
+    coverageTypes,
+  })
+  const tps = (score: number | null, coverageTypes = ['review']) => ({
+    site: 'tps',
+    score,
+    scale: 10,
+    coverageTypes,
+  })
+  const amgBar = { site: 'amg', minScore: 4, includeUnscored: false, coverageTypes: [] }
+  const tpsBar = { site: 'tps', minScore: 8, includeUnscored: false, coverageTypes: [] }
+  const base = { minScoreRatio: 0, minReleaseYear: 0, limit: 25 }
+
+  async function names(opts: Parameters<typeof getUnresolvedAcclaimedAlbums>[2]) {
+    return (await getUnresolvedAcclaimedAlbums(db, userId, opts)).map((r) => r.artistNameRaw).sort()
+  }
+
+  it('applies each site bar in its own native units', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, artistNameRaw: 'AMG 4.0', siteScores: [amg(4)] }),
+      row({ musicRaterAlbumId: 2, artistNameRaw: 'AMG 3.5', siteScores: [amg(3.5)] }),
+      row({ musicRaterAlbumId: 3, artistNameRaw: 'TPS 8.5', siteScores: [tps(8.5)] }),
+      row({ musicRaterAlbumId: 4, artistNameRaw: 'TPS 7.5', siteScores: [tps(7.5)] }),
+    ])
+    expect(await names({ ...base, siteFilters: [amgBar, tpsBar] })).toEqual(['AMG 4.0', 'TPS 8.5'])
+    // A disabled site (absent from siteFilters) contributes nothing.
+    expect(await names({ ...base, siteFilters: [amgBar] })).toEqual(['AMG 4.0'])
+  })
+
+  it('admits unscored picks per site and honours per-site coverage types', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, artistNameRaw: 'TYMHM', siteScores: [amg(null, ['tymhm'])] }),
+      row({ musicRaterAlbumId: 2, artistNameRaw: 'AOTY', siteScores: [amg(null, ['aoty'])] }),
+    ])
+    expect(await names({ ...base, siteFilters: [amgBar] })).toEqual([])
+    expect(await names({ ...base, siteFilters: [{ ...amgBar, includeUnscored: true }] })).toEqual([
+      'AOTY',
+      'TYMHM',
+    ])
+    expect(
+      await names({
+        ...base,
+        siteFilters: [{ ...amgBar, includeUnscored: true, coverageTypes: ['aoty'] }],
+      }),
+    ).toEqual(['AOTY'])
+  })
+
+  it('siteMatch=all rejects an album one enabled site covers without passing', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, artistNameRaw: 'Both pass', siteScores: [amg(4.5), tps(9)] }),
+      row({ musicRaterAlbumId: 2, artistNameRaw: 'Split', siteScores: [amg(4.5), tps(6)] }),
+      row({ musicRaterAlbumId: 3, artistNameRaw: 'AMG only', siteScores: [amg(4)] }),
+    ])
+    const filters = [amgBar, tpsBar]
+    expect(await names({ ...base, siteFilters: filters, siteMatch: 'any' })).toEqual([
+      'AMG only',
+      'Both pass',
+      'Split',
+    ])
+    expect(await names({ ...base, siteFilters: filters, siteMatch: 'all' })).toEqual([
+      'AMG only',
+      'Both pass',
+    ])
+  })
+
+  it('a row with no site_scores yet passes no per-site filter, and is reported as missing', async () => {
+    await upsertMusicRaterAlbums(db, userId, [row({ musicRaterAlbumId: 1 })])
+    expect(await names({ ...base, siteFilters: [amgBar] })).toEqual([])
+    expect(await hasMusicRaterRowsMissingSiteScores(db, userId)).toBe(true)
+    await upsertMusicRaterAlbums(db, userId, [row({ musicRaterAlbumId: 1, siteScores: [] })])
+    expect(await hasMusicRaterRowsMissingSiteScores(db, userId)).toBe(false)
+  })
+
+  it('serves best-rated never-attempted rows first', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, artistNameRaw: 'Low', maxScoreRatio: 0.8 }),
+      row({ musicRaterAlbumId: 2, artistNameRaw: 'High', maxScoreRatio: 1 }),
+    ])
+    const result = await getUnresolvedAcclaimedAlbums(db, userId, { ...base, limit: 1 })
+    expect(result.map((r) => r.artistNameRaw)).toEqual(['High'])
+  })
+
+  it('scores an artist by its three best albums, counting unscored list picks', async () => {
+    await upsertMusicRaterAlbums(db, userId, [
+      row({ musicRaterAlbumId: 1, artistNameRaw: 'Band', albumTitleRaw: 'A', maxScoreRatio: 1 }),
+      row({ musicRaterAlbumId: 2, artistNameRaw: 'Band', albumTitleRaw: 'B', maxScoreRatio: 0.9 }),
+      row({ musicRaterAlbumId: 3, artistNameRaw: 'Band', albumTitleRaw: 'C', maxScoreRatio: 0.8 }),
+      row({ musicRaterAlbumId: 4, artistNameRaw: 'Band', albumTitleRaw: 'D', maxScoreRatio: 0.2 }),
+      row({
+        musicRaterAlbumId: 5,
+        artistNameRaw: 'Listed',
+        maxScoreRatio: null,
+        coverageTypes: ['aoty'],
+      }),
+    ])
+    const scores = await findMusicRaterArtistScores(db, userId, [
+      normalizeArtistName('Band'),
+      normalizeArtistName('Listed'),
+      normalizeArtistName('Unknown'),
+    ])
+    expect(scores.get(normalizeArtistName('Band'))).toBeCloseTo(0.9)
+    expect(scores.get(normalizeArtistName('Listed'))).toBeCloseTo(0.8)
+    expect(scores.has(normalizeArtistName('Unknown'))).toBe(false)
   })
 })

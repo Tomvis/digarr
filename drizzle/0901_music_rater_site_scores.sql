@@ -1,0 +1,1 @@
+ALTER TABLE "music_rater_albums" ADD COLUMN "site_scores" jsonb;

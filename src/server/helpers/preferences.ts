@@ -4,8 +4,8 @@ import type { Preferences } from '@/db/schema'
 
 /**
  * Resolve per-user preferences with fallback to global.
- * Returns the user's preferences if they exist and are non-empty,
- * otherwise returns the global preferences unchanged.
+ * Returns the user's preferences layered over the global ones if the user
+ * has any, otherwise the global preferences unchanged.
  *
  * Accepts either a Database instance (calls getUserById internally)
  * or a pre-bound lookup function (for routes using AppDependencies).
@@ -20,8 +20,11 @@ export async function resolveUserPreferences(
     typeof dbOrLookup === 'function'
       ? await dbOrLookup(userId)
       : await getUserById(dbOrLookup, userId)
+  // Layer the user's keys over the global ones. Returning the user object
+  // alone silently dropped every global key the user never set (e.g.
+  // netNewAlbumDiscovery) the moment they set any preference at all.
   if (user?.preferences && Object.keys(user.preferences).length > 0) {
-    return user.preferences
+    return { ...(globalPrefs ?? {}), ...user.preferences }
   }
   return globalPrefs
 }

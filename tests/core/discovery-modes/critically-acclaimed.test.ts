@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import type { CriticallyAcclaimedDeps } from '@/core/discovery-modes/modes/critically-acclaimed'
-import { createCriticallyAcclaimedMode } from '@/core/discovery-modes/modes/critically-acclaimed'
+import {
+  createCriticallyAcclaimedMode,
+  parseSiteFilters,
+} from '@/core/discovery-modes/modes/critically-acclaimed'
 
 function request(settings: Record<string, unknown> = {}) {
   return { userId: 1, normalizedSettings: settings } as never
@@ -376,5 +379,39 @@ describe('createCriticallyAcclaimedMode', () => {
         { value: 'review', label: 'discoveryMode.option.coverageReview' },
       ])
     })
+  })
+})
+
+describe('parseSiteFilters (MUSIC-26)', () => {
+  it('defaults every site on, at its native default bar, unscored picks included', () => {
+    expect(parseSiteFilters({})).toEqual({
+      siteMatch: 'any',
+      siteFilters: [
+        { site: 'amg', minScore: 4, includeUnscored: true, coverageTypes: [] },
+        { site: 'tps', minScore: 8, includeUnscored: true, coverageTypes: [] },
+      ],
+    })
+  })
+
+  it('reads per-site keys in native units and clamps to the scale', () => {
+    expect(
+      parseSiteFilters({
+        amgMinScore: 3.5,
+        amgIncludeUnscored: false,
+        amgCoverageTypes: 'review, aoty',
+        tpsEnabled: false,
+        siteMatch: 'all',
+      }),
+    ).toEqual({
+      siteMatch: 'all',
+      siteFilters: [
+        { site: 'amg', minScore: 3.5, includeUnscored: false, coverageTypes: ['review', 'aoty'] },
+      ],
+    })
+    expect(parseSiteFilters({ tpsMinScore: 42 })?.siteFilters[1]?.minScore).toBe(10)
+  })
+
+  it('keeps the legacy cross-scale filter for a subscription saved with only minScoreRatio', () => {
+    expect(parseSiteFilters({ minScoreRatio: 0.8 })).toBeUndefined()
   })
 })

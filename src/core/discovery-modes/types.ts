@@ -9,6 +9,14 @@ export type DiscoveryConfigField = {
   required?: boolean
   helpText?: string
   options?: Array<{ value: string; label: string }>
+  /** Initial value for a fresh form (toggles otherwise start unchecked). */
+  defaultValue?: boolean | string
+  /** Number inputs: bounds and step (e.g. a 0-5 scale in half points). */
+  min?: number
+  max?: number
+  step?: number
+  /** Consecutive fields sharing a section render under one heading. */
+  section?: string
 }
 
 export type DiscoveryAvailabilityKind = 'strict' | 'fallback'

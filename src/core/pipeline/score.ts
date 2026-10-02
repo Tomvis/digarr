@@ -33,6 +33,7 @@ export function computeWeightedScore(
     aiConfidence: number
     feedbackBoost: number
     popularity: number
+    criticScore?: number
   },
 ): number {
   const raw =
@@ -41,7 +42,8 @@ export function computeWeightedScore(
     weights.genreOverlap * components.genreOverlap +
     weights.aiConfidence * components.aiConfidence +
     weights.feedbackBoost * components.feedbackBoost +
-    (weights.popularity ?? 0) * components.popularity
+    (weights.popularity ?? 0) * components.popularity +
+    (weights.criticScore ?? 0) * (components.criticScore ?? 0)
   return Math.max(0, Math.min(1, raw))
 }
 
@@ -115,6 +117,14 @@ export function criticScoreKey(artistName: string, albumTitle: string): string {
   return `${normalizeArtistName(artistName)}::${normalizeAlbumTitle(albumTitle)}`
 }
 
+/**
+ * Artist critic signal for an artist music-rater has never reviewed: a bit
+ * below the corpus average (~0.62), so a well-reviewed artist ranks above an
+ * unknown one and a panned one below it, without zeroing out discoveries
+ * outside the review sites' coverage.
+ */
+export const UNREVIEWED_ARTIST_CRITIC_SCORE = 0.4
+
 export function score(
   artists: ResolvedArtist[],
   libraryGenres: string[],
@@ -127,6 +137,8 @@ export function score(
   // (tests/core/pipeline/score.test.ts, the recency test) -- inserting before
   // it would silently shift that Date into this parameter's slot.
   criticScoreMap?: Map<string, number>,
+  /** Artist-level music-rater signal by normalised name (criticScore weight). */
+  artistCriticMap?: Map<string, number>,
 ): ScoredArtist[] {
   const libraryGenreSet = new Set(libraryGenres.map((g) => g.toLowerCase()))
 
@@ -175,6 +187,9 @@ export function score(
     // Popularity: normalized 0-1 from artist_metadata, 0 if not found
     const popularity = popularityMap?.get(artist.name.trim().toLowerCase()) ?? 0
 
+    const artistCritic = artistCriticMap?.get(normalizeArtistName(artist.name))
+    const criticScore = artistCritic ?? UNREVIEWED_ARTIST_CRITIC_SCORE
+
     // Weighted composite score (clamped to [0, 1])
     const baseScore = computeWeightedScore(weights, {
       consensus,
@@ -183,6 +198,7 @@ export function score(
       aiConfidence,
       feedbackBoost,
       popularity,
+      criticScore,
     })
 
     const sourceScores: Record<string, number> = {
@@ -193,6 +209,7 @@ export function score(
       feedbackBoost,
       popularity,
     }
+    if (artistCritic !== undefined) sourceScores.artistCritic = artistCritic
 
     // Album-kind candidates get a bounded nudge from the recency, popularity,
     // and critic-score signals on top of the artist base score; artist-kind
@@ -200,12 +217,12 @@ export function score(
     let finalScore = baseScore
     if (artist.kind === 'album') {
       const recency = artist.releaseDate ? computeRecency(artist.releaseDate, now) : undefined
-      const criticScore = criticScoreMap?.get(
+      const albumCritic = criticScoreMap?.get(
         criticScoreKey(artist.name, artist.suggestedAlbum?.title ?? ''),
       )
-      finalScore = applyAlbumModifier(baseScore, { recency, popularity, criticScore })
+      finalScore = applyAlbumModifier(baseScore, { recency, popularity, criticScore: albumCritic })
       if (recency !== undefined) sourceScores.recency = recency
-      if (criticScore !== undefined) sourceScores.criticScore = criticScore
+      if (albumCritic !== undefined) sourceScores.criticScore = albumCritic
     }
 
     // AI reasoning from first AI discovery

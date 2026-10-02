@@ -1,4 +1,10 @@
 import PQueue from 'p-queue'
+import {
+  REVIEW_SITES,
+  type SiteFilter,
+  type SiteMatch,
+  siteSettingKeys,
+} from '@/core/music-rater/sites'
 // `AcclaimedAlbumRow` is the row shape `getUnresolvedAcclaimedAlbums` (the DB
 // layer) actually returns. This module used to declare its own structurally
 // identical `AcclaimedAlbum` type one file away in the same dependency
@@ -7,7 +13,7 @@ import PQueue from 'p-queue'
 // pull `db/queries/music-rater` (and therefore the DB) into this module's
 // runtime graph -- `defaultDeps` below still loads it lazily via `import()`.
 import type { AcclaimedAlbumRow } from '@/db/queries/music-rater'
-import type { DiscoveryModeDefinition, RawDiscoveryCandidate } from '../types'
+import type { DiscoveryConfigField, DiscoveryModeDefinition, RawDiscoveryCandidate } from '../types'
 
 const DEFAULT_MAX_ALBUMS_PER_RUN = 25
 const DEFAULT_MIN_SCORE_RATIO = 0.8
@@ -24,6 +30,8 @@ export type CriticallyAcclaimedDeps = {
       excludeGenres: string[]
       coverageTypes: string[]
       includeUnscored: boolean
+      siteFilters?: SiteFilter[]
+      siteMatch?: SiteMatch
     },
   ) => Promise<AcclaimedAlbumRow[]>
   resolveArtistMbid: (artistName: string) => Promise<string | null>
@@ -61,7 +69,11 @@ export type CriticallyAcclaimedDeps = {
    * when it throws (see DiscoveryModeDefinition), so this dep being required
    * does not make it load-bearing for the mode's core executor.
    */
-  getFilterOptions: (userId: number) => Promise<{ genres: string[]; coverageTypes: string[] }>
+  getFilterOptions: (userId: number) => Promise<{
+    genres: string[]
+    coverageTypes: string[]
+    coverageTypesBySite?: Record<string, string[]>
+  }>
 }
 
 async function defaultDeps(): Promise<CriticallyAcclaimedDeps> {
@@ -168,6 +180,95 @@ function coverageLabel(slug: string): string {
 }
 
 /**
+ * One settings section per review site, in that site's own units and steps
+ * (MUSIC-26): AMG 0-5 and TPS 0-10, both in half points. Replaces the single
+ * cross-scale `minScoreRatio`, which could not say "AMG >= 4.0 but TPS >= 8.5".
+ */
+function siteFields(): DiscoveryConfigField[] {
+  return REVIEW_SITES.flatMap((site) => {
+    const keys = siteSettingKeys(site.id)
+    return [
+      {
+        key: keys.enabled,
+        label: 'Use this site',
+        type: 'toggle' as const,
+        defaultValue: true,
+        section: `${site.label} (0-${site.scale})`,
+      },
+      {
+        key: keys.minScore,
+        label: 'Minimum score',
+        type: 'number' as const,
+        min: 0,
+        max: site.scale,
+        step: site.step,
+        defaultValue: String(site.defaultMinScore),
+        section: `${site.label} (0-${site.scale})`,
+      },
+      {
+        key: keys.includeUnscored,
+        label: 'Include unscored picks (lists, editorial columns)',
+        type: 'toggle' as const,
+        defaultValue: true,
+        section: `${site.label} (0-${site.scale})`,
+      },
+      {
+        key: keys.coverageTypes,
+        label: 'Only these kinds of coverage',
+        type: 'multiselect' as const,
+        section: `${site.label} (0-${site.scale})`,
+      },
+    ]
+  })
+}
+
+const SITE_MATCH_FIELD: DiscoveryConfigField = {
+  key: 'siteMatch',
+  label: 'When several sites cover an album',
+  type: 'select',
+  options: [
+    { value: 'any', label: 'Any enabled site passing is enough' },
+    { value: 'all', label: 'Every enabled site covering it must pass' },
+  ],
+}
+
+/**
+ * Per-site filters from settings, or `undefined` for a subscription saved
+ * before per-site settings existed (only `minScoreRatio`), which keeps the
+ * legacy cross-scale filter.
+ */
+export function parseSiteFilters(
+  settings: Record<string, unknown>,
+): { siteFilters: SiteFilter[]; siteMatch: SiteMatch } | undefined {
+  const hasSiteKeys = REVIEW_SITES.some((site) => {
+    const keys = siteSettingKeys(site.id)
+    return Object.values(keys).some((key) => key in settings)
+  })
+  if (!hasSiteKeys && 'minScoreRatio' in settings) return undefined
+
+  const siteFilters = REVIEW_SITES.flatMap((site): SiteFilter[] => {
+    const keys = siteSettingKeys(site.id)
+    if (settings[keys.enabled] === false) return []
+    const raw = Number(settings[keys.minScore])
+    const minScore =
+      settings[keys.minScore] === undefined ||
+      settings[keys.minScore] === '' ||
+      !Number.isFinite(raw)
+        ? site.defaultMinScore
+        : Math.min(Math.max(raw, 0), site.scale)
+    return [
+      {
+        site: site.id,
+        minScore,
+        includeUnscored: settings[keys.includeUnscored] !== false,
+        coverageTypes: listSetting(settings[keys.coverageTypes]),
+      },
+    ]
+  })
+  return { siteFilters, siteMatch: settings.siteMatch === 'all' ? 'all' : 'any' }
+}
+
+/**
  * Every message key `COVERAGE_TYPE_LABELS` can produce, exported for i18n
  * liveness checks that sweep the mode registry's STATIC `field.options`
  * (`discovery-i18n.test.ts`'s registry-driven key test; `i18n-check.ts`'s
@@ -226,11 +327,10 @@ export function createCriticallyAcclaimedMode(
     // was 'strict', disagreeing with its own fallbackUsed:true.
     availability: 'fallback',
     easyFields: [
-      { key: 'minScoreRatio', label: 'Minimum score (0-1)', type: 'number' },
       { key: 'minReleaseYear', label: 'Released since', type: 'number' },
       { key: 'includeGenres', label: 'Only these genres', type: 'multiselect' },
       { key: 'excludeGenres', label: 'Never these genres', type: 'multiselect' },
-      { key: 'coverageTypes', label: 'Only these kinds of coverage', type: 'multiselect' },
+      ...siteFields(),
     ],
     // A superset of easyFields, repeating each easy key verbatim before
     // adding the advanced-only ones -- the same convention every other mode
@@ -245,13 +345,12 @@ export function createCriticallyAcclaimedMode(
     // `includeUnscored` lived in `advancedFields` ONLY, so the two could never
     // be submitted together.
     advancedFields: [
-      { key: 'minScoreRatio', label: 'Minimum score (0-1)', type: 'number' },
       { key: 'minReleaseYear', label: 'Released since', type: 'number' },
       { key: 'includeGenres', label: 'Only these genres', type: 'multiselect' },
       { key: 'excludeGenres', label: 'Never these genres', type: 'multiselect' },
-      { key: 'coverageTypes', label: 'Only these kinds of coverage', type: 'multiselect' },
       { key: 'maxAlbumsPerRun', label: 'Albums resolved per run', type: 'number' },
-      { key: 'includeUnscored', label: 'Include unscored recommendations', type: 'toggle' },
+      SITE_MATCH_FIELD,
+      ...siteFields(),
     ],
     executor: async (request) => {
       const deps = injected ?? (await defaultDeps())
@@ -265,6 +364,7 @@ export function createCriticallyAcclaimedMode(
         excludeGenres: listSetting(settings.excludeGenres),
         coverageTypes: listSetting(settings.coverageTypes),
         includeUnscored: settings.includeUnscored === true,
+        ...parseSiteFilters(settings),
       })
       if (albums.length === 0) return { candidates: [] }
 
@@ -351,9 +451,18 @@ export function createCriticallyAcclaimedMode(
     },
     resolveOptions: async (userId) => {
       const deps = injected ?? (await defaultDeps())
-      const { genres, coverageTypes } = await deps.getFilterOptions(userId)
+      const { genres, coverageTypes, coverageTypesBySite } = await deps.getFilterOptions(userId)
       const genreOptions = genres.map((g) => ({ value: g, label: genreLabel(g) }))
+      const perSite = Object.fromEntries(
+        REVIEW_SITES.map((site) => [
+          siteSettingKeys(site.id).coverageTypes,
+          (coverageTypesBySite?.[site.id] ?? [])
+            .filter((c) => c !== 'unknown')
+            .map((c) => ({ value: c, label: coverageLabel(c) })),
+        ]),
+      )
       return {
+        ...perSite,
         includeGenres: genreOptions,
         excludeGenres: genreOptions,
         // `unknown` is a real, stored post_type -- music-rater's parser

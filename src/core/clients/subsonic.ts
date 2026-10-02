@@ -12,6 +12,8 @@ import {
 export type SubsonicArtist = {
   id: string
   name: string
+  /** OpenSubsonic `musicBrainzId` (Navidrome sends it); absent on plain Subsonic. */
+  mbid?: string
 }
 
 export type SubsonicAlbum = {
@@ -24,6 +26,7 @@ export type SubsonicAlbum = {
 type RawArtist = {
   id?: string | number
   name?: string
+  musicBrainzId?: string
 }
 
 type RawAlbum = {
@@ -77,7 +80,11 @@ export function createSubsonicClient(
   }
 
   function mapArtist(a: RawArtist): SubsonicArtist {
-    return { id: String(a.id), name: a.name ?? '' }
+    return {
+      id: String(a.id),
+      name: a.name ?? '',
+      ...(a.musicBrainzId ? { mbid: a.musicBrainzId } : {}),
+    }
   }
 
   async function getStarredArtists(): Promise<SubsonicArtist[]> {

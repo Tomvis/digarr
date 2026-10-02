@@ -46,7 +46,7 @@ import { isMaintenance, setMaintenance } from './core/ops/maintenance'
 import { runPreFlightCheck } from './core/ops/upgrade'
 import { analyze } from './core/pipeline/analyze'
 import { waitForGenreWarmers } from './core/pipeline/genre-backfill'
-import { PipelineOrchestrator } from './core/pipeline/orchestrator'
+import { type PipelineDeps, PipelineOrchestrator } from './core/pipeline/orchestrator'
 import type { StoreDb } from './core/pipeline/store'
 import { SubscriptionScheduler } from './core/pipeline/subscription-scheduler'
 import { pushPlaylistToTargets } from './core/playlists/export'
@@ -140,7 +140,12 @@ import {
   markLibraryHealthScanStarted,
   saveLibraryHealthState,
 } from './db/queries/library-health'
-import { findMusicRaterScoresByNames, upsertMusicRaterAlbums } from './db/queries/music-rater'
+import {
+  findMusicRaterArtistScores,
+  findMusicRaterScoresByNames,
+  hasMusicRaterRowsMissingSiteScores,
+  upsertMusicRaterAlbums,
+} from './db/queries/music-rater'
 import { deleteExpiredPendingOAuth } from './db/queries/oauth-pending'
 import { getOAuthToken } from './db/queries/oauth-tokens'
 import {
@@ -343,12 +348,13 @@ const storeDb: StoreDb = {
       await insertRecommendation(tx, { ...recData, artistId: row.id })
     })
   },
-  getRejectedMbids: (cooldownDays) => getRejectedArtistMbids(db, cooldownDays),
+  getRejectedMbids: (cooldownDays, userId) => getRejectedArtistMbids(db, cooldownDays, userId),
   getBlockedMbids: (userId) => getBlockedArtistMbids(db, userId),
   getFeedbackHistory: (userId) => getGenreFeedbackHistory(db, userId),
   lookupArtistMetadata: (name) => lookupByName(db, name),
   getPopularityMap: () => getPopularityMap(db),
   findMusicRaterScoresByNames: (userId, keys) => findMusicRaterScoresByNames(db, userId, keys),
+  findMusicRaterArtistScores: (userId, names) => findMusicRaterArtistScores(db, userId, names),
   getLibraryArtistsForUser: async (userId, options) => {
     const conds = [or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId))]
     if (options?.onlyReconciled) conds.push(isNotNull(libraryArtists.mbid))
@@ -656,13 +662,16 @@ const runPipelineForAllUsers = async () => {
   const users = await listUsers(db)
   for (const user of users) {
     try {
+      // Same per-user deps as a manual scan: the user's own preferences and
+      // listening connections, auto-approve, and a recorded job row. Global
+      // settings alone left scheduled scans with no listening sources at all.
+      const { pipelineDeps } = await buildDiscoveryModePipelineDeps(user.id)
       const result = orchestrator.enqueue({
-        db: storeDb,
-        settings: currentSettings,
-        providerRegistry,
-        librarySync: librarySyncOrchestrator,
+        ...pipelineDeps,
         userId: user.id,
-      })
+        jobRecorder,
+        trigger: 'scheduled',
+      } as PipelineDeps)
       console.log(
         `[scheduler] pipeline for user ${user.id}: ${result.status} (position ${result.position})`,
       )
@@ -875,6 +884,28 @@ function setCachedAdapterRegistry(userId: number | null, registry: AdapterRegist
   adapterRegistryCache.set(key, { registry, builtAt: Date.now() })
 }
 
+const inFlightSubscriptions = new Set<number>()
+
+/**
+ * Fire-and-forget, single-flight per subscription. A run can take most of an
+ * hour; awaiting it inside the HTTP request held the connection open until
+ * something upstream retried it, stacking ~15 parallel runs of the same
+ * subscription (2026-10-02). Progress and errors land in job_runs.
+ */
+function startSubscription(subscriptionId: number): Promise<void> {
+  if (inFlightSubscriptions.has(subscriptionId)) {
+    console.log(`[subscription-runner] Subscription ${subscriptionId} already running - skipped`)
+    return Promise.resolve()
+  }
+  inFlightSubscriptions.add(subscriptionId)
+  executeSubscription(subscriptionId)
+    .catch((err: unknown) =>
+      console.error(`[subscription-runner] Subscription ${subscriptionId} failed:`, errMsg(err)),
+    )
+    .finally(() => inFlightSubscriptions.delete(subscriptionId))
+  return Promise.resolve()
+}
+
 async function executeSubscription(subscriptionId: number): Promise<void> {
   const sub = await getSubscription(db, subscriptionId)
   if (!sub) {
@@ -883,7 +914,13 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
   }
 
   const settings = await getSettings(db)
-  const prefs = mergePreferences(settings?.preferences)
+  // The subscription owner's preferences (cooldown, default threshold), not
+  // the global ones.
+  const prefs = mergePreferences(
+    sub.userId != null
+      ? await resolveUserPreferences(db, settings?.preferences ?? null, sub.userId)
+      : (settings?.preferences ?? null),
+  )
 
   const lidarrClient =
     settings?.lidarrUrl && settings?.lidarrApiKey
@@ -894,7 +931,10 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
         )
       : null
 
-  const rejectedMbids = await storeDb.getRejectedMbids(prefs.rejectionCooldownDays)
+  const rejectedMbids = await storeDb.getRejectedMbids(
+    prefs.rejectionCooldownDays,
+    sub.userId ?? undefined,
+  )
   const blockedMbids = sub.userId ? await storeDb.getBlockedMbids(sub.userId) : new Set<string>()
   const feedbackHistory = sub.userId
     ? await storeDb.getFeedbackHistory(sub.userId)
@@ -1431,7 +1471,7 @@ const app = createApp({
   slskdOrchestrator,
   albumCoverage,
   subscriptionQueries: subscriptionQueriesImpl,
-  runSubscription: (id) => executeSubscription(id),
+  runSubscription: (id) => startSubscription(id),
   targetQueries: {
     createTarget: (data: TargetInsert) => createTarget(db, data),
     getTargetsByUser: (userId: number, opts?: Parameters<typeof getTargetsByUser>[2]) =>
@@ -1639,7 +1679,7 @@ const server = serve({ fetch: app.fetch, port })
 
     const subs = await getEnabledSubscriptions(db)
     for (const sub of subs) {
-      scheduler.schedule(`subscription-${sub.id}`, sub.cron, () => executeSubscription(sub.id))
+      scheduler.schedule(`subscription-${sub.id}`, sub.cron, () => startSubscription(sub.id))
       console.log(`Subscription '${sub.name}' (id=${sub.id}) scheduled with cron: ${sub.cron}`)
     }
 
@@ -1677,6 +1717,17 @@ const server = serve({ fetch: app.fetch, port })
       listSyncableUserIds: () => listUserIdsWithMusicRaterConnection(db),
       syncUser: executeMusicRaterSync,
     })
+    // A corpus synced before per-site scores existed (MUSIC-26) can't serve
+    // the per-site filters until the next 04:00 tick; backfill it now.
+    void (async () => {
+      for (const userId of await listUserIdsWithMusicRaterConnection(db)) {
+        if (!(await hasMusicRaterRowsMissingSiteScores(db, userId))) continue
+        console.log(`[music-rater] user ${userId}: backfilling per-site scores`)
+        await executeMusicRaterSync(userId).catch((err: unknown) =>
+          console.error(`[music-rater] site-score backfill failed for user ${userId}:`, err),
+        )
+      }
+    })()
   } catch (err: unknown) {
     console.error('Failed to initialize:', err)
   }

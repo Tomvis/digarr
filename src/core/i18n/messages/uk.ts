@@ -934,6 +934,13 @@ export const uk = {
     'Для пошуку релізів використовуються резервні постачальники.',
   'discoveryMode.reason.libraryRequired':
     'Спочатку синхронізуйте бібліотеку, щоб використовувати цей режим.',
+  'discoveryMode.field.siteEnabled': 'Використовувати цей сайт',
+  'discoveryMode.field.siteMinScore': 'Мінімальна оцінка',
+  'discoveryMode.field.siteIncludeUnscored': 'Включати вибір без оцінки (списки, рубрики)',
+  'discoveryMode.field.coverageTypes': 'Лише ці види публікацій',
+  'discoveryMode.field.siteMatch': 'Якщо альбом висвітлюють кілька сайтів',
+  'discoveryMode.option.any': 'Достатньо одного ввімкненого сайту',
+  'discoveryMode.option.all': 'Кожен увімкнений сайт має схвалити',
   'discoveryMode.field.feed': 'Стрічка',
   'discoveryMode.field.artist': 'Виконавець',
   'discoveryMode.field.adventurousness': 'Авантюризм',
@@ -949,13 +956,10 @@ export const uk = {
   'discoveryMode.field.releaseWindow': 'Вікно релізів',
   'discoveryMode.field.relationships': "Зв'язки",
   'discoveryMode.field.maxArtistsPerRun': 'Перевірених виконавців за запуск',
-  'discoveryMode.field.minScoreRatio': 'Мінімальна оцінка (0-1)',
   'discoveryMode.field.minReleaseYear': 'Випущено з',
   'discoveryMode.field.maxAlbumsPerRun': 'Альбомів вирішено за запуск',
   'discoveryMode.field.includeGenres': 'Лише ці жанри',
   'discoveryMode.field.excludeGenres': 'Виключити ці жанри',
-  'discoveryMode.field.coverageTypes': 'Лише ці типи висвітлення',
-  'discoveryMode.field.includeUnscored': 'Включити рекомендації без оцінки',
   'discoveryMode.field.helpArtistSeed': "Ім'я виконавця або MBID для запуску радіо",
   'discoveryMode.field.helpConnectedAccount':
     'Залиште порожнім, щоб використати підключений обліковий запис',
@@ -1190,6 +1194,9 @@ export const uk = {
   'settings.popularity': 'Популярність',
   'settings.popularityHelp':
     '0 = ігнорувати популярність, більше = надавати перевагу популярним. Потребує імпорту метаданих виконавців.',
+  'settings.criticScore': 'Оцінка критиків (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = вимк., більше = надавати перевагу виконавцям з високими оцінками ваших сайтів рецензій. Потрібне підключення music-rater.',
   'settings.autoApprove': 'Автосхвалення',
   'settings.autoApproveDescription':
     'Автоматично додавати рекомендації з високою оцінкою до цілей після кожного сканування. Працює лише якщо налаштовані цілі.',
@@ -1534,6 +1541,7 @@ export const uk = {
   'analytics.source.consensus': 'Консенсус',
   'analytics.source.genreOverlap': 'Перетин жанрів',
   'analytics.source.popularity': 'Популярність',
+  'analytics.source.artistCritic': 'Оцінка критиків',
   'errorBoundary.title': 'Сталася проблема',
   'errorBoundary.retry': 'Спробувати знову',
   'errorBoundary.home': 'Перейти на головну',

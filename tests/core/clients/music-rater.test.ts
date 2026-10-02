@@ -71,6 +71,7 @@ describe('createMusicRaterClient', () => {
       genreSlugs: ['post-rock'],
       sources: ['amg'],
       coverageTypes: ['review'],
+      siteScores: [],
     })
   })
 
@@ -128,5 +129,34 @@ describe('createMusicRaterClient', () => {
     const page = await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(0)
     expect(page.items[0]?.coverageTypes).toEqual(['tymhm'])
     expect(page.items[1]?.coverageTypes).toEqual([])
+  })
+})
+
+describe('music-rater site scores', () => {
+  it('maps per-site native scores', async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonOk({
+        items: [
+          {
+            id: 1,
+            artist_name_raw: 'A',
+            album_title_raw: 'B',
+            release_year: 2024,
+            site_scores: [
+              { source_site: 'amg', score: 4.5, score_scale: 5, coverage_types: ['review'] },
+              { source_site: 'tps', score: null, score_scale: 10, coverage_types: ['aoty'] },
+            ],
+          },
+        ],
+        total: 1,
+        limit: 500,
+        offset: 0,
+      }),
+    )
+    const page = await createMusicRaterClient('http://mr.example', 'mr_k').listAlbums(0)
+    expect(page.items[0]?.siteScores).toEqual([
+      { site: 'amg', score: 4.5, scale: 5, coverageTypes: ['review'] },
+      { site: 'tps', score: null, scale: 10, coverageTypes: ['aoty'] },
+    ])
   })
 })

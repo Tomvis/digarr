@@ -1,7 +1,7 @@
 import type { ListeningActivityEntry } from '@/core/plugins/types'
 import type { ServiceTestResult } from '@/core/types'
 import { errMsg } from '@/core/validation'
-import { createHttpClient } from './http'
+import { createHttpClient, HttpError } from './http'
 
 const BASE_URL = 'https://api.listenbrainz.org'
 
@@ -280,9 +280,17 @@ export function createListenBrainzClient(username: string, token: string) {
     targetUsername: string,
     range: ListenBrainzRange,
   ): Promise<TopArtist[]> {
-    const res = await http.get<LbTopArtistsResponse>(
-      `/1/stats/user/${targetUsername}/artists?range=${range}`,
-    )
+    let res: LbTopArtistsResponse
+    try {
+      res = await http.get<LbTopArtistsResponse>(
+        `/1/stats/user/${targetUsername}/artists?range=${range}`,
+      )
+    } catch (err: unknown) {
+      // 204 = no stats computed for this user/range yet (e.g. no listens this
+      // month). An empty result, not a failure.
+      if (err instanceof HttpError && err.status === 204) return []
+      throw err
+    }
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,

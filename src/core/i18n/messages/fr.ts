@@ -932,6 +932,14 @@ export const fr = {
     'Utilisation de fournisseurs de secours pour la découverte des sorties.',
   'discoveryMode.reason.libraryRequired':
     'Synchronisez d’abord une bibliothèque pour utiliser ce mode.',
+  'discoveryMode.field.siteEnabled': 'Utiliser ce site',
+  'discoveryMode.field.siteMinScore': 'Note minimale',
+  'discoveryMode.field.siteIncludeUnscored':
+    'Inclure les sélections non notées (listes, chroniques)',
+  'discoveryMode.field.coverageTypes': 'Uniquement ces types de couverture',
+  'discoveryMode.field.siteMatch': 'Quand plusieurs sites couvrent un album',
+  'discoveryMode.option.any': 'Un site activé suffit',
+  'discoveryMode.option.all': 'Chaque site activé doit valider',
   'discoveryMode.field.feed': 'Flux',
   'discoveryMode.field.artist': 'Artiste',
   'discoveryMode.field.adventurousness': 'Aventure',
@@ -947,13 +955,10 @@ export const fr = {
   'discoveryMode.field.releaseWindow': 'Fenêtre de sortie',
   'discoveryMode.field.relationships': 'Relations',
   'discoveryMode.field.maxArtistsPerRun': 'Artistes vérifiés par exécution',
-  'discoveryMode.field.minScoreRatio': 'Score minimum (0-1)',
   'discoveryMode.field.minReleaseYear': 'Sorti depuis',
   'discoveryMode.field.maxAlbumsPerRun': 'Albums résolus par exécution',
   'discoveryMode.field.includeGenres': 'Uniquement ces genres',
   'discoveryMode.field.excludeGenres': 'Jamais ces genres',
-  'discoveryMode.field.coverageTypes': 'Uniquement ces types de couverture',
-  'discoveryMode.field.includeUnscored': 'Inclure les recommandations non notées',
   'discoveryMode.field.helpArtistSeed': "Nom d'artiste ou MBID pour amorcer la radio",
   'discoveryMode.field.helpConnectedAccount':
     'Laissez ce champ vide pour utiliser votre compte connecté',
@@ -1190,6 +1195,9 @@ export const fr = {
   'settings.popularity': 'Popularité',
   'settings.popularityHelp':
     "0 = ignorer la popularité, plus élevé = préférer les artistes populaires. Nécessite l'importation des métadonnées d'artistes.",
+  'settings.criticScore': 'Note des critiques (music-rater)',
+  'settings.criticScoreHelp':
+    '0 = désactivé, plus élevé = préférer les artistes bien notés par vos sites de critiques. Nécessite music-rater connecté.',
   'settings.autoApprove': 'Approbation automatique',
   'settings.autoApproveDescription':
     'Ajouté automatiquement les recommandations les mieux notées à vos destinations après chaque scan. Ne fonctionne que si des destinations sont configurées.',
@@ -1539,6 +1547,7 @@ export const fr = {
   'analytics.source.consensus': 'Consensus global',
   'analytics.source.genreOverlap': 'Chevauchement de genres',
   'analytics.source.popularity': 'Popularite',
+  'analytics.source.artistCritic': 'Note des critiques',
   'errorBoundary.title': 'Un problème est survenu',
   'errorBoundary.retry': 'Réessayer',
   'errorBoundary.home': "Retour à l'accueil",

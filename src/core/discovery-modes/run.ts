@@ -11,7 +11,7 @@ import { errMsg } from '@/core/validation'
 type RunDiscoveryModeParams = {
   request: DiscoveryModeRequest
   registry: DiscoveryModeRegistry
-  orchestrator: Pick<PipelineOrchestrator, 'run'>
+  orchestrator: Pick<PipelineOrchestrator, 'runQueued'>
   subscriptionId?: number
   maxArtistsPerRun?: number
   pipelineDeps: Omit<
@@ -75,7 +75,7 @@ export async function runDiscoveryMode({
       maxArtistsPerRun ?? Number.POSITIVE_INFINITY,
     )
 
-    const result = await orchestrator.run({
+    const result = await orchestrator.runQueued({
       ...pipelineDeps,
       userId: preparedRequest.userId,
       subscriptionId,

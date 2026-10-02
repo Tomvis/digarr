@@ -83,4 +83,28 @@ describe('similar-users feed type', () => {
 
     expect(result.artists).toHaveLength(1)
   })
+  it('skips a similar user whose stats fail and widens an empty month to the year', async () => {
+    mockClient.getSimilarUsers.mockResolvedValueOnce([
+      { username: 'broken', similarity: 0.9 },
+      { username: 'quiet', similarity: 0.8 },
+    ])
+    mockClient.getTopArtistsForUser
+      .mockRejectedValueOnce(new Error('HTTP 500'))
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { name: 'Older Pick', mbid: 'o', playCount: 5, source: 'listenbrainz' },
+      ])
+
+    const adapter = createListenBrainzAdapter({ username: 'user', token: 'tok' })
+    const result = await adapter.fetch({ feedType: 'similar-users', maxUsers: 2 })
+
+    expect(mockClient.getTopArtistsForUser).toHaveBeenLastCalledWith('quiet', 'year')
+    expect(result.artists).toEqual([
+      expect.objectContaining({
+        name: 'Older Pick',
+        mbid: 'o',
+        source: 'listenbrainz:similar-users',
+      }),
+    ])
+  })
 })

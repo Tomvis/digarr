@@ -315,17 +315,33 @@ export async function filterOwnedIds(
   return rows.map((r) => r.id)
 }
 
+/**
+ * Artists rejected within the cooldown. Scoped to `userId` when given (plus
+ * legacy unowned rows): one user's rejection must not hide an artist from
+ * another user's recommendations.
+ */
 export async function getRejectedArtistMbids(
   db: Database,
   cooldownDays: number,
+  userId?: number,
 ): Promise<Set<string>> {
   const cutoff = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000)
+
+  const conditions = [
+    eq(recommendations.status, 'rejected'),
+    gte(recommendations.actedOnAt, cutoff),
+  ]
+  if (userId !== undefined) {
+    conditions.push(
+      sql`(${recommendations.userId} IS NULL OR ${recommendations.userId} = ${userId})`,
+    )
+  }
 
   const rows = await db
     .select({ mbid: artists.mbid })
     .from(recommendations)
     .innerJoin(artists, eq(recommendations.artistId, artists.id))
-    .where(and(eq(recommendations.status, 'rejected'), gte(recommendations.actedOnAt, cutoff)))
+    .where(and(...conditions))
 
   return new Set(rows.map((r) => r.mbid))
 }

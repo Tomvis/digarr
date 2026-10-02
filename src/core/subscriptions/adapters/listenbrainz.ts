@@ -161,13 +161,27 @@ async function fetchSimilarUsers(
   const artists: AdapterResult['artists'] = []
 
   for (const simUser of topUsers) {
-    const topArtists = await client.getTopArtistsForUser(simUser.username, 'month')
+    // One similar user without recent stats (or a transient error) must not
+    // sink the whole run; fall back to the year when the month is empty.
+    let topArtists: Awaited<ReturnType<typeof client.getTopArtistsForUser>> = []
+    try {
+      topArtists = await client.getTopArtistsForUser(simUser.username, 'month')
+      if (topArtists.length === 0) {
+        topArtists = await client.getTopArtistsForUser(simUser.username, 'year')
+      }
+    } catch (err: unknown) {
+      console.warn(
+        `[listenbrainz] similar user ${simUser.username} skipped: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      continue
+    }
     for (const artist of topArtists) {
       const key = artist.name.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
       artists.push({
         name: artist.name,
+        mbid: artist.mbid,
         similarityScore: simUser.similarity * 0.8,
         source: 'listenbrainz:similar-users',
       })

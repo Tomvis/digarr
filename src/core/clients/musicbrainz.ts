@@ -518,9 +518,42 @@ export function musicBrainzDeferralReason(nowMs: number = Date.now()): string | 
   return null
 }
 
+// Successful GET responses, shared by every client. Library syncs (each
+// source, each user, every 6h) and pipeline runs re-request the same artists
+// and release-group lists constantly; on a WAN IP shared with beets/Lidarr/MA
+// that repetition was the main source of 503s and breaker trips. Raw text is
+// stored so callers can never mutate a cached object. Bounded FIFO; off under
+// test so fetch mocks keep seeing every call.
+const RESPONSE_CACHE_TTL_MS = Number(process.env.MUSICBRAINZ_CACHE_TTL_HOURS ?? 24) * 3_600_000
+const RESPONSE_CACHE_MAX = 5000
+const responseCache = new Map<string, { at: number; text: string }>()
+const responseCacheEnabled = process.env.NODE_ENV !== 'test' && RESPONSE_CACHE_TTL_MS > 0
+
+function cachedResponse(path: string): string | undefined {
+  if (!responseCacheEnabled) return undefined
+  const hit = responseCache.get(path)
+  if (!hit) return undefined
+  if (Date.now() - hit.at > RESPONSE_CACHE_TTL_MS) {
+    responseCache.delete(path)
+    return undefined
+  }
+  return hit.text
+}
+
+function cacheResponse(path: string, text: string): void {
+  if (!responseCacheEnabled) return
+  responseCache.delete(path)
+  responseCache.set(path, { at: Date.now(), text })
+  if (responseCache.size > RESPONSE_CACHE_MAX) {
+    const oldest = responseCache.keys().next().value
+    if (oldest !== undefined) responseCache.delete(oldest)
+  }
+}
+
 // Test-only reset; all of the above is module state shared by every client, so
 // it would otherwise leak across tests (and across a rewound fake clock).
 export function resetMusicBrainzRateLimitForTests(): void {
+  responseCache.clear()
   cooldownUntil = 0
   breakerUntil = 0
   consecutiveRateLimited = 0
@@ -551,6 +584,8 @@ export function createMusicBrainzClient() {
   // stops one retrying request (e.g. during a 503 storm) from holding the single
   // concurrency slot and stalling all other MB traffic for its whole backoff.
   async function request<T>(path: string): Promise<T> {
+    const cached = cachedResponse(path)
+    if (cached !== undefined) return JSON.parse(cached) as T
     let lastErr: unknown
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
@@ -579,7 +614,10 @@ export function createMusicBrainzClient() {
 
         if (res.ok) {
           noteRequestSucceeded()
-          return (await res.json()) as T
+          const text = await res.text()
+          const parsed = JSON.parse(text) as T
+          cacheResponse(path, text)
+          return parsed
         }
 
         // Non-retryable HTTP status: surface immediately.
