@@ -65,6 +65,7 @@ const preferencesSchema = z
     scoringWeights: scoringWeightsSchema.optional(),
     rejectionCooldownDays: z.number().int().min(0).optional(),
     topArtistsLimit: z.number().int().min(1).optional(),
+    maxResolveCandidates: z.number().int().min(10).max(5000).optional(),
     librarySeedRatio: z.number().min(0).max(1).optional(),
     webhookUrl: z.string().optional(),
     lidarrPublicUrl: z.string().optional(),

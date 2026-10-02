@@ -46,6 +46,7 @@ const ALLOWED_PREF_KEYS = new Set([
   'scoringWeights',
   'rejectionCooldownDays',
   'topArtistsLimit',
+  'maxResolveCandidates',
   'librarySeedRatio',
   'scheduleCron',
   'webhookUrl',

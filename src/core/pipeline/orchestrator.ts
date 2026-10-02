@@ -29,6 +29,7 @@ import { enrichGenres } from './enrich'
 import { filter } from './filter'
 import { type GenreBackfillDb, hydrateArtistGenres, warmArtistGenres } from './genre-backfill'
 import { createArtistImageClients } from './image-clients'
+import { DEFAULT_MAX_RESOLVE_CANDIDATES, prefilterCandidates } from './prefilter'
 import { resolve } from './resolve'
 import { score } from './score'
 import type { StoreDb } from './store'
@@ -475,13 +476,39 @@ export class PipelineOrchestrator extends EventEmitter {
             : { status: 'error', error: aiFailure ?? 'No artists returned' }
       }
 
+      // Drop what the filter stage would discard anyway, then cap, before the
+      // MusicBrainz-bound resolve (see prefilter.ts).
+      const knownMbids = new Set<string>([
+        ...libraryMbids,
+        ...(await db.getExistingRecommendationMbids(deps.userId)),
+        ...rejectedMbids,
+        ...blockedMbids,
+      ])
+      const knownNames = new Set<string>()
+      for (const artist of tasteProfile.topArtists) {
+        knownNames.add(artist.name.trim().toLowerCase())
+        if (artist.mbid) knownMbids.add(artist.mbid)
+      }
+      const prefiltered = prefilterCandidates(discovered, {
+        excludeMbids: knownMbids,
+        excludeNames: knownNames,
+        // Explicit discovery-mode runs already bound their own candidate list.
+        limit:
+          deps.explicitCandidates != null
+            ? null
+            : (prefs.maxResolveCandidates ?? DEFAULT_MAX_RESOLVE_CANDIDATES),
+      })
+      console.log(
+        `[pipeline] user ${deps.userId}: ${discovered.length} discovered, ${prefiltered.droppedKnown} known artists skipped, ${prefiltered.droppedByCap} over the resolve cap, ${prefiltered.kept.length} to resolve`,
+      )
+
       ckpt()
       this.emit('progress', {
         stage: 'resolve',
-        message: t('pipeline.message.resolving', String(discovered.length)),
+        message: t('pipeline.message.resolving', String(prefiltered.kept.length)),
       })
       const rawResolved = await resolve(
-        discovered,
+        prefiltered.kept,
         mbClient,
         (progress) => {
           this.emit('progress', progress)
@@ -642,7 +669,10 @@ export class PipelineOrchestrator extends EventEmitter {
         await deps.jobRecorder.complete(jobId, {
           metadata: {
             trigger: deps.trigger ?? 'manual',
-            artistsDiscovered: scored.length,
+            artistsDiscovered: discovered.length,
+            artistsResolved: scored.length,
+            artistsSkippedKnown: prefiltered.droppedKnown,
+            artistsSkippedByCap: prefiltered.droppedByCap,
             artistsStored: filtered.length,
             artistsFiltered: scored.length - filtered.length,
             ...(tasteProfile.genreCoverage ? { genreCoverage: tasteProfile.genreCoverage } : {}),

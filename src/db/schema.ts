@@ -578,6 +578,8 @@ export type Preferences = {
   }
   rejectionCooldownDays: number
   topArtistsLimit: number
+  /** Distinct artists a scan resolves against MusicBrainz (prefilter cap). */
+  maxResolveCandidates?: number
   librarySeedRatio: number // 0-1: fraction of seed artists from Lidarr library
   webhookUrl?: string
   channels?: NotificationChannel[]
