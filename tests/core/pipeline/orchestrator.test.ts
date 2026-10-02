@@ -349,6 +349,34 @@ describe('PipelineOrchestrator', () => {
     )
   })
 
+  it("seeds from the user's own library, while shared Lidarr rows still count as owned", async () => {
+    const db = makeDb()
+    const row = (mbid: string, userId: number | null, genres: string[]) => ({
+      mbid,
+      name: mbid,
+      source: userId === null ? 'lidarr' : 'subsonic',
+      sourceArtistId: mbid,
+      genres,
+      matchMethod: 'mbid',
+      matchConfidence: 1,
+      userId,
+    })
+    db.getLibraryArtistsForUser = vi
+      .fn()
+      .mockResolvedValue([row('mine', 2, ['italo-disco']), row('shared', null, ['crust-punk'])])
+
+    await orchestrator.run({
+      db,
+      settings: defaultSettings,
+      providerRegistry,
+      librarySync: { syncForUser },
+      userId: 2,
+    })
+
+    const seeds = mockDiscover.mock.calls[0]?.[3] as Array<{ mbid: string }>
+    expect(seeds.map((s) => s.mbid)).toEqual(['mine'])
+  })
+
   it('emits progress events for each stage', async () => {
     const db = makeDb()
     const stages: string[] = []

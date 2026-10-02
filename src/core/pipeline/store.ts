@@ -95,6 +95,8 @@ export interface StoreDb {
       genres: string[] | null
       matchMethod: string | null
       matchConfidence: number | null
+      /** null = a shared/global source (Lidarr), else the owning user. */
+      userId?: number | null
     }>
   >
 

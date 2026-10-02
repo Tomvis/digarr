@@ -332,11 +332,17 @@ export class PipelineOrchestrator extends EventEmitter {
       const libraryArtists = await db.getLibraryArtistsForUser(userIdForSync, {
         onlyReconciled: true,
       })
+      // Every visible row (own + shared Lidarr) counts as "owned" for dedup,
+      // but taste -- seeds and the genre reference -- comes from the user's
+      // own library when they have one: the shared Lidarr holds every
+      // household member's artists.
       const libraryMbids = new Set(
         libraryArtists.map((a) => a.mbid).filter((m): m is string => m !== null),
       )
-      const libraryGenres = [...new Set(libraryArtists.flatMap((a) => a.genres ?? []))]
-      const librarySeeds = libraryArtists
+      const ownArtists = libraryArtists.filter((a) => a.userId === userIdForSync)
+      const tasteArtists = ownArtists.length > 0 ? ownArtists : libraryArtists
+      const libraryGenres = [...new Set(tasteArtists.flatMap((a) => a.genres ?? []))]
+      const librarySeeds = tasteArtists
         .filter((a): a is typeof a & { mbid: string } => a.mbid !== null)
         .map((a) => ({ mbid: a.mbid, name: a.name }))
 

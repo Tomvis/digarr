@@ -368,6 +368,7 @@ const storeDb: StoreDb = {
         genres: libraryArtists.genres,
         matchMethod: libraryArtists.matchMethod,
         matchConfidence: libraryArtists.matchConfidence,
+        userId: libraryArtists.userId,
       })
       .from(libraryArtists)
       .where(and(...conds.filter((c): c is NonNullable<typeof c> => c !== undefined)))
