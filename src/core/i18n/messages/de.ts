@@ -14,6 +14,8 @@ export const de = {
   'app.themeModeSystem': 'Vom System',
   'app.themeGroupEditor': 'Herausgeber',
   'app.themeGroupStreaming': 'Streaming-Dienste',
+  'app.themeFollowHome': 'Home-Theme folgen',
+  'app.themeGroupHome': 'Zuhause',
   'app.userMenu.logout': 'Abmelden',
   'app.userMenu.settings': 'Einstellungen',
   'auth.alreadyHaveAccount': 'Schon ein Konto? Anmelden',

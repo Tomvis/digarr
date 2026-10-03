@@ -14,6 +14,8 @@ export const nl = {
   'app.themeModeSystem': 'Systeem',
   'app.themeGroupEditor': 'Redacteur',
   'app.themeGroupStreaming': 'Streamen',
+  'app.themeFollowHome': 'Thuisthema volgen',
+  'app.themeGroupHome': 'Thuis',
   'app.userMenu.logout': 'Afmelden',
   'app.userMenu.settings': 'Instellingen',
   'auth.alreadyHaveAccount': 'Heeft u al een account? Log in',

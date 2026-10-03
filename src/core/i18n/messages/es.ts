@@ -14,6 +14,8 @@ export const es = {
   'app.themeModeSystem': 'Sistema',
   'app.themeGroupEditor': 'Redactor',
   'app.themeGroupStreaming': 'Transmisión',
+  'app.themeFollowHome': 'Seguir el tema de casa',
+  'app.themeGroupHome': 'Casa',
   'app.userMenu.logout': 'Cerrar sesión',
   'app.userMenu.settings': 'Ajustes',
   'auth.alreadyHaveAccount': '¿Ya tienes una cuenta? Iniciar sesión',

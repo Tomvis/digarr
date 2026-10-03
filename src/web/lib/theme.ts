@@ -1,7 +1,12 @@
+import { HOME_COLOR_PREFIX } from '@/core/home-theme'
+import { getHomeCatalog, homeVars, resolveHomeTheme } from './home-catalog'
+
 export type Mode = 'dark' | 'light' | 'system'
 
-export type ColorTheme =
-  | 'home'
+// HW-64 (fork): home catalog themes are `home:<id>` (all of theme.leratom.cloud's catalog).
+export type HomeColorTheme = `home:${string}`
+
+export type DigarrColorTheme =
   | 'digarr'
   | 'tokyonight'
   | 'catppuccin'
@@ -19,9 +24,9 @@ export type ColorTheme =
   | 'applarr'
   | 'tidarr'
 
-export const COLOR_THEMES: { id: ColorTheme; name: string; group?: string }[] = [
-  // Home theme (HW-48, fork default)
-  { id: 'home', name: 'Home', group: 'Home' },
+export type ColorTheme = DigarrColorTheme | HomeColorTheme
+
+export const COLOR_THEMES: { id: DigarrColorTheme; name: string; group?: string }[] = [
   // Project signature
   { id: 'digarr', name: 'Digarr', group: 'Project' },
   // Editor themes
@@ -57,10 +62,35 @@ export function setStoredMode(mode: Mode): void {
   localStorage.setItem(MODE_KEY, mode)
 }
 
+export function isHomeColor(theme: string): theme is HomeColorTheme {
+  return theme.startsWith(HOME_COLOR_PREFIX)
+}
+
+/** Every home catalog theme as a picker entry. */
+export function homeColorThemes(): { id: HomeColorTheme; name: string; swatch: HomeSwatch }[] {
+  return getHomeCatalog().themes.map((t) => ({
+    id: `home:${t.id}` as HomeColorTheme,
+    name: t.name,
+    swatch: { light: t.modes.light.primary ?? '', dark: t.modes.dark.primary ?? '' },
+  }))
+}
+export type HomeSwatch = { light: string; dark: string }
+
+/** Map any stored/claimed color to one that exists (unknown home ids -> catalog default). */
+export function normalizeColorTheme(value: string | null | undefined): ColorTheme {
+  if (!value || value === 'home') return `home:${resolveHomeTheme(undefined).id}`
+  if (isHomeColor(value))
+    return `home:${resolveHomeTheme(value.slice(HOME_COLOR_PREFIX.length)).id}`
+  if (COLOR_THEMES.some((t) => t.id === value)) return value as DigarrColorTheme
+  return `home:${resolveHomeTheme(undefined).id}`
+}
+
 export function getStoredColorTheme(): ColorTheme {
-  const stored = localStorage.getItem(COLOR_KEY)
-  if (COLOR_THEMES.some((t) => t.id === stored)) return stored as ColorTheme
-  return 'home'
+  try {
+    return normalizeColorTheme(localStorage.getItem(COLOR_KEY))
+  } catch {
+    return normalizeColorTheme(null)
+  }
 }
 
 export function setStoredColorTheme(theme: ColorTheme): void {
@@ -74,7 +104,37 @@ export function resolveMode(mode: Mode): 'dark' | 'light' {
   return mode
 }
 
+// Pre-paint cache for public/theme-boot.js: the selected home theme's vars for both modes.
+const HOME_VARS_KEY = 'digarr-home-vars'
+const VAR_NAMES = Object.keys(homeVars({}))
+
 export function applyTheme(colorTheme: ColorTheme, mode: Mode): void {
   const resolved = resolveMode(mode)
-  document.documentElement.setAttribute('data-theme', `${colorTheme}-${resolved}`)
+  const root = document.documentElement
+  if (isHomeColor(colorTheme)) {
+    const theme = resolveHomeTheme(colorTheme.slice(HOME_COLOR_PREFIX.length))
+    const vars = homeVars(theme.modes[resolved])
+    for (const [name, value] of Object.entries(vars)) root.style.setProperty(name, value)
+    root.setAttribute('data-theme', `home-${resolved}`)
+    root.setAttribute('data-home-theme', theme.id)
+    setThemeColorMeta(vars['--color-bg'])
+    try {
+      localStorage.setItem(
+        HOME_VARS_KEY,
+        JSON.stringify({ light: homeVars(theme.modes.light), dark: homeVars(theme.modes.dark) }),
+      )
+    } catch {
+      // first paint falls back to the slate CSS in home-theme.css
+    }
+    return
+  }
+  for (const name of VAR_NAMES) root.style.removeProperty(name)
+  root.removeAttribute('data-home-theme')
+  root.setAttribute('data-theme', `${colorTheme}-${resolved}`)
+  setThemeColorMeta(getComputedStyle(root).getPropertyValue('--color-bg').trim())
+}
+
+function setThemeColorMeta(color: string | undefined): void {
+  if (!color) return
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
 }

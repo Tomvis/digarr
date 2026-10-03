@@ -5,6 +5,11 @@ import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import { secureHeaders } from 'hono/secure-headers'
 import { envConfig } from '@/config/env'
+import {
+  loadHomeThemeState,
+  recordHomeThemeClaim,
+  saveHomeThemeState,
+} from '@/db/queries/home-theme'
 import { getUserCredentialsById, linkOidcIdentity } from '@/db/queries/users'
 import { VERSION } from '@/version'
 import { openapiDoc } from './helpers/openapi-doc'
@@ -31,6 +36,7 @@ import { discoveryModeRoutes } from './routes/discovery-modes'
 import { exportRoutes } from './routes/exports'
 import { genreRoutes } from './routes/genres'
 import { healthRoutes } from './routes/health'
+import { homeThemeRoutes } from './routes/home-theme'
 import { jobRoutes } from './routes/jobs'
 import { libraryRoutes } from './routes/library'
 import { lidarrRoutes } from './routes/lidarr'
@@ -285,6 +291,8 @@ export function createApp(deps: AppDependencies) {
       getUserCredentialsById: (id) => getUserCredentialsById(deps.db, id),
       createUser: deps.createUser,
       linkOidcIdentity: (params) => linkOidcIdentity(deps.db, params),
+      // HW-64 (fork): per-user home theme claim
+      recordHomeThemeClaim: (id, claim) => recordHomeThemeClaim(deps.db, id, claim).then(() => {}),
     }),
   )
   // Rate limit auth endpoints: 10 attempts per minute for login/register
@@ -312,6 +320,13 @@ export function createApp(deps: AppDependencies) {
   )
   app.route('/', authRoutes(deps))
   app.route('/', apiKeyRoutes(deps))
+  app.route(
+    '/',
+    homeThemeRoutes({
+      loadHomeThemeState: (id) => loadHomeThemeState(deps.db, id),
+      saveHomeThemeState: (id, state) => saveHomeThemeState(deps.db, id, state),
+    }),
+  )
   app.route('/', oauthRoutes(deps))
   app.route('/', healthRoutes({ db: deps.db }))
   app.route('/', setupRoutes(deps))

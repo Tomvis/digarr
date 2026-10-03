@@ -103,6 +103,8 @@ the complete route inventory.
 | POST | `/api/v1/auth/change-password` | Yes | Change password. Invalidates all sessions. Rate limited: 5/min |
 | GET | `/api/v1/auth/me/preferences` | Yes | Get merged user preferences |
 | PATCH | `/api/v1/auth/me/preferences` | Yes | Update user preferences (partial merge). Session auth only. |
+| GET | `/api/v1/auth/me/theme` | Yes | Fork (HW-64): home theme claim, in-app choice and effective theme |
+| PUT | `/api/v1/auth/me/theme` | Yes | Fork (HW-64): set the in-app theme (`{color, mode}`) or `{follow: true}`. Session auth only. |
 
 **PATCH /api/v1/auth/me/locale** body:
 ```json

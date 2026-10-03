@@ -14,6 +14,8 @@ export const ru = {
   'app.themeModeSystem': 'Системный',
   'app.themeGroupEditor': 'Редактор',
   'app.themeGroupStreaming': 'Стриминг',
+  'app.themeFollowHome': 'Следовать домашней теме',
+  'app.themeGroupHome': 'Дом',
   'app.userMenu.logout': 'Выйти',
   'app.userMenu.settings': 'Настройки',
   'auth.alreadyHaveAccount': 'У вас уже есть аккаунт? Войти',

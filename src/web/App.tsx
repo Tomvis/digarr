@@ -5,6 +5,7 @@ import {
   Compass,
   Disc3,
   HeartPulse,
+  House,
   LayoutDashboard,
   ListMusic,
   LogOut,
@@ -62,10 +63,11 @@ import {
   type ColorTheme,
   getStoredColorTheme,
   getStoredMode,
+  homeColorThemes,
   type Mode,
-  setStoredColorTheme,
-  setStoredMode,
+  resolveMode,
 } from './lib/theme'
+import { useHomeTheme } from './lib/use-home-theme'
 // Eager: dashboard is the default landing surface and setup gates the entire app
 import { Dashboard } from './pages/dashboard'
 import { SetupWizard } from './pages/setup'
@@ -206,11 +208,18 @@ function ThemePicker({
   colorTheme,
   onModeChange,
   onColorThemeChange,
+  following,
+  homeThemeName,
+  onFollowHome,
 }: {
   mode: Mode
   colorTheme: ColorTheme
   onModeChange: (m: Mode) => void
   onColorThemeChange: (t: ColorTheme) => void
+  // HW-64 (fork): Follow home theme
+  following: boolean | null
+  homeThemeName: string
+  onFollowHome: () => void
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -236,7 +245,7 @@ function ThemePicker({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-lg shadow-lg z-50 py-1"
+          className="absolute right-0 top-full mt-1 w-56 bg-surface border border-border rounded-lg shadow-lg z-50 py-1"
         >
           <div className="px-3 py-1.5 text-micro uppercase tracking-wider text-muted">
             {t('app.themeMode')}
@@ -263,18 +272,38 @@ function ThemePicker({
             )
           })}
           <div className="border-t border-border my-1" />
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={following === true}
+            onClick={onFollowHome}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-bg transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px] ${following ? 'text-accent' : 'text-text'}`}
+          >
+            <House size={14} />
+            <span className="truncate">
+              {t('app.themeFollowHome')}
+              {following ? ` · ${homeThemeName}` : ''}
+            </span>
+          </button>
+          <div className="border-t border-border my-1" />
           <div className="max-h-[320px] overflow-y-auto">
-            {/* Home theme (HW-48): own group, no header (its name says it all) */}
-            {COLOR_THEMES.filter((t) => t.group === 'Home').map((t) => (
+            {/* Home themes (HW-64, fork): the whole home catalog */}
+            <div className="px-3 py-1.5 text-micro uppercase tracking-wider text-muted sticky top-0 bg-surface">
+              {t('app.themeGroupHome')}
+            </div>
+            {homeColorThemes().map((h) => (
               <button
-                key={t.id}
+                key={h.id}
                 type="button"
                 role="menuitem"
-                onClick={() => onColorThemeChange(t.id)}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-bg transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px] ${colorTheme === t.id ? 'text-accent' : 'text-text'}`}
+                onClick={() => onColorThemeChange(h.id)}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-bg transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px] ${!following && colorTheme === h.id ? 'text-accent' : 'text-text'}`}
               >
-                <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
-                {t.name}
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: h.swatch[resolveMode(mode)] }}
+                />
+                {h.name}
               </button>
             ))}
             {(['Editor', 'Streaming'] as const).map((group) => (
@@ -363,8 +392,7 @@ function UserMenu({ username }: { username: string }) {
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [mode, setModeState] = useState<Mode>(getStoredMode)
-  const [colorTheme, setColorThemeState] = useState<ColorTheme>(getStoredColorTheme)
+  const homeTheme = useHomeTheme() // HW-64 (fork): per-user theme, server-side
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const preview = usePreview()
   const audition = useAuditionQueue(preview)
@@ -426,18 +454,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
     localeMutation.mutate(pendingLocale)
   }, [currentUser, localeMutation, pendingLocale])
 
-  function handleModeChange(m: Mode) {
-    setModeState(m)
-    setStoredMode(m)
-    applyTheme(colorTheme, m)
-  }
-
-  function handleColorThemeChange(t: ColorTheme) {
-    setColorThemeState(t)
-    setStoredColorTheme(t)
-    applyTheme(t, mode)
-  }
-
   function handleLocaleChange(nextLocale: SupportedLocale) {
     latestRequestedLocaleRef.current = nextLocale
     setLocale(nextLocale)
@@ -446,15 +462,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       localeMutation.mutate(nextLocale)
     }
   }
-
-  // Listen for system preference changes when in system mode
-  useEffect(() => {
-    if (mode !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: light)')
-    const handler = () => applyTheme(colorTheme, 'system')
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [mode, colorTheme])
 
   // The Discover and Albums dropdown entries share the /discover pathname and
   // differ only by ?kind=album, so compute their active state off the search
@@ -578,10 +585,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <LanguageSwitcher value={locale} onChange={handleLocaleChange} />
               </div>
               <ThemePicker
-                mode={mode}
-                colorTheme={colorTheme}
-                onModeChange={handleModeChange}
-                onColorThemeChange={handleColorThemeChange}
+                mode={homeTheme.mode}
+                colorTheme={homeTheme.colorTheme}
+                onModeChange={homeTheme.setMode}
+                onColorThemeChange={homeTheme.setColorTheme}
+                following={homeTheme.following}
+                homeThemeName={homeTheme.homeThemeName}
+                onFollowHome={homeTheme.followHome}
               />
               {currentUser && <UserMenu username={currentUser.username} />}
               <button

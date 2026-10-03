@@ -92,6 +92,8 @@ export interface OidcUserClaims {
   emailVerified?: boolean
   preferredUsername?: string
   name?: string
+  /** HW-64 (fork): raw `home_theme` claim, validated by core/home-theme. */
+  homeTheme?: unknown
 }
 
 export interface CallbackResult {
@@ -242,6 +244,7 @@ export class OidcService {
     let idClaims: ReturnType<
       Awaited<ReturnType<typeof oidcClient.authorizationCodeGrant>>['claims']
     >
+    let homeTheme: unknown
     try {
       const config = await this.getDiscovery()
       const tokens = await oidcClient.authorizationCodeGrant(config, callbackUrl, {
@@ -251,6 +254,7 @@ export class OidcService {
       })
       idClaims = tokens.claims()
       if (!idClaims) throw new Error('No ID token claims in OIDC response')
+      homeTheme = await this.fetchHomeThemeClaim(config, tokens.access_token, idClaims)
     } catch (error) {
       throw new OidcCallbackError(pending.purpose, errMsg(error), error)
     }
@@ -263,7 +267,27 @@ export class OidcService {
         emailVerified: idClaims.email_verified as boolean | undefined,
         preferredUsername: idClaims.preferred_username as string | undefined,
         name: idClaims.name as string | undefined,
+        homeTheme,
       },
+    }
+  }
+
+  /**
+   * HW-64 (fork): the `home_theme` claim from the ID token, else from userinfo. Only asked
+   * for when the configured scopes include `home_theme`; a failure never fails the login.
+   */
+  private async fetchHomeThemeClaim(
+    config: Configuration,
+    accessToken: string,
+    idClaims: { sub: string; home_theme?: unknown },
+  ): Promise<unknown> {
+    if (!this.config.scopes.split(/\s+/).includes('home_theme')) return undefined
+    if (idClaims.home_theme !== undefined) return idClaims.home_theme
+    try {
+      const info = await oidcClient.fetchUserInfo(config, accessToken, idClaims.sub)
+      return info.home_theme
+    } catch {
+      return undefined
     }
   }
 

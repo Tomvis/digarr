@@ -43,6 +43,8 @@ type OidcRouteDeps = {
     options?: UserBootstrapOptions,
   ) => Promise<{ id: number; username: string }>
   linkOidcIdentity: (params: OidcLinkParams) => Promise<void>
+  /** HW-64 (fork): store the home_theme claim for this user. */
+  recordHomeThemeClaim?: (userId: number, claim: unknown) => Promise<void>
 }
 
 function buildRedirectUri(): string | null {
@@ -235,6 +237,12 @@ export function oidcRoutes(deps: OidcRouteDeps) {
           },
           { bootstrap: 'allow-existing' },
         )
+      }
+
+      if (deps.recordHomeThemeClaim) {
+        await deps.recordHomeThemeClaim(user.id, result.claims.homeTheme).catch((err: unknown) => {
+          console.warn('[oidc] home theme claim not stored', err)
+        })
       }
 
       const oldCookie = getCookie(c, SESSION_COOKIE_NAME)

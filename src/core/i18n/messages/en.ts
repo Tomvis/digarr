@@ -14,6 +14,8 @@ export const en = {
   'app.themeModeSystem': 'System',
   'app.themeGroupEditor': 'Editor',
   'app.themeGroupStreaming': 'Streaming',
+  'app.themeFollowHome': 'Follow home theme',
+  'app.themeGroupHome': 'Home',
   'app.userMenu.logout': 'Log out',
   'app.userMenu.settings': 'Settings',
   'auth.alreadyHaveAccount': 'Already have an account? Sign in',

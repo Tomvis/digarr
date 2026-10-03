@@ -14,6 +14,8 @@ export const ja = {
   'app.themeModeSystem': 'システム',
   'app.themeGroupEditor': 'エディター',
   'app.themeGroupStreaming': 'ストリーミング',
+  'app.themeFollowHome': 'ホームのテーマに従う',
+  'app.themeGroupHome': 'ホーム',
   'app.userMenu.logout': 'ログアウト',
   'app.userMenu.settings': '設定',
   'auth.alreadyHaveAccount': 'すでにアカウントをお持ちですか?サインイン',

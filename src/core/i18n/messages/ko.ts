@@ -14,6 +14,8 @@ export const ko = {
   'app.themeModeSystem': '시스템',
   'app.themeGroupEditor': '에디터',
   'app.themeGroupStreaming': '스트리밍',
+  'app.themeFollowHome': '홈 테마 따르기',
+  'app.themeGroupHome': '홈',
   'app.userMenu.logout': '로그아웃',
   'app.userMenu.settings': '설정',
   'auth.alreadyHaveAccount': '이미 계정이 있나요? 로그인',

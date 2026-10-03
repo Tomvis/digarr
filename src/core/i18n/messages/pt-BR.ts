@@ -14,6 +14,8 @@ export const ptBR = {
   'app.themeModeSystem': 'Sistema',
   'app.themeGroupEditor': 'Ferramentas do editor',
   'app.themeGroupStreaming': 'Transmissão',
+  'app.themeFollowHome': 'Seguir o tema da casa',
+  'app.themeGroupHome': 'Casa',
   'app.userMenu.logout': 'Sair',
   'app.userMenu.settings': 'Configurações',
   'auth.alreadyHaveAccount': 'Já tem uma conta? Faça login',

@@ -14,6 +14,8 @@ export const ro = {
   'app.themeModeSystem': 'Sistem',
   'app.themeGroupEditor': 'Editare',
   'app.themeGroupStreaming': 'Servicii de streaming',
+  'app.themeFollowHome': 'Urmează tema casei',
+  'app.themeGroupHome': 'Acasă',
   'app.userMenu.logout': 'Deconectare',
   'app.userMenu.settings': 'Setări',
   'auth.alreadyHaveAccount': 'Aveți deja un cont? Conectați-vă',

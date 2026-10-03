@@ -1,5 +1,6 @@
-/* Home theme (HW-48, Tomvis fork only): tokens from homelab-stacks theme/dist/tokens.resolved.json.
-   Slate = structure, mist/cloud = surface, cyan = "on right now" only (so no token here maps to it).
+/* Home themes (HW-48/HW-64, Tomvis fork only). Every home catalog theme renders as
+   data-theme="home-<mode>"; its colors are set at runtime from all.json (src/web/lib/theme.ts).
+   The slate values below are only the no-JS/first-paint fallback.
    Kept in its own file so upstream merges of index.css don't conflict. */
 @font-face {
   font-family: "Rubik";

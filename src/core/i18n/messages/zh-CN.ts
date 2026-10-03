@@ -14,6 +14,8 @@ export const zhCN = {
   'app.themeModeSystem': '系统',
   'app.themeGroupEditor': '编辑器',
   'app.themeGroupStreaming': '流媒体',
+  'app.themeFollowHome': '跟随家庭主题',
+  'app.themeGroupHome': '家庭',
   'app.userMenu.logout': '退出登录',
   'app.userMenu.settings': '设置',
   'auth.alreadyHaveAccount': '已经有帐户？登录',

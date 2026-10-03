@@ -14,6 +14,8 @@ export const fr = {
   'app.themeModeSystem': 'Système',
   'app.themeGroupEditor': 'Éditeur',
   'app.themeGroupStreaming': 'Diffusion en continu',
+  'app.themeFollowHome': 'Suivre le thème de la maison',
+  'app.themeGroupHome': 'Maison',
   'app.userMenu.logout': 'Se déconnecter',
   'app.userMenu.settings': 'Paramètres',
   'auth.alreadyHaveAccount': 'Vous avez déjà un compte ? Se connecter',

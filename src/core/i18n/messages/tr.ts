@@ -14,6 +14,8 @@ export const tr = {
   'app.themeModeSystem': 'Sistem',
   'app.themeGroupEditor': 'Düzenleyici',
   'app.themeGroupStreaming': 'Yayın',
+  'app.themeFollowHome': 'Ev temasını izle',
+  'app.themeGroupHome': 'Ev',
   'app.userMenu.logout': 'Çıkış yap',
   'app.userMenu.settings': 'Ayarlar',
   'auth.alreadyHaveAccount': 'Zaten bir hesabınız var mı? Oturum aç',

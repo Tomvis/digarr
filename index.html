@@ -12,17 +12,7 @@
     <title>Digarr</title>
   </head>
   <body>
-    <script>
-      // Apply theme before React mounts to prevent FOUC
-      (() => {
-        var m = localStorage.getItem('digarr-theme') || 'system';
-        var c = localStorage.getItem('digarr-color-theme') || 'home';
-        var resolved = m === 'system'
-          ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
-          : m;
-        document.documentElement.setAttribute('data-theme', `${c}-${resolved}`);
-      })();
-    </script>
+    <script src="/theme-boot.js"></script>
     <div id="root"></div>
     <script type="module" src="/src/web/main.tsx"></script>
   </body>

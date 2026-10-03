@@ -14,6 +14,8 @@ export const uk = {
   'app.themeModeSystem': 'Системний',
   'app.themeGroupEditor': 'Редактор',
   'app.themeGroupStreaming': 'Стримінг',
+  'app.themeFollowHome': 'Стежити за домашньою темою',
+  'app.themeGroupHome': 'Дім',
   'app.userMenu.logout': 'Вийти',
   'app.userMenu.settings': 'Налаштування',
   'auth.alreadyHaveAccount': 'Вже маєте акаунт? Увійдіть',

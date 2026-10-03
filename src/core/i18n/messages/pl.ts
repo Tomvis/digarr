@@ -14,6 +14,8 @@ export const pl = {
   'app.themeModeSystem': 'Systemowy',
   'app.themeGroupEditor': 'Edytor',
   'app.themeGroupStreaming': 'Transmisja strumieniowa',
+  'app.themeFollowHome': 'Użyj motywu domowego',
+  'app.themeGroupHome': 'Dom',
   'app.userMenu.logout': 'Wyloguj się',
   'app.userMenu.settings': 'Ustawienia',
   'auth.alreadyHaveAccount': 'Masz już konto? Zaloguj się',
