@@ -245,7 +245,7 @@ function ThemePicker({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 w-56 bg-surface border border-border rounded-lg shadow-lg z-50 py-1"
+          className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-lg shadow-lg z-50 py-1"
         >
           <div className="px-3 py-1.5 text-micro uppercase tracking-wider text-muted">
             {t('app.themeMode')}
@@ -279,10 +279,10 @@ function ThemePicker({
             onClick={onFollowHome}
             className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-bg transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px] ${following ? 'text-accent' : 'text-text'}`}
           >
-            <House size={14} />
-            <span className="truncate">
-              {t('app.themeFollowHome')}
-              {following ? ` · ${homeThemeName}` : ''}
+            <House size={14} className="shrink-0" />
+            <span className="flex min-w-0 flex-col items-start text-left">
+              <span>{t('app.themeFollowHome')}</span>
+              <span className="w-full truncate text-micro-lg text-muted">{homeThemeName}</span>
             </span>
           </button>
           <div className="border-t border-border my-1" />
