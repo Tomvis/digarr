@@ -4,6 +4,7 @@ import type { GenreInfo } from '../../core/genre/types'
 import { getMessages } from '../../core/i18n/messages'
 import type { MessageKey } from '../../core/i18n/messages/types'
 import type { NotificationChannel } from '../../core/notifications/types'
+import type { PlaylistGenerationSummary } from '../../core/playlists/types'
 import { getRequestLocale } from './locale-storage'
 
 export type LibraryArtist = {
@@ -406,10 +407,13 @@ export type RecentTrackEntry = {
   mbid?: string
 }
 
+export type ListeningHistoryStatus = 'not_configured' | 'empty' | 'error' | 'ok'
+
 export const getTopArtists = (range: ListeningTopRange, offset = 0, limit = 5) => {
   const qs = new URLSearchParams({ range, offset: String(offset), limit: String(limit) })
   return fetchApi<{
     tracks: TopArtistEntry[]
+    status: ListeningHistoryStatus
     total: number
     offset: number
     limit: number
@@ -421,6 +425,7 @@ export const getRecentTracks = (limit = 5) => {
   const qs = new URLSearchParams({ limit: String(limit) })
   return fetchApi<{
     tracks: RecentTrackEntry[]
+    status: ListeningHistoryStatus
     hasSource: boolean
     source: 'lastfm' | 'listenbrainz' | 'jellyfin' | 'emby' | 'plex' | null
   }>(`/listening/recent-tracks?${qs}`)
@@ -1097,8 +1102,20 @@ export type PlaylistInsert = {
 
 export const getPlaylists = () => fetchApi<PlaylistRow[]>('/playlists')
 
+export type PlaylistGeneration = {
+  jobId: number
+  status: string
+  startedAt: string
+  completedAt: string | null
+  resolution: PlaylistGenerationSummary | null
+}
+
 export const getPlaylist = (id: number) =>
-  fetchApi<{ playlist: PlaylistRow; tracks: PlaylistTrackRow[] }>(`/playlists/${id}`)
+  fetchApi<{
+    playlist: PlaylistRow
+    tracks: PlaylistTrackRow[]
+    generation: PlaylistGeneration | null
+  }>(`/playlists/${id}`)
 
 export const createPlaylistApi = (data: PlaylistInsert) =>
   fetchApi<{ id: number }>('/playlists', {

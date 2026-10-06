@@ -15,7 +15,7 @@
 **Self-hosted music discovery for your library.** Find artists and albums from your listening history, explore a mood, and review recommendations before adding them to Lidarr or sending them to a playlist. Bring your own AI provider, including a local model. Lidarr is optional.
 
 > [!NOTE]
-> **v1.18.0 is out.** This release adds Plex listening history and Audition playlists, and fixes slskd imports, playlist exports, and notification credential rotation. See the [changelog](CHANGELOG.md) for release details.
+> **v1.19.0 is out.** This release adds optional genre priorities and playlist generation outcomes, improves discovery taste profiles and seed selection, and explains unavailable previews. See the [changelog](CHANGELOG.md) for release details.
 
 ![Dashboard](docs/screenshots/dashboard-dark.png)
 
@@ -30,7 +30,13 @@
 - **Choose where approvals go.** Use Lidarr, queue releases through slskd, or keep a discovery-only setup. Auto-approval is available if you want high-scoring recommendations sent to targets without manual review.
 - **Share an instance.** Each user has their own queue, connections, preferences, and assigned targets. Sign in with a local account or OIDC/SSO. The interface and AI discovery output support 15 languages, with light and dark themes.
 
-Digarr manages recommendations and calls your connected services. It does not include a music downloader or a full music player. AI suggestions and MusicBrainz matches can be wrong; review the artist and release before approving.
+Digarr manages recommendations and calls your connected services. It does not include a music downloader or a full music player. AI suggestions and MusicBrainz matches can be wrong; review the artist and release before approving. AI explanations may compare a recommendation with artists in your listening profile. The name-confusion check is a limited heuristic and cannot verify those claims.
+
+AI profiles retain genre context for individual seed artists and separate raw source values from relative taste weights. Spotify uses personal top-artist order, and starred Subsonic artists contribute equal membership evidence. Each source's weights are normalized separately; overlapping artists keep their strongest contribution. Guidance supports several distinct interests without requiring a dominant genre; incomplete history cannot establish that an artist is unheard. These weights are estimates, and recommendation fit still needs listening review. Similarity scans rotate artists with exactly equal positive taste weights before applying the seed cap, so alphabetical order does not permanently exclude an equal interest. Stronger evidence stays ahead, and unavailable library seed slots are filled from the listening profile without exceeding the cap.
+
+Name-only discovery accepts a MusicBrainz canonical name or catalog alias after Unicode, case, and whitespace normalization. Genre overlap distinguishes matching names; unrelated names and tied matches remain unresolved. This does not validate AI prose or repair older recommendations.
+
+Dashboard listening history asks you to connect an account only when no eligible source is configured. An empty period suggests trying another period; a failed request shows a retry action. Recently Played also distinguishes empty history from a failure. A failed refresh keeps the last loaded entries visible with a failure notice.
 
 ### Connections at a glance
 
@@ -113,7 +119,7 @@ docker compose up -d
 
 Alternatively, fill in the service env vars in `.env` and setup completes automatically on first boot.
 
-For zero-touch boot, set `DIGARR_INITIAL_USERNAME`, `DIGARR_INITIAL_PASSWORD`, `AI_PROVIDER`, and `AI_MODEL`. Listening sources stay optional, but connect at least one before running discovery. Lidarr stays optional: omit `LIDARR_URL` / `LIDARR_API_KEY` to run in discovery-only mode. In discovery-only mode the genre-overlap part of scoring uses native genres from connected sources, synchronized library metadata, and a bounded background MusicBrainz cache warmer with optional Last.fm fallback. Cold caches improve on later scans without blocking the current scan; Dashboard and Settings show profile coverage. Emby can be added during the setup wizard or later in Settings.
+For zero-touch boot, set `DIGARR_INITIAL_USERNAME`, `DIGARR_INITIAL_PASSWORD`, `AI_PROVIDER`, and `AI_MODEL`. Listening sources stay optional, but connect at least one before running discovery. Lidarr stays optional: omit `LIDARR_URL` / `LIDARR_API_KEY` to run in discovery-only mode. In discovery-only mode the genre-overlap part of scoring uses native genres from connected sources, synchronized library metadata, and a bounded background MusicBrainz cache warmer with optional Last.fm fallback. Listening-profile genres split semicolon lists, discard numeric artifacts, and deduplicate valid names before weighting. Cold caches improve on later scans without blocking the current scan; Dashboard and Settings show profile coverage. Emby can be added during the setup wizard or later in Settings.
 
 For local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -122,9 +128,9 @@ For local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 1. Choose Lidarr, Emby, or discovery-only in the setup wizard and configure your AI provider.
 2. Connect a listening source in Settings, or import artists from CSV or a supported playlist. You can add targets later.
 3. Run a scan from Dashboard or Discover. Digarr builds a taste profile, gathers candidates, resolves MusicBrainz identities, scores them, and removes duplicates and blocked results.
-4. Preview and approve suggestions, reject them, or adjust the scoring weights. Use Release Radar or Library Gap-Fill for albums; the normal scan is artist-focused unless you enable net-new album discovery.
+4. Preview and approve suggestions, reject them, or adjust the scoring weights. Optional genre priorities in Settings > Recommendations support multiple equally preferred genres. Discover keeps score ordering by default; choose Genre priorities to show priority matches first, or browse either preference group separately. Exact genre names match case-insensitively; missing or unmapped genres stay outside the groups. Ordering leaves scores, thresholds, and auto-approval unchanged. Use Release Radar or Library Gap-Fill for albums; the normal scan is artist-focused unless you enable net-new album discovery.
 
-Admins can inspect failures in Settings > Job History and System Health. A source can fail while the scan completes using the remaining sources; check the job details if results look incomplete. The [architecture guide](docs/ARCHITECTURE.md#pipeline) describes the pipeline stages.
+Admins can inspect failures in Settings > Job History and System Health. A source can fail while the scan completes using the remaining sources; check the job details if results look incomplete. Listening sources that do not support similar-artist discovery are skipped for that stage, while their taste-profile and library-sync functions remain available. A successful lookup with no matches reports zero artists. The [architecture guide](docs/ARCHITECTURE.md#pipeline) describes the pipeline stages.
 
 ## Requirements
 
@@ -158,9 +164,9 @@ compatibility details.
 
 ### Playlists and notifications
 
-Add playlist destinations in Settings > Targets, then select those targets in each playlist. Digarr keeps the generated playlist locally if an export fails; admins can inspect the error in Job History. Spotify exports need a connected account with playlist permissions. Tracks without a matching destination track are skipped.
+Add playlist destinations in Settings > Targets, then select those targets in each playlist. Digarr keeps the generated playlist locally if an export fails; admins can inspect the error in Job History. Spotify exports need a connected account with playlist permissions. Tracks without a matching destination track are skipped. Playlist details show the latest generation status, selected/resolved/included artist counts, and artists with no match, unavailable providers, lookup errors, or tracks excluded by the size limit. Search results must match the requested artist before selection. No-provider setups produce an explained empty result rather than invented track titles. The summary describes local generation, not verified remote coverage.
 
-Audition playlists choose one track per pending artist without approving recommendations, and can refresh on demand or on a schedule. They are separate from the Audition preview queue in Discover, which plays short previews in the browser.
+Audition playlists choose one track per pending artist without approving recommendations, and can refresh on demand or on a schedule. They are separate from the Audition preview queue in Discover, which plays short previews in the browser. The Discover queue retains a dismissible summary of unavailable previews, including missing links, empty or failed lookups, browser blocking, and playback failures. Starting a new queue resets that summary; retrying an item replaces its previous outcome. An embed starting is not proof of a successful listen.
 
 Admins can add webhook, ntfy, Telegram, and Apprise channels in Settings > Notifications, with scan-complete and scheduled-digest subscriptions per channel. Private-network destinations are blocked by default; the per-channel LAN option permits private IPv4 destinations for self-hosted services. It does not override your container or Kubernetes network policy.
 
@@ -288,7 +294,7 @@ Admin tools available under Settings > Administration > Data Hygiene:
 
 - **Clear Image Failures:** reset failed image cache entries so Digarr can retry them
 - **Rebuild Genre Cache:** regenerate cached genres from artist tags
-- **Re-score Recommendations:** recalculate scores with the current weights
+- **Re-score Recommendations:** recalculate your recommendations with your current weights, preserving saved score evidence and album modifiers. Rows with incompatible evidence or concurrent changes are skipped.
 - **Dedupe Repair:** merge duplicate recommendations
 - **AI Reasoning Audit:** review and repair stored reasoning; this cannot guarantee that AI claims are correct
 - **Purge Sessions:** clean out expired login sessions
@@ -332,6 +338,7 @@ A successful verify proves the image was built by this repo's `release.yml` work
 - [Installation with Docker](deploy/docker/README.md), [Helm](deploy/helm/digarr/README.md), [Unraid](docs/guides/unraid.md), [Synology](docs/guides/synology.md), or [Docker Desktop](docs/guides/docker-desktop.md)
 - [Authentication, SSO, and user management](docs/AUTHENTICATION.md)
 - [API reference](docs/API.md) and [architecture](docs/ARCHITECTURE.md)
+- [Recommendation quality evaluation](docs/RECOMMENDATION-QUALITY.md)
 - [Switching database backends](docs/guides/switching-backends.md) and [encryption-key rotation](docs/runbooks/encryption-key-rotation.md)
 - [Changelog](CHANGELOG.md), [roadmap](docs/ROADMAP.md), and [screenshots](docs/SCREENSHOTS.md)
 - [Other self-hosted music projects](docs/COMPARISON.md)

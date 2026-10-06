@@ -4,6 +4,35 @@ All notable user-facing changes are documented here.
 
 Releases that have been promoted to the `:stable` Docker channel carry a `(stable)` marker after the version heading. Promotion happens after a release has been live for at least seven days with no follow-up patch.
 
+## Unreleased
+
+## v1.19.0 - 2026-10-06
+
+### Development
+
+- Recommendation evaluation uses the production prompt with representative synthetic profiles, field-level checks, and replayable reports. Expected-neighbor checks remain advisory; subjective fit and listening outcomes require separate review. [#718](https://github.com/iuliandita/digarr/issues/718).
+
+### Added
+
+- Playlist details show the latest generation status and per-artist outcomes, including unmatched artists, missing providers, lookup errors, and size-limit exclusions. Counts separate selected, resolved, and included artists from tracks; local outcomes remain visible when a target export fails. [#744](https://github.com/iuliandita/digarr/issues/744).
+- Optional genre priorities support several equally preferred genres while keeping score ordering as the default. Discover can order preference groups or browse either group separately; scores, thresholds, and auto-approval are unchanged. Matches use explicit genre tags, with no inferred taxonomy. [#732](https://github.com/iuliandita/digarr/issues/732).
+
+### Fixed
+
+- Similarity discovery rotates exact positive taste-weight ties before capping seeds, keeps stronger evidence first, and backfills duplicate or unavailable library slots. Known artist identities remain distinct; scoring and genre priorities are unchanged. [#743](https://github.com/iuliandita/digarr/issues/743), [#746](https://github.com/iuliandita/digarr/issues/746).
+- Playlist searches require the returned artist to match before selecting tracks and continue through configured fallback sources. Generation no longer invents track titles when no resolver is available. [#745](https://github.com/iuliandita/digarr/issues/745), [#744](https://github.com/iuliandita/digarr/issues/744).
+- Discovery profiles normalize artist evidence within each source instead of comparing incompatible numeric scales. Spotify uses personal top-artist order and Subsonic treats starred artists as equal membership; raw values remain separate, and overlapping sources do not multiply an artist's contribution. Scoring formulas, stored recommendation scores, and history windows are unchanged. [#741](https://github.com/iuliandita/digarr/issues/741).
+- AI profiles retain each seed artist's genre context and describe source-dependent seed weights without calling popularity or favorites play counts. Guidance supports distinct musical interests and treats missing history or tags as unknown. The advisory baseline adds eclectic and sparse-history cases. [#739](https://github.com/iuliandita/digarr/issues/739).
+- Maintenance rescoring preserves stored score components and album modifiers, skips incompatible legacy evidence, and uses the current user's weights only for their recommendations. Concurrently changed rows are left untouched. [#734](https://github.com/iuliandita/digarr/issues/734).
+- Listening profiles split semicolon-separated genre lists and ignore numeric artifacts before genre weighting. Valid genres are deduplicated, and coverage counts only usable genres. Stored library and cache metadata are unchanged. [#736](https://github.com/iuliandita/digarr/issues/736).
+
+- Name-only discovery validates MusicBrainz names and catalog aliases before genre matching, preventing unrelated artists from inheriting another artist's AI explanation and starter album. Tied matches remain unresolved. [#731](https://github.com/iuliandita/digarr/issues/731).
+
+- Discover Audition retains unavailable-preview reasons after skipped items or queue completion, including missing links, lookup failures, and playback failures. Only an actual browser permission rejection is labeled blocked playback. [#729](https://github.com/iuliandita/digarr/issues/729).
+- Discovery skips listening sources without similar-artist support instead of reporting them as failed. Job History distinguishes missing seeds, successful empty lookups, and actual or partial source failures, with localized skip explanations. [#722](https://github.com/iuliandita/digarr/issues/722).
+- AI recommendations retain legitimate comparisons to listening-profile artists. The description check now targets shared-name collisions, and prompts request the recommended artist's name explicitly. This remains a heuristic, not identity verification. [#719](https://github.com/iuliandita/digarr/issues/719).
+- Dashboard listening history distinguishes unconfigured accounts, empty history, and fetch failures, with retry actions for failures. ListenBrainz artist statistics treat HTTP 204 as empty history. [#721](https://github.com/iuliandita/digarr/issues/721).
+
 ## v1.18.0 - 2026-09-20
 
 ### Security

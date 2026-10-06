@@ -107,6 +107,10 @@ and skip their ticks while it is set. The routes are
 [`docs/guides/switching-backends.md`](guides/switching-backends.md) for the
 operator walkthrough.
 
+## Dashboard listening history
+
+Listening routes preserve configuration, empty-result, and failure outcomes separately from their returned entries. A successful fallback with entries wins; without entries, any attempted source failure produces an error outcome. ListenBrainz artist statistics map HTTP 204 to an empty result locally, while the shared JSON transport continues to reject missing response bodies elsewhere. The dashboard distinguishes loading, unconfigured, empty, and failed history and retries failed queries on request. Failed refreshes keep cached entries visible with a failure notice.
+
 ## Pipeline
 
 Seven stages:
@@ -130,6 +134,16 @@ alias when the listening source has no MBID. Listening-artist genre data in the
 artist cache uses its own freshness timestamp, so unrelated image or metadata
 refreshes cannot extend the 180-day genre TTL. Enrichment from
 `artist_metadata` still runs between resolve and score.
+
+Discovery queries only listening sources declaring `similarArtists`. Job results distinguish unsupported capabilities, explicit discovery modes, missing seeds, successful empty lookups, and upstream failures. A seed lookup failure remains visible even when other seeds contribute candidates. These outcomes describe discovery, independently of profile analysis and library sync.
+
+Analyze deduplicates each source's artist evidence before normalizing its positive weights to a total of one. Spotify contributes reciprocal best position across the existing personal top-artist windows; this is an ordinal estimate, not a published affinity score. Subsonic starred artists contribute equal membership evidence. Other adapters retain their source-local numeric signals, including favorite boosts or collection counts. Raw values remain separate from normalized `tasteWeight` values. Artists appearing in several sources keep their maximum contribution rather than summing overlapping history. Aggregate genres and the analyzed profile use these relative weights with deterministic ties. Before similarity lookup, discovery shuffles exact positive finite taste-weight ties on a copied list; unequal weights and legacy ordering remain intact. Library mixing deduplicates known identities, preserves a uniquely matching catalog ID on copied seeds, and backfills unavailable slots from remaining listening artists without exceeding the configured cap. This changes seed opportunity, not genre quotas or scoring. Empty, invalid, or zero numeric evidence contributes no positive weight; missing genre tags stay unknown.
+
+Recommendation prompts retain per-artist genre context for at most 20 seeds and eight genre tags per seed. Raw seed values remain source-dependent, not comparable play counts; relative taste weights are neither probabilities nor evidence of a single dominant taste. Guidance preserves distinct evidenced interests without recommendation quotas. A sparse source can give its single artist a strong relative weight, and bounded seed selection cannot guarantee representation of every interest. Scoring, stored recommendations, and source history windows are unchanged.
+
+AI discovery retains comparisons to listening-profile artists. Its description guard only checks likely shared-name collisions: an unquoted seed name without the recommended name can be rejected. Prompts ask for the exact recommended name in the first sentence. This heuristic cannot establish artist identity or factual accuracy; MusicBrainz resolution remains a separate stage.
+
+Name-only resolution checks at most five MusicBrainz hits against the requested name or returned catalog aliases before comparing genres. Name normalization preserves accents and punctuation. A uniquely best matching identity can resolve; ties and unrelated hits are dropped. Known-MBID candidates retain their explicit identity path. Older stored recommendations are not rewritten.
 
 The filter stage partitions candidates by `kind`. Artist-kind candidates run the
 full artist-existence / library / top-artist filters. Album-kind candidates
@@ -172,6 +186,8 @@ an active audition queue skips the unavailable item. YouTube embeds have no
 equivalent completion signal in this integration and use a bounded 30-second
 fallback.
 
+Audition retains per-item unavailable reasons after skipping or queue completion, independently of playback state. New runs reset the summary and retrying an item replaces its prior failure. Reasons describe observable lookup and playback outcomes; browser fetch rejection does not establish CORS or provider outage, and Spotify controller failure does not establish account access. Stale audio callbacks and superseded resolutions cannot advance a newer queue item. No approval writes occur during playback.
+
 ## Boot order
 
 Startup in `src/index.ts` has two phases:
@@ -209,6 +225,7 @@ Albums are a first-class recommendation unit. Key additions:
   Read-only calls retain the client retry default. Duplicate-producing playlist
   creation and song-add calls pass `retries: 0`; this classification is based on
   endpoint semantics because Subsonic mutations use GET-shaped endpoints.
+- Playlist resolution records a disposition for every selected artist: resolved, unmatched, unavailable, error, or excluded by the size cap. Returned local, Spotify and Deezer artist names must match after Unicode/case/whitespace normalization before tracks are selected. Configured fallback sources remain available; no fake playable entries fill unresolved artists. Counts distinguish selected artists, artists with resolved tracks, artists included after truncation, and included tracks. Resolution metadata is saved in the existing job record after local tracks are saved and before remote exports, so a later target failure preserves the local result. Owned playlist details expose only their latest job projection; legacy playlists have no fabricated historical summary.
 - Playlist generation stores its local tracks before pushing to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets. A target error, including a returned failed playlist result, does not stop later selected targets; after all attempts it fails the playlist job for Job History. There is no remote rollback, and the locally generated playlist remains available.
 - Spotify playlist exports retain explicit track URIs, or resolve artist/title pairs with exact matching. Artist-only approvals take up to three artist-matching track search results. Writes use `/me/playlists` and `/playlists/{id}/items`, with at most 100 URIs per request; failures are not retried as duplicate writes.
 - Emby, Jellyfin, and Subsonic source clients each own a media-server request
@@ -222,7 +239,9 @@ Albums are a first-class recommendation unit. Key additions:
 - Backup restore runs in a single DB transaction. Upsert conflict targets are natural keys (`mbid`, `slug`, `nameNormalized`, `token`), not generated IDs.
 - Primary keys are `integer GENERATED BY DEFAULT AS IDENTITY` (not legacy `serial`). BY DEFAULT is deliberate: backup restore re-inserts rows with their original `id`, which `GENERATED ALWAYS` would reject.
 - Backend migration never modifies the source database. Verification (row count + content hash) must pass before `ok: true` is returned; any mismatch surfaces in `MigrationReport.mismatches`.
-- Scoring uses the shared `computeWeightedScore()` in `src/core/pipeline/score.ts`. All callers (main pipeline + hygiene rescorer) clamp results to `[0, 1]` regardless of user weight sums.
+- Optional genre-priority ordering is a user-scoped read concern in `listRecommendations`, independent of score computation. Exact genre matches select primary, secondary, and other groups before score ordering and pagination. Secondary browsing excludes primary matches; missing preferences preserve score ordering. No recommendation rows are rewritten.
+- Scoring uses the shared `computeWeightedScore()` in `src/core/pipeline/score.ts`. All callers (main pipeline + hygiene rescorer) clamp results to `[0, 1]` regardless of user weight sums. Maintenance rescoring reuses stored components and album modifiers, scopes reads and writes to the current user, and skips incompatible evidence or rows changed since selection.
+- Listening profiles clean semicolon-separated genres, blank values, and numeric artifacts before hydration and after reading cached genres. Coverage counts usable genres; pending-cache counts retain their freshness semantics. This does not rewrite library or cache metadata.
 
 See `AGENTS.md` for the gotchas, external-API quirks, and CI notes that
 accumulate faster than this doc should; `AGENTS.md` stays the living ops file.
