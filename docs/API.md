@@ -68,7 +68,7 @@ For these routes, non-integer `limit` values return `400`. `meta.nextCursor` is 
 Offset-paginated routes:
 - `GET /api/v1/recommendations` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
 - `GET /api/v1/jobs` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
-- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null }`
+- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null, "status": "not_configured" }`
 
 ---
 
@@ -363,10 +363,16 @@ Locale notes:
 - `status` - `pending`, `approved`, `rejected`, `added_to_lidarr`, `add_failed` (comma-separated)
 - `kind` - `artist` or `album`; omit to return both. Backs the Discover kind filter and the Albums tab (`?kind=album`)
 - `batchId` - filter by batch
-- `sort` - `score_desc` (default), `score_asc`, `created_desc`, `acted_on_desc`
+- `sort` - `score_desc` (default), `score_asc`, `created_desc`, `acted_on_desc`, `taste`
+- `tasteTier` - optional `primary` or `secondary`; secondary excludes primary matches
+
 - `decades` - era filter, comma-separated: `60s`, `70s`, `80s`, `90s`, `00s`, `10s`, `20s`
 - `limit` - 1-200 (default 20)
 - `offset` - pagination offset
+
+Taste ordering reads only the authenticated user's optional `primaryGenres` and `secondaryGenres` preferences. It orders primary matches, secondary matches, then other recommendations, using descending score within each group and ID for ties. Genres match exact names after trimming and lowercasing; there is no inferred genre taxonomy. Missing preferences retain score ordering. Filtering and ordering do not change stored scores, statuses, thresholds, or auto-approval.
+
+Save either list through `PATCH /api/v1/auth/me/preferences`: `{"primaryGenres":["metal","jazz"],"secondaryGenres":["ambient"]}`. Each list accepts up to 24 nonempty names of at most 64 characters. Names are trimmed, lowercased, and deduplicated. Empty lists clear the preference.
 
 Each item carries a `kind` field (`artist` or `album`). For `kind: "album"`, `recommendedReleaseGroupId` / `recommendedReleaseGroupTitle` identify the album (its `artistId` still points at the album's artist), and the UI renders the album as the primary unit.
 
@@ -674,6 +680,8 @@ The target test uses the saved provider configuration for `plex-playlist`, `jell
 
 **POST /api/v1/playlists/:id/generate** returns `202` with `{ "status": "generating" }` before generation finishes. Generated tracks are saved locally before exports to selected enabled playlist targets. Exports to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets are all attempted; an export failure marks the job failed in Job History, while local tracks and successful remote exports remain. There is no remote rollback.
 
+**GET /api/v1/playlists/:id** adds `generation`, either `null` for legacy/no-history playlists or `{ jobId, status, startedAt, completedAt, resolution }` for the latest owned generation job. `resolution` is `null` until its local result is recorded, and includes `requestedArtistCount`, `resolvedArtistCount`, `includedArtistCount`, `trackCount` and `outcomes` when available. Each outcome has `artistName`, optional `artistMbid`, `status`, `resolvedTrackCount` and `includedTrackCount`. Outcome statuses are `resolved`, `unmatched`, `unavailable`, `error` and `limited`. A partially included artist remains `resolved` with both counts; `limited` means tracks resolved but none fit the playlist cap. A failed target export can coexist with a saved local resolution summary. This projection does not expose raw job errors, secrets, other users' results, or remote read-back verification.
+
 **Strategies**: `audition`, `weekly_digest`, `genre_focus`, `mood_mix`, `rediscover`
 
 `audition` selects the playlist owner's pending recommendations in descending score order, deduplicates artists, and resolves one track per artist up to `config.size`. It does not approve recommendations and skips unresolved tracks instead of inventing placeholder titles. It uses the existing on-demand generation endpoint, schedule, and target selection. Local media-server targets require matching tracks in their libraries.
@@ -916,12 +924,14 @@ covered artists when a populated cache entry is due for refresh.
 - `offset` - 0-10000 (default 0)
 - `limit` - 1-50 (default 5)
 
-Response: `{ tracks, total, offset, limit, source }`. `source` is `"listenbrainz"`, `"lastfm"`, `"plex"`, or `null`. Last.fm periods are rolling windows (`7day`, `1month`, `12month`, `overall`) and map approximately to the requested calendar range.
+Response: `{ tracks, total, offset, limit, source, status }`. `source` is `"listenbrainz"`, `"lastfm"`, `"plex"`, or `null`. Last.fm periods are rolling windows (`7day`, `1month`, `12month`, `overall`) and map approximately to the requested calendar range.
 
 **GET /api/v1/listening/recent-tracks** query params:
 - `limit` - 1-50 (default 5)
 
-Response: `{ tracks, hasSource, source }`. `hasSource` is `false` when no scrobble-capable source is connected (UI should hide the tile). `source` identifies which source served the data.
+Response: `{ tracks, hasSource, source, status }`. `hasSource` is `false` when no scrobble-capable source is connected (UI should hide the tile). `source` identifies the last successful source attempt, including an empty result.
+
+Both listening endpoints return `status`: `not_configured` means no eligible source or application settings; `empty` means attempts succeeded but returned no entries; `error` means no entries were available and at least one attempted source failed; `ok` means entries were returned, including a successful fallback after another source failed. Existing fallback priorities are unchanged. Raw upstream errors are not returned. ListenBrainz artist-statistics HTTP 204 responses count as empty success.
 
 ---
 
@@ -939,6 +949,8 @@ Response: `{ tracks, hasSource, source }`. `hasSource` is `false` when no scrobb
 - `limit` - 1-100 (default 50)
 - `offset` - pagination offset (minimum 0)
 - Invalid `type` or `status` values return `400`
+
+Pipeline job `sourceResults` describe each source's discovery contribution. Configured listening sources without `similarArtists` report `{ "status": "skipped", "reason": "unsupported_capability" }`. Supported sources not queried because of an explicit discovery mode or an empty seed list use `explicit_run` or `no_seeds`; absent connections use `not_configured`. Successful similarity lookups use `ok` with an `artists` count, including zero. Any failed seed lookup uses `error` with the redacted upstream message, even when other seeds return candidates. Profile collection and library sync are separate operations. Existing job records retain their recorded outcomes.
 
 ---
 
@@ -1070,7 +1082,7 @@ Copy all stateful data from the current backend (PGlite or PostgreSQL) into a di
 |--------|------|------|-------------|
 | POST | `/api/v1/admin/hygiene/clear-image-failures` | Admin | Reset image failure cache. Query: `?olderThan=7d` |
 | POST | `/api/v1/admin/hygiene/rebuild-genres` | Admin | Rebuild genre table from artist data. |
-| POST | `/api/v1/admin/hygiene/rescore` | Admin | Re-score recommendations. Query: `?status=pending` (default), `?status=pending,approved` |
+| POST | `/api/v1/admin/hygiene/rescore` | Admin | Re-score the current user's recommendations using saved component evidence and current weights. Incompatible legacy rows and concurrently changed rows are skipped. Query: `?status=pending` (default), `?status=pending,approved` |
 | POST | `/api/v1/admin/hygiene/dedupe` | Admin | Find and remove duplicate recommendations. |
 | POST | `/api/v1/admin/hygiene/ai-audit` | Admin | Audit AI reasoning. Query: `?autoFix=true`. Returns 202 when auto-fix starts. |
 | GET | `/api/v1/admin/hygiene/ai-audit/results` | Admin | Poll auto-fix progress. |

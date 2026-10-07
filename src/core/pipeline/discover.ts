@@ -27,59 +27,76 @@ function hasNameConfusion(recName: string, topArtistNames: string[]): boolean {
   return false
 }
 
-/**
- * Detect when AI reasoning explicitly mentions a different top artist by name
- * AND the recommended name is confusably close to that artist.
- * E.g. reasoning for "Digital Underground" literally says "Velvet Underground".
- *
- * Both halves are required. Mentioning a top artist is NOT on its own a signal
- * of confusion: the prompt asks the model to "explain why they match this
- * listener's taste", so a good reasoning string routinely names the artists
- * being compared against ("fans of Metallica", "shares Be'lakor's melodicism").
- * Gating on the mention alone rejected every recommendation -- measured 18 of 18
- * on a real profile, with Gojira/Metallica, Insomnium/Be'lakor and
- * Dissection/Emperor among the casualties -- so the AI source contributed
- * nothing while still costing a request, and reported "No artists returned".
- *
- * Requiring name proximity keeps the original intent (the model output one
- * artist while describing another, similarly-named one) and drops the false
- * positives, since a genuine comparison names an artist that looks nothing like
- * the recommendation.
- */
+function normalizeReasoning(text: string): string {
+  return text.normalize('NFC').toLowerCase().replace(/\s+/gu, ' ').trim()
+}
+
+function sameSeedArtist(
+  first: { name: string; mbid?: string },
+  second: { name: string; mbid?: string },
+  nameMbids: Map<string, Set<string>>,
+): boolean {
+  const firstMbid = first.mbid?.trim().toLowerCase()
+  const secondMbid = second.mbid?.trim().toLowerCase()
+  if (firstMbid && secondMbid) return firstMbid === secondMbid
+  const name = normalizeReasoning(first.name)
+  return (
+    name === normalizeReasoning(second.name) &&
+    (!(firstMbid || secondMbid) || (nameMbids.get(name)?.size ?? 0) <= 1)
+  )
+}
+
+function shuffle<T>(items: T[]): T[] {
+  const shuffled = [...items]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const current = shuffled[i]
+    const swap = shuffled[j]
+    if (current === undefined || swap === undefined) {
+      throw new Error('Unexpected missing seed artist during shuffle')
+    }
+    shuffled[i] = swap
+    shuffled[j] = current
+  }
+  return shuffled
+}
+
+function fullNamePattern(name: string): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escaped}(?![\\p{L}\\p{M}\\p{N}])`, 'gu')
+}
+
 function reasoningMentionsTopArtist(
   reasoning: string,
   recName: string,
   topArtistNames: string[],
 ): boolean {
-  const reaNorm = reasoning.toLowerCase()
-  const recNorm = normalizeName(recName)
-  for (const topName of topArtistNames) {
-    const topNorm = normalizeName(topName)
+  const reaNorm = normalizeReasoning(reasoning)
+  const recNorm = normalizeName(normalizeReasoning(recName))
+  if (reaNorm.includes(recNorm)) return false
+  const recTokens: string[] = recNorm.match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
+  if (recTokens.length < 2) return false
+  const topNames = topArtistNames.map((name) => normalizeName(normalizeReasoning(name)))
+  // Quoted references and longer known names are ambiguous evidence of identity.
+  const unquoted = reaNorm.replace(
+    /"[^"]*"|(?<![\p{L}\p{M}\p{N}])'[^']*'(?![\p{L}\p{M}\p{N}])|\u201c[^\u201d]*\u201d|\u201e[^\u201c\u201d]*[\u201c\u201d]|\u2018[^\u2019]*\u2019|\u00ab[^\u00bb]*\u00bb|\u300c[^\u300d]*\u300d|\u300e[^\u300f]*\u300f/gu,
+    ' ',
+  )
+  for (const topNorm of topNames) {
     if (recNorm === topNorm) continue
-    if (topNorm.length < 5) continue // avoid matching short common words
-    if (!reaNorm.includes(topNorm)) continue
-    // Mentioned. Only treat it as confusion when the two names are also
-    // confusable: one contains the other, or they share a distinctive word.
-    // Containment alone is not enough -- the canonical case, "Digital
-    // Underground" described as "Velvet Underground", shares only the token
-    // "underground" and neither name contains the other.
-    if (recNorm.includes(topNorm) || topNorm.includes(recNorm)) return true
-    if (sharesDistinctiveWord(recNorm, topNorm)) return true
-  }
-  return false
-}
-
-/**
- * True when two normalized names share a word of 5+ characters. Long shared
- * words ("underground", "empire") are what make two names confusable; short
- * ones ("the", "of", "fire") are common filler and would reintroduce false
- * positives.
- */
-function sharesDistinctiveWord(a: string, b: string): boolean {
-  const words = (s: string) => new Set(s.split(/[^a-z0-9]+/).filter((w) => w.length >= 5))
-  const bWords = words(b)
-  for (const w of words(a)) {
-    if (bWords.has(w)) return true
+    const topTokens: string[] = topNorm.match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
+    if (topTokens.length < 2) continue
+    const shared = new Set(
+      recTokens.filter((token) => token.length >= 5 && topTokens.includes(token)),
+    ).size
+    if (shared * 2 < recTokens.length || shared * 2 < topTokens.length) continue
+    let evidence = unquoted
+    for (const longerName of topNames) {
+      if (longerName.length > topNorm.length && fullNamePattern(topNorm).test(longerName)) {
+        evidence = evidence.replace(fullNamePattern(longerName), ' ')
+      }
+    }
+    if (fullNamePattern(topNorm).test(evidence)) return true
   }
   return false
 }
@@ -104,8 +121,9 @@ export interface DiscoverSources {
 export type DiscoverOptions = {
   explicitCandidates?: Array<DiscoveredArtist | DiscoveryCandidate>
   explicitRun?: boolean
-  /** Invoked when a source fails entirely, so callers can surface the real error. */
+  /** Invoked when any seed lookup fails, so callers can surface the real error. */
   onSourceFailure?: (sourceId: string, error: string) => void
+  onSeedCount?: (count: number) => void
 }
 
 function isDiscoveryCandidate(
@@ -148,43 +166,71 @@ export async function discover(
     return dedupeDiscoveredArtists(explicitArtists)
   }
 
-  const topArtists = profile.topArtists.slice(0, topArtistsLimit)
+  const listeningArtists = [...profile.topArtists]
+  const tiedArtists = new Map<number, TasteProfile['topArtists']>()
+  for (const artist of listeningArtists) {
+    if (
+      artist.tasteWeight === undefined ||
+      !Number.isFinite(artist.tasteWeight) ||
+      artist.tasteWeight <= 0
+    )
+      continue
+    const tied = tiedArtists.get(artist.tasteWeight) ?? []
+    tied.push(artist)
+    tiedArtists.set(artist.tasteWeight, tied)
+  }
+  for (const [weight, artists] of tiedArtists) tiedArtists.set(weight, shuffle(artists))
+  for (const [index, artist] of listeningArtists.entries()) {
+    if (artist.tasteWeight === undefined) continue
+    const replacement = tiedArtists.get(artist.tasteWeight)?.shift()
+    if (replacement) listeningArtists[index] = replacement
+  }
   const results: DiscoveredArtist[] = []
 
-  // Mix in library artists based on librarySeedRatio (0 = none, 1 = all library)
-  let seedArtists = topArtists
-  if (libraryArtists && libraryArtists.length > 0 && librarySeedRatio > 0) {
-    const librarySlots = Math.max(1, Math.round(topArtistsLimit * librarySeedRatio))
-    const listeningSlots = topArtistsLimit - librarySlots
-
-    // Fisher-Yates shuffle for uniform distribution
-    const shuffled = [...libraryArtists]
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      const current = shuffled[i]
-      const swap = shuffled[j]
-      if (!current || !swap) {
-        throw new Error('Unexpected missing library artist during shuffle')
-      }
-      shuffled[i] = swap
-      shuffled[j] = current
+  const nameMbids = new Map<string, Set<string>>()
+  for (const artist of [...listeningArtists, ...(libraryArtists ?? [])]) {
+    const mbid = artist.mbid?.trim().toLowerCase()
+    if (!mbid) continue
+    const name = normalizeReasoning(artist.name)
+    const mbids = nameMbids.get(name) ?? new Set<string>()
+    mbids.add(mbid)
+    nameMbids.set(name, mbids)
+  }
+  const seedArtists: TasteProfile['topArtists'] = []
+  function addSeeds(artists: TasteProfile['topArtists'], limit: number): void {
+    for (const artist of artists) {
+      if (seedArtists.length >= limit) break
+      if (seedArtists.some((seed) => sameSeedArtist(seed, artist, nameMbids))) continue
+      const mbids = nameMbids.get(normalizeReasoning(artist.name))
+      const mbid =
+        artist.mbid?.trim() || (mbids?.size === 1 ? mbids.values().next().value : undefined)
+      seedArtists.push({ ...artist, ...(mbid ? { mbid } : {}) })
     }
-    // Exclude artists already in topArtists
-    const topMbids = new Set(topArtists.map((a) => a.mbid).filter(Boolean))
-    const librarySeeds = shuffled
-      .filter((a) => !topMbids.has(a.mbid))
-      .slice(0, librarySlots)
-      .map((a) => ({
+  }
+
+  if (libraryArtists && libraryArtists.length > 0 && librarySeedRatio > 0) {
+    const librarySlots = Math.min(
+      topArtistsLimit,
+      Math.max(1, Math.round(topArtistsLimit * librarySeedRatio)),
+    )
+    const listeningSlots = topArtistsLimit - librarySlots
+    addSeeds(listeningArtists, listeningSlots)
+    addSeeds(
+      shuffle(libraryArtists).map((a) => ({
         name: a.name,
         mbid: a.mbid,
         playCount: 0,
-        source: 'listenbrainz' as const,
-      }))
-
-    seedArtists = [...topArtists.slice(0, listeningSlots), ...librarySeeds]
+        source: 'listenbrainz',
+      })),
+      topArtistsLimit,
+    )
   }
+  addSeeds(listeningArtists, topArtistsLimit)
 
-  const listeningSources = sources.listeningSources ?? []
+  options.onSeedCount?.(seedArtists.length)
+  const listeningSources = (sources.listeningSources ?? []).filter((source) =>
+    source.capabilities.includes('similarArtists'),
+  )
 
   // For each seed artist, query each configured listening source for similar artists
   // Aggregate per-source failures so a dead source is logged once, not per seed.

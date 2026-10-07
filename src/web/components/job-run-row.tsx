@@ -14,6 +14,27 @@ const TYPE_LABEL_KEYS: Record<string, MessageKey> = {
   music_rater_sync: 'jobHistory.musicRaterSync',
 }
 
+const SOURCE_STATUS_KEYS: Record<string, MessageKey> = {
+  ok: 'jobHistory.sourceSuccess',
+  error: 'service.error',
+  skipped: 'jobHistory.sourceSkipped',
+}
+const SOURCE_REASON_KEYS: Record<string, MessageKey> = {
+  unsupported_capability: 'jobHistory.sourceUnsupported',
+  no_seeds: 'jobHistory.sourceNoSeeds',
+  explicit_run: 'jobHistory.sourceExplicitRun',
+  not_configured: 'jobHistory.sourceNotConfigured',
+}
+
+function sourceLabel(
+  value: string,
+  keys: Record<string, MessageKey>,
+  t: (key: MessageKey) => string,
+): string {
+  const key = Object.hasOwn(keys, value) ? keys[value] : undefined
+  return key ? t(key) : value
+}
+
 function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
   const meta = job.metadata ?? {}
   switch (job.type) {
@@ -160,11 +181,11 @@ export function JobRunRow({ job }: { job: JobRun }) {
                             : 'text-muted'
                       }
                     >
-                      {result.status}
+                      {sourceLabel(result.status, SOURCE_STATUS_KEYS, t)}
                       {result.artists != null && ` (${result.artists} ${t('jobHistory.artists')})`}
                       {result.ms != null && ` ${result.ms}ms`}
                       {result.error && ` - ${result.error}`}
-                      {result.reason && ` - ${result.reason}`}
+                      {result.reason && ` - ${sourceLabel(result.reason, SOURCE_REASON_KEYS, t)}`}
                     </span>
                   </div>
                 ))}

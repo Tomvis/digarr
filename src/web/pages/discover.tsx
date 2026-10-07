@@ -21,6 +21,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { useClickOutside } from '../hooks/use-click-outside'
 import { useKeyboardShortcuts } from '../hooks/use-keyboard-shortcuts'
 import { usePopularAlbumsAvailability } from '../hooks/use-popular-albums-availability'
+import type { PreviewFailureReason } from '../hooks/use-preview'
 import { usePullToRefresh } from '../hooks/use-pull-to-refresh'
 import {
   ApiError,
@@ -45,7 +46,18 @@ import { usePreviewContext } from '../lib/preview-context'
 type FilterTab = 'all' | 'pending' | 'approved' | 'rejected'
 type KindFilter = 'all' | 'artist' | 'album'
 type ViewMode = 'grid' | 'list' | 'stack'
+type TasteOrdering = 'priority' | 'primary' | 'secondary' | 'score'
 type Decade = '60s' | '70s' | '80s' | '90s' | '00s' | '10s' | '20s+'
+
+const PREVIEW_REASON_KEYS: Record<PreviewFailureReason, MessageKey> = {
+  'missing-links': 'preview.reason.missing-links',
+  'no-match': 'preview.reason.no-match',
+  'no-audio': 'preview.reason.no-audio',
+  'lookup-failed': 'preview.reason.lookup-failed',
+  blocked: 'preview.reason.blocked',
+  'playback-failed': 'preview.reason.playback-failed',
+  'controller-unavailable': 'preview.reason.controller-unavailable',
+}
 
 const DECADES: Decade[] = ['60s', '70s', '80s', '90s', '00s', '10s', '20s+']
 
@@ -529,6 +541,7 @@ export function DiscoverPage() {
     initialKindFromParam(searchParams.get('kind')),
   )
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
+  const [tasteOrdering, setTasteOrdering] = useState<TasteOrdering>('score')
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [approveThreshold, setApproveThreshold] = useState(70)
@@ -553,6 +566,9 @@ export function DiscoverPage() {
     staleTime: 60_000,
   })
   const prefs = prefsData ?? {}
+  const hasPrimaryGenres = Array.isArray(prefs.primaryGenres) && prefs.primaryGenres.length > 0
+  const hasSecondaryGenres =
+    Array.isArray(prefs.secondaryGenres) && prefs.secondaryGenres.length > 0
 
   const refetch = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['recommendations'] })
@@ -593,7 +609,7 @@ export function DiscoverPage() {
   const decadesParam = activeDecades.size > 0 ? [...activeDecades].join(',') : undefined
 
   const queryParams: Record<string, string> = {
-    sort: 'score_desc',
+    sort: tasteOrdering === 'score' ? 'score_desc' : 'taste',
     limit: String(PAGE_SIZE),
     offset: String(page * PAGE_SIZE),
   }
@@ -602,11 +618,20 @@ export function DiscoverPage() {
   if (statusParam) queryParams.status = statusParam
   if (decadesParam) queryParams.decades = decadesParam
   if (kindParam) queryParams.kind = kindParam
+  if (tasteOrdering === 'primary' || tasteOrdering === 'secondary') {
+    queryParams.tasteTier = tasteOrdering
+  }
 
   const { data, isLoading: loading } = useQuery({
     queryKey: [
       'recommendations',
-      { filter, kind: kindFilter, page, decades: [...activeDecades].sort().join(',') },
+      {
+        filter,
+        kind: kindFilter,
+        page,
+        tasteOrdering,
+        decades: [...activeDecades].sort().join(','),
+      },
     ],
     queryFn: () => getRecommendations(queryParams),
   })
@@ -932,9 +957,7 @@ export function DiscoverPage() {
   }
 
   function handleAudition() {
-    const eligible = items.filter(
-      (r) => r.status === 'pending' && preview.hasPreview(r.artist.streamingUrls),
-    )
+    const eligible = items.filter((r) => r.status === 'pending')
     if (eligible.length === 0) {
       toast.info(t('discover.nothingToAudition'))
       return
@@ -1132,9 +1155,7 @@ export function DiscoverPage() {
   const pendingBelowThreshold = items.filter(
     (r) => r.score * 100 < approveThreshold && r.status === 'pending',
   ).length
-  const auditionEligible = items.filter(
-    (r) => r.status === 'pending' && preview.hasPreview(r.artist.streamingUrls),
-  ).length
+  const auditionEligible = items.filter((r) => r.status === 'pending').length
 
   return (
     <div
@@ -1142,6 +1163,34 @@ export function DiscoverPage() {
       {...pullHandlers}
     >
       <h1 className="sr-only">{t('discover.title')}</h1>
+      {preview.audition.unavailable?.length > 0 && (
+        <section
+          className="rounded-lg border border-border bg-surface p-4 text-sm"
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p>
+              {t('preview.unavailableSummary')
+                .replace('{count}', String(preview.audition.unavailable.length))
+                .replace('{total}', String(preview.audition.selectedCount))}
+            </p>
+            <button
+              type="button"
+              className="text-muted hover:text-text"
+              onClick={preview.audition.dismissSummary}
+            >
+              {t('common.dismiss')}
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1 text-muted">
+            {preview.audition.unavailable.map(({ item, reason }) => (
+              <li key={item.mbid}>
+                {item.artistName}: {t(PREVIEW_REASON_KEYS[reason])}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {/* Pull-to-refresh indicator */}
       {pullY > 0 && (
         <div
@@ -1230,6 +1279,31 @@ export function DiscoverPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <label htmlFor="taste-ordering" className="flex items-center gap-2 text-sm text-muted">
+              {t('discover.tasteOrdering')}
+              <select
+                id="taste-ordering"
+                value={tasteOrdering}
+                aria-label={t('discover.tasteOrdering')}
+                onChange={(e) => {
+                  setTasteOrdering(e.target.value as TasteOrdering)
+                  setPage(0)
+                  setSelectedId(null)
+                }}
+                className="bg-surface border border-border rounded text-sm text-text px-2 py-1.5"
+              >
+                <option value="priority" disabled={!hasPrimaryGenres && !hasSecondaryGenres}>
+                  {t('discover.tastePriority')}
+                </option>
+                <option value="primary" disabled={!hasPrimaryGenres}>
+                  {t('discover.primaryTaste')}
+                </option>
+                <option value="secondary" disabled={!hasSecondaryGenres}>
+                  {t('discover.secondaryTaste')}
+                </option>
+                <option value="score">{t('discover.scoreOrder')}</option>
+              </select>
+            </label>
             {/* View mode switcher */}
             <div className="flex items-center gap-0.5 bg-surface border border-border rounded-lg p-1">
               {(

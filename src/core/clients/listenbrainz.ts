@@ -163,15 +163,19 @@ export function createListenBrainzClient(username: string, token: string) {
     headers: { Authorization: `Token ${token}` },
   })
 
-  async function getTopArtists(range: ListenBrainzRange): Promise<TopArtist[]> {
-    let res: LbTopArtistsResponse
+  async function getArtistStats(path: string): Promise<LbTopArtistsResponse> {
     try {
-      res = await http.get<LbTopArtistsResponse>(`/1/stats/user/${username}/artists?range=${range}`)
-    } catch (err: unknown) {
-      // 204 = no stats for this range yet (new or quiet account).
-      if (err instanceof HttpError && err.status === 204) return []
+      return await http.get<LbTopArtistsResponse>(path)
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 204) {
+        return { payload: { artists: [], total_artist_count: 0 } }
+      }
       throw err
     }
+  }
+
+  async function getTopArtists(range: ListenBrainzRange): Promise<TopArtist[]> {
+    const res = await getArtistStats(`/1/stats/user/${username}/artists?range=${range}`)
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,
@@ -187,9 +191,7 @@ export function createListenBrainzClient(username: string, token: string) {
     const params = new URLSearchParams({ range })
     if (options.offset != null) params.set('offset', String(options.offset))
     if (options.count != null) params.set('count', String(options.count))
-    const res = await http.get<LbTopArtistsResponse>(
-      `/1/stats/user/${username}/artists?${params.toString()}`,
-    )
+    const res = await getArtistStats(`/1/stats/user/${username}/artists?${params.toString()}`)
     return {
       artists: res.payload.artists.map((a) => ({
         name: a.artist_name,
@@ -292,17 +294,7 @@ export function createListenBrainzClient(username: string, token: string) {
     targetUsername: string,
     range: ListenBrainzRange,
   ): Promise<TopArtist[]> {
-    let res: LbTopArtistsResponse
-    try {
-      res = await http.get<LbTopArtistsResponse>(
-        `/1/stats/user/${targetUsername}/artists?range=${range}`,
-      )
-    } catch (err: unknown) {
-      // 204 = no stats computed for this user/range yet (e.g. no listens this
-      // month). An empty result, not a failure.
-      if (err instanceof HttpError && err.status === 204) return []
-      throw err
-    }
+    const res = await getArtistStats(`/1/stats/user/${targetUsername}/artists?range=${range}`)
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,

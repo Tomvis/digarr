@@ -1,6 +1,6 @@
 {
   "name": "digarr",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -19,12 +19,13 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.evals.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:a11y": "playwright test --config=playwright.a11y.config.ts"
+    "test:e2e:a11y": "playwright test --config=playwright.a11y.config.ts",
+    "eval:quality": "bun scripts/recommendation-quality.ts"
   },
   "overrides": {
     "esbuild": "^0.28.0",
@@ -34,10 +35,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@biomejs/biome": "^2.5.13",
+    "@biomejs/biome": "^2.5.14",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-query": "^5.103.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -49,9 +50,9 @@
     "@vitest/coverage-v8": "^5.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-kit": "^0.31.10",
-    "jsdom": "^30.0.1",
-    "lucide-react": "^1.46.0",
+    "drizzle-kit": "^0.31.11",
+    "jsdom": "^30.1.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
@@ -63,14 +64,14 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/sdk": "^0.127.0",
     "@electric-sql/pglite": "0.5.8",
     "@hono/node-server": "^2.1.1",
     "@hono/zod-validator": "^0.9.1",
     "croner": "^10.0.1",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "hono": "^4.13.8",
-    "openai": "^7.15.0",
+    "openai": "^7.20.0",
     "openid-client": "^6.8.8",
     "p-queue": "^9.3.3",
     "p-retry": "^8.0.1",

@@ -3284,6 +3284,12 @@ function RecommendationsTabInner({
     (prefs.scoringWeights as Preferences['scoringWeights']) ?? DEFAULT_PREFERENCES.scoringWeights
 
   const [scoreThreshold, setScoreThreshold] = useState((prefs.scoreThreshold as number) ?? 0.5)
+  const [primaryGenres, setPrimaryGenres] = useState(
+    ((prefs.primaryGenres as string[] | undefined) ?? []).join(', '),
+  )
+  const [secondaryGenres, setSecondaryGenres] = useState(
+    ((prefs.secondaryGenres as string[] | undefined) ?? []).join(', '),
+  )
   const [consensus, setConsensus] = useState(weights.consensus)
   const [similarity, setSimilarity] = useState(weights.similarity)
   const [genreOverlap, setGenreOverlap] = useState(weights.genreOverlap)
@@ -3344,6 +3350,14 @@ function RecommendationsTabInner({
     try {
       await updateUserPreferences({
         scoreThreshold,
+        primaryGenres: primaryGenres
+          .split(',')
+          .map((genre) => genre.trim())
+          .filter(Boolean),
+        secondaryGenres: secondaryGenres
+          .split(',')
+          .map((genre) => genre.trim())
+          .filter(Boolean),
         scoringWeights: {
           consensus,
           similarity,
@@ -3371,6 +3385,7 @@ function RecommendationsTabInner({
       })
       setAudiodbProxyFlag(audiodbProxyImages)
       queryClient.invalidateQueries({ queryKey: ['user-preferences'] })
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] })
       queryClient.invalidateQueries({ queryKey: ['settings'] })
       toast.success(t('settings.recommendationsSaved'))
     } catch {
@@ -3385,6 +3400,28 @@ function RecommendationsTabInner({
       <Hint id="settings-recommendations-tip" type="inline">
         {t('settings.recommendationsTip')}
       </Hint>
+
+      <section className="space-y-4">
+        <Field label={t('settings.primaryGenres')} id="primary-genres">
+          <Input
+            id="primary-genres"
+            value={primaryGenres}
+            onChange={(e) => setPrimaryGenres(e.target.value)}
+            aria-describedby="genre-priority-help"
+          />
+        </Field>
+        <Field label={t('settings.secondaryGenres')} id="secondary-genres">
+          <Input
+            id="secondary-genres"
+            value={secondaryGenres}
+            onChange={(e) => setSecondaryGenres(e.target.value)}
+            aria-describedby="genre-priority-help"
+          />
+        </Field>
+        <p id="genre-priority-help" className="text-xs text-muted">
+          {t('settings.genrePriorityHelp')}
+        </p>
+      </section>
 
       {/* Essential - always visible */}
       <section className="space-y-4">
