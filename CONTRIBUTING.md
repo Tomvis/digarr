@@ -2,7 +2,7 @@
 
 ## Dev setup
 
-Install Bun, Node.js (Vitest runs under Node), Docker, and the PostgreSQL client tools (`pg_isready`). Development uses local ports 5432, 3000, and 5173; browser tests also use 3011 for the mock sign-in provider. Keep these ports free.
+Install Bun, Node.js 22.18 or newer (Vitest and the documentation AST check run under Node), Docker, and the PostgreSQL client tools (`pg_isready`). Development uses local ports 5432, 3000, and 5173; browser tests also use 3011 for the mock sign-in provider. Keep these ports free.
 
 ```sh
 git clone https://github.com/iuliandita/digarr.git
@@ -70,8 +70,7 @@ bun run typecheck
 bun run test:api-routes
 bun run test:coverage
 bun run i18n:check
-bun run check:versions
-bun run check:api-docs
+bun run check:docs   # versions, API inventory, links, environment names, source-impact receipts
 bun run test         # run once
 bun run test:watch   # watch mode
 bun run test:e2e     # Playwright browser tests (starts test dev servers)
@@ -91,11 +90,15 @@ Edit the authored locale catalogs following the [translation workflow](src/core/
 
 Use the [recommendation evaluation guide](docs/RECOMMENDATION-QUALITY.md) before changing prompts or ranking. `bun run eval:quality prepare` generates production-prompt cases without network calls. Live Promptfoo comparisons remain manual and advisory; saved outputs can be replayed locally. Synthetic profiles and automated plausibility checks do not establish human recommendation fit.
 
+## Documentation maintenance
+
+Run `bun run check:docs` with every change. Review affected guides and record source-impact receipts following [Keeping documentation current](docs/MAINTENANCE.md). Breaking changes need compatibility and upgrade instructions; migrations need backup and rollback instructions. A specific no-impact explanation is appropriate only when the diff preserves documented behavior.
+
 ## Submitting a PR
 
 1. Create a branch from `develop`: `git checkout develop && git pull --ff-only && git checkout -b feat/my-thing`
 2. Make your changes, keeping commits focused
-3. Confirm `bun run lint`, `bun run typecheck`, `bun run test`, `bun run test:api-routes`, `bun run i18n:check`, `bun run check:versions`, and `bun run check:api-docs` all pass
+3. Confirm `bun run lint`, `bun run typecheck`, `bun run test`, `bun run test:api-routes`, `bun run i18n:check`, `bun run check:docs` all pass
 4. Run `bun run test:e2e` if your change affects routes, workflows, or UI behavior
 5. Open a PR against `develop` and fill in the template. `main` receives release-promotion PRs from `develop`, not normal feature branches
 6. A maintainer will review; be ready to iterate
