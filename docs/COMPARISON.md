@@ -1,6 +1,6 @@
 # Other self-hosted music projects
 
-Digarr is for finding and reviewing music, then sending approved choices to connected services. It can run without Lidarr, but it does not provide its own downloader or full music player. You can use manual approval or enable automatic approval above a score threshold.
+Digarr is for finding and reviewing music, then sending approved choices to connected services. It can run without Lidarr, but it does not provide its own downloader or full music player. You can use manual approval or enable automatic approval above a score threshold. Automatic album approval uses artist-level monitoring and can include the whole discography; check the [known limitations](OPERATIONS.md#known-limitations-in-v1190).
 
 When choosing a tool, start with your setup:
 
@@ -25,8 +25,8 @@ Check each project's current documentation for supported services, setup require
 - [Brainarr](https://github.com/RicherTunes/Brainarr)
 - [Sonobarr](https://github.com/Dodelidoo-Labs/sonobarr)
 
-[MusicMoveArr Datasets](https://github.com/MusicMoveArr/Datasets) provides music metadata datasets used by Digarr for genre enrichment.
+[MusicMoveArr Datasets](https://github.com/MusicMoveArr/Datasets) provides music metadata datasets. Digarr has a generic CSV importer at `scripts/import-artist-metadata.ts`. Prepare a CSV with the headers `artist_name,spotify_genres,spotify_popularity,deezer_fans`; `spotify_genres` uses pipe-delimited values such as `indie rock|shoegaze`. No direct dataset integration is bundled.
 
 ## What to check in Digarr
 
-The [README](../README.md) covers the current feature set and installation paths. Before deciding, check its notes on Spotify app requirements, experimental TIDAL support, playlist library requirements, and the difference between `:nightly` and tagged releases. These constraints matter more than a feature count.
+The [README](../README.md) covers the current feature set and installation paths. Before deciding, check its notes on Spotify app requirements, experimental TIDAL support, and playlist library requirements. Check the [image channels](../deploy/docker/README.md#image-channels) for the difference between `:nightly` and tagged releases. These constraints matter more than a feature count.

@@ -6,11 +6,17 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ## Unreleased
 
+### Maintenance
+
+- Add documentation checks for source changes, local links, environment names, and review receipts. Contributor checks require Bun and Node.js 22.18 or newer. PRs and releases run the checks; Unraid companion templates have a separate advisory comparison. Manual releases check the requested tag before publishing its image; tag/version mismatches fail and both images use the checked commit. [#776](https://github.com/iuliandita/digarr/issues/776), [#777](https://github.com/iuliandita/digarr/issues/777), [#778](https://github.com/iuliandita/digarr/issues/778).
+
+### Documentation
+
+- Shorten the README and move operator details into linked guides. Correct v1.19.0 API contracts, deployment requirements, and known limitations, including Helm install messages, Compose comments, and Unraid template help. Application defects remain tracked separately. [#755](https://github.com/iuliandita/digarr/issues/755).
+- Clarify backup boundaries, album approval, and key rotation. The v1.18.0-to-v1.19.0 upgrade has no migrations and creates no pre-migration auto-backup; take a complete database backup first. [#755](https://github.com/iuliandita/digarr/issues/755).
+- Correct historical descriptions in v0.20.3 (inline discovery controls), v1.11.0 (migration key checks), and v1.13.0 (digest bookmarks), checked against their release tags on October 7, 2026. The v1.19.0 wording is also clarified, including the remaining name filter and section ordering. These corrections describe existing behavior, not new features. Older README anchors remain as pointers to the guides. [#755](https://github.com/iuliandita/digarr/issues/755).
+
 ## v1.19.0 - 2026-10-06
-
-### Development
-
-- Recommendation evaluation uses the production prompt with representative synthetic profiles, field-level checks, and replayable reports. Expected-neighbor checks remain advisory; subjective fit and listening outcomes require separate review. [#718](https://github.com/iuliandita/digarr/issues/718).
 
 ### Added
 
@@ -25,13 +31,15 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 - AI profiles retain each seed artist's genre context and describe source-dependent seed weights without calling popularity or favorites play counts. Guidance supports distinct musical interests and treats missing history or tags as unknown. The advisory baseline adds eclectic and sparse-history cases. [#739](https://github.com/iuliandita/digarr/issues/739).
 - Maintenance rescoring preserves stored score components and album modifiers, skips incompatible legacy evidence, and uses the current user's weights only for their recommendations. Concurrently changed rows are left untouched. [#734](https://github.com/iuliandita/digarr/issues/734).
 - Listening profiles split semicolon-separated genre lists and ignore numeric artifacts before genre weighting. Valid genres are deduplicated, and coverage counts only usable genres. Stored library and cache metadata are unchanged. [#736](https://github.com/iuliandita/digarr/issues/736).
-
 - Name-only discovery validates MusicBrainz names and catalog aliases before genre matching, preventing unrelated artists from inheriting another artist's AI explanation and starter album. Tied matches remain unresolved. [#731](https://github.com/iuliandita/digarr/issues/731).
-
 - Discover Audition retains unavailable-preview reasons after skipped items or queue completion, including missing links, lookup failures, and playback failures. Only an actual browser permission rejection is labeled blocked playback. [#729](https://github.com/iuliandita/digarr/issues/729).
 - Discovery skips listening sources without similar-artist support instead of reporting them as failed. Job History distinguishes missing seeds, successful empty lookups, and actual or partial source failures, with localized skip explanations. [#722](https://github.com/iuliandita/digarr/issues/722).
-- AI recommendations retain legitimate comparisons to listening-profile artists. The description check now targets shared-name collisions, and prompts request the recommended artist's name explicitly. This remains a heuristic, not identity verification. [#719](https://github.com/iuliandita/digarr/issues/719).
+- AI recommendations retain legitimate comparisons to listening-profile artists. The description check now targets shared-name collisions, and prompts request the recommended artist's name explicitly. A separate name-containment filter remains and can suppress legitimate similarly named artists. This remains a heuristic, not identity verification (wording clarified after release). [#719](https://github.com/iuliandita/digarr/issues/719).
 - Dashboard listening history distinguishes unconfigured accounts, empty history, and fetch failures, with retry actions for failures. ListenBrainz artist statistics treat HTTP 204 as empty history. [#721](https://github.com/iuliandita/digarr/issues/721).
+
+### Development
+
+- Recommendation evaluation uses the production prompt with representative synthetic profiles, field-level checks, and replayable reports. Expected-neighbor checks remain advisory; subjective fit and listening outcomes require separate review. [#718](https://github.com/iuliandita/digarr/issues/718).
 
 ## v1.18.0 - 2026-09-20
 
@@ -58,12 +66,12 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 ### Changed
 
 - Installation guides now spell out HTTP cookie settings, the 12-character password minimum, persistent backups, and database-backend choices. The README and project descriptions focus on discovery, review, and playlist workflows.
-- TIDAL Favorite Artists continues to ship as experimental without live-account validation. Authorization, refresh, and favorite-artist retrieval remain unverified; live testing is deferred to community feedback. The [README feedback guide](README.md#tidal-feedback) explains setup and what to report. [#553](https://github.com/iuliandita/digarr/issues/553).
+- TIDAL Favorite Artists continues to ship as experimental without live-account validation. Authorization, refresh, and favorite-artist retrieval remain unverified; live testing is deferred to community feedback. The [TIDAL feedback guide](docs/AUTHENTICATION.md#tidal-feedback) explains setup and what to report. [#553](https://github.com/iuliandita/digarr/issues/553).
 - Spotify setup documents the Premium app-owner requirement and Development Mode allowlist limits, with alternatives that do not need Spotify. [#395](https://github.com/iuliandita/digarr/issues/395).
 
 ### Upgrade notes
 
-- Startup migrations add Plex listener fields and consolidate duplicate slskd retry jobs without deleting their history. Keep a pre-upgrade backup. Existing Plex connections need a listener selection for history; linked slskd targets need a completed-download path visible to Lidarr. See the [Plex](README.md#connecting-plex-listeners) and [slskd](README.md#importing-slskd-downloads-into-lidarr) setup notes.
+- Startup migrations add Plex listener fields and consolidate duplicate slskd retry jobs without deleting their history. Keep a pre-upgrade backup. Existing Plex connections need a listener selection for history; linked slskd targets need a completed-download path visible to Lidarr. See the [Plex](docs/OPERATIONS.md#connecting-plex-listeners) and [slskd](docs/OPERATIONS.md#importing-slskd-downloads-into-lidarr) setup notes.
 
 ## v1.17.0 - 2026-09-16
 
@@ -118,7 +126,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 - **TIDAL Favorite Artists discovery mode (experimental, unproven).** A new runnable discovery mode seeds recommendations from the artists in your TIDAL collection (Discover -> Discovery Modes). TIDAL is now a per-user connection: an admin registers one shared TIDAL app under Settings (the existing TIDAL client ID/secret, plus a redirect URI of `<your-app-url>/api/v1/auth/oauth/tidal/callback`), and each user connects their own account from Settings -> Your Connections with an Authorization Code + PKCE flow requesting the `user.read` and `collection.read` scopes. Favorites are the only user-artist signal TIDAL's public API exposes -- there is no separate followed-artists list. Translated across all 15 shipped locales.
 
-  **This flow has not been validated against a live TIDAL account.** It was implemented from TIDAL's published OpenAPI description rather than from a completed connect, so the token exchange, the shared-app PKCE registration, and the collection payload shape are all unverified -- both the connect card and the mode card carry an "Experimental" badge for that reason. A failed connect now shows the reason as a banner on the Settings page -- report that message (or, on success, the artist count the mode returned) on [#553](https://github.com/iuliandita/digarr/issues/553) so the flow can be confirmed or fixed. The TIDAL callback distinguishes four token-exchange failures (`token_exchange_unreachable`, `token_exchange_failed`, `token_exchange_malformed`, `token_exchange_no_token`) so a single tester report identifies the stage, and it logs the upstream error body. Collection pagination is capped and stops on a non-advancing cursor, and a response carrying collection items with no sideloaded artists now fails loudly instead of returning zero recommendations. Note that rotating the shared TIDAL app credentials requires every user to disconnect and reconnect.
+  **This flow has not been validated against a live TIDAL account.** It was implemented from TIDAL's published OpenAPI description rather than from a completed connect, so the token exchange, the shared-app PKCE registration, and the collection payload shape are all unverified -- both the connect card and the mode card carry an "Experimental" badge for that reason. A failed connect now shows the reason as a banner on the Settings page -- report that message (or, on success, the artist count the mode returned) on [#553](https://github.com/iuliandita/digarr/issues/553) so the flow can be confirmed or fixed. The TIDAL callback distinguishes four token-exchange failures (`token_exchange_unreachable`, `token_exchange_failed`, `token_exchange_malformed`, `token_exchange_no_token`) so a single tester report identifies the stage, and it logs the upstream error body. Collection pagination is capped and stops on a non-advancing cursor, and a response carrying collection items with no sideloaded artists now fails loudly instead of returning zero recommendations. Existing connections retain their saved app credentials when the shared settings change. Users must disconnect and reconnect to adopt new credentials; invalidating the old credentials at TIDAL can cause refresh failures.
 - **Spotify Followed Artists discovery mode.** A new runnable discovery mode seeds recommendations from the artists you follow on Spotify (Discover -> Discovery Modes). It needs the `user-follow-read` OAuth scope: new Spotify connections request it automatically, but users who connected Spotify before this release must disconnect and reconnect once to grant it. Until then the mode stays visible but unavailable, with a "Reconnect Spotify to grant follow access." reason. Translated across all 15 shipped locales.
 - **Spotify top-artists genre signal now spans all three listening windows.** The Spotify listening signal that feeds genre-profile scoring aggregates your top artists across the short, medium, and long term windows instead of medium term only, for a richer taste profile. No new scope or reconnect is required; it applies to existing Spotify connections immediately, and a single window that fails to load degrades gracefully instead of dropping the whole signal.
 - **Failed and successful streaming connections now say so.** Finishing a Spotify, Deezer, or TIDAL connect returned you to an unchanged Settings page whether it worked or not, with the outcome visible only as a query string in the address bar. Settings now shows a dismissible banner explaining what happened, with wording specific to each cause -- the attempt expired, it was finished in a different browser than it was started in, the stored credentials are gone, the provider refused the exchange, and so on -- then clears the parameter from the URL. Anything the provider itself reports renders through a generic message with the raw code shown as inert text, so an unrecognized value is readable without being trusted. Translated across all 15 shipped locales.
@@ -170,7 +178,7 @@ New discovery inputs and review controls, continuous audition playback, broader 
 
 ### Changed
 
-- **Notification digests now persist their last-sent bookmark.** Restarts and downtime no longer double-report or drop an activity window; delivery remains at-least-once.
+- **Notification digests now persist their last-sent bookmark.** Ordinary restarts resume from the saved activity-window bookmark. A crash after webhook delivery but before the bookmark is saved can still repeat delivery; delivery remains at-least-once (wording clarified after release).
 - **Database backend migration now copies and verifies one table at a time.** The admin migration tool no longer holds whole-source and whole-target backup objects in application memory. It keeps the consistent read-only source transaction and atomic target transaction, restores in bounded chunks, and reports the same count/content verification result while the working set follows the largest individual table.
 - **Playlist targets now share one safe HTTP transport policy.** Jellyfin, Emby, Plex, and Navidrome playlist requests use the shared timeout, TLS, JSON parsing, response-body error, and credential-redaction path. Read-only requests and best-effort metadata updates may retry; duplicate-producing playlist creation and song-add requests make exactly one attempt, including Subsonic's GET-shaped mutation endpoints.
 - **Lidarr library-health repairs use the bulk editor first.** Unmonitored-artist repairs make one bulk request on compatible Lidarr versions and retain a per-artist fallback when the bulk endpoint is unavailable.
@@ -227,7 +235,7 @@ Self-hostable with zero external database, a new Subsonic source, in-app backend
 
 ### Added
 
-- **Migrate between PGlite and PostgreSQL from the admin panel (admin-gated, source never modified, verified copy).** A new "Migrate Database Backend" section in Settings -> Administration lets admins copy all stateful data from the current backend to a different one without taking the server offline for reads. The tool takes a consistent read-only snapshot (`REPEATABLE READ READ ONLY`), blocks write API calls during the copy (reads still serve normally), restores atomically into the target, then verifies every table by row count and content hash. On success, the panel shows the exact env var to set before restarting. `sessions` and rate-limit counters are intentionally excluded (all users must re-login after the switch). The source is never modified; the switch is reversible by pointing the env vars back at the original backend. Requires the same `DIGARR_ENCRYPTION_KEY` on both ends -- the tool refuses with a clear error if they differ. See [Switching the Database Backend](docs/guides/switching-backends.md).
+- **Migrate between PGlite and PostgreSQL from the admin panel (admin-gated, source never modified, verified copy).** A new "Migrate Database Backend" section in Settings -> Administration lets admins copy all stateful data from the current backend to a different one without taking the server offline for reads. The tool takes a consistent read-only snapshot (`REPEATABLE READ READ ONLY`), blocks write API calls during the copy (reads still serve normally), restores atomically into the target, then verifies every table by row count and content hash. On success, the panel shows the exact env var to set before restarting. `sessions` and rate-limit counters are intentionally excluded (all users must re-login after the switch). The migration does not modify the source. Switching the environment back resumes its pre-cutover state and omits later writes to the new backend; preserve those changes through a backed-up, verified reverse copy or recovery before switching back. Encrypted values transfer unchanged under the running process's key; retain that `DIGARR_ENCRYPTION_KEY` when restarting on the new backend. This same-process migration does not independently verify source and target keys. See [Switching the Database Backend](docs/guides/switching-backends.md) (wording clarified after release).
 - **Embedded PGlite database backend.** Run digarr with no separate PostgreSQL container via `docker run` (no DB env) or `docker-compose.pglite.yml`. The existing `docker-compose.yml`, Helm, and raw k8s are unchanged and still default to PostgreSQL. External PostgreSQL remains fully supported via `DATABASE_URL`/`DB_*`. Upgrade note: existing deployments are unaffected -- the app uses PostgreSQL whenever a DSN is present (it already required one to boot), and the default backend plus your existing Postgres connection are unchanged. The startup log prints the selected backend (`[db] backend=...`).
 - **Subsonic listening and library source.** Digarr can now connect to a Subsonic-compatible server (Navidrome, Airsonic, Gonic, or plain Subsonic) as a first-class source, at parity with Plex/Jellyfin/Emby. It seeds discovery from your starred/favorite artists and syncs your library (artists and albums) for filtering and gap-fill. Matching is name-based -- Subsonic artists and albums carry no MBIDs, so the reconciler name-matches them against MusicBrainz; the source does not provide similar-artists or genre tags. Configure it under Settings -> Connections with the server URL, username, and password (token auth). Translated across all 15 shipped locales.
 - **Set your account email in-app.** A new **Settings -> Account -> Email** field lets you set or clear your account's email without touching the database (operators previously had to edit the `email` column by hand). Emails are stored case-insensitively and are unique across users -- claiming one already in use is rejected. Note: OIDC/SSO identities link to local accounts by the issuer subject only, not by email, so a self-set email cannot be used to bind an IdP identity to your account. Translated across all 15 shipped locales.
@@ -309,15 +317,15 @@ Third and final album-discovery producer: net-new album discovery promotes a spe
 
 ### Added
 
-- **Net-new album discovery (Producer C).** When the AI suggests a specific album by an artist you do not yet track and that title resolves to a real MusicBrainz release group, Digarr can surface it as a first-class album recommendation under the Albums tab instead of folding it into a plain artist recommendation. Gated behind a new **Net-new album discovery** toggle in Settings > Recommendations > Advanced (default off); with it off, AI discovery behaves exactly as before. Translated across all 15 shipped locales.
+- **Net-new album discovery (Producer C).** When the AI suggests a specific album by an artist you do not yet track and that title resolves to a real MusicBrainz release group, Digarr can surface it as a first-class album recommendation under the Albums tab instead of folding it into a plain artist recommendation. The new **Net-new album discovery** toggle in Settings > Recommendations > Advanced defaults off, but its per-user save key is omitted from the route allowlist, so the UI cannot persist enablement; the conditional resolver exists (wording clarified after release). Translated across all 15 shipped locales.
 
 ## v1.2.0 - 2026-06-22
 
-Second album-discovery producer: Library Gap-Fill recommends the studio albums you are missing from artists you already track.
+Second album-discovery producer: Library Gap-Fill recommends missing primary-type Album release groups from artists you already track. Secondary types are not checked, so selection is not studio-only (wording clarified after release).
 
 ### Added
 
-- **Library Gap-Fill discovery mode (Producer A).** A new discovery mode that turns "studio albums you are missing from artists you already track" into first-class album recommendations under the Albums tab. Each run checks a rotating, bounded slice of your tracked artists (default 25, configurable), so a large library is covered over successive runs without flooding the queue.
+- **Library Gap-Fill discovery mode (Producer A).** A new discovery mode that turns missing Album-type release groups from tracked artists into first-class album recommendations under the Albums tab. Each run checks a rotating, bounded slice of tracked artists (default 25, configurable); release-group lookup uses one returned page and does not check secondary types (wording clarified after release).
 
 ### Changed
 
@@ -508,7 +516,7 @@ Release candidate for the v1 line. This consolidates the v1 audit follow-ups acr
 
 ## v0.44.0 - 2026-04-26
 
-UX release. Rejecting a recommendation now opens a structured picker with six fixed reasons (already own, wrong style, not interested, tried it didn't like it, maybe later, other) plus a "Don't show again" checkbox that promotes the rejection to a permanent per-user blacklist. Settings gets a new Blocked tab to view, search, and unblock entries. The new blocklist filters the pipeline, subscriptions, and quick-discover independent of the existing rejection cooldown, so unblocking does not bypass the cooldown.
+UX release. Rejecting a recommendation now opens a structured picker with six fixed reasons (already own, wrong style, not interested, tried it didn't like it, maybe later, other) plus a "Don't show again" checkbox that promotes the rejection to a permanent per-user blacklist. Settings gets a new Blocked tab to view, search, and unblock entries. The new blocklist filters pipeline and subscription candidates and Quick Discover similar results independently of the existing rejection cooldown, so unblocking does not bypass the cooldown. Quick Discover's separately stored seed bypasses these filters (wording clarified after release).
 
 ### Added
 
@@ -517,7 +525,7 @@ UX release. Rejecting a recommendation now opens a structured picker with six fi
 - `Settings > Blocked` tab with debounced name search, cursor pagination, and unblock-with-undo toast
 - `POST /api/v1/artist-blocks`, `GET /api/v1/artist-blocks`, `DELETE /api/v1/artist-blocks/:artistId` routes (auth required, scoped to the calling user)
 - `rejection_reason` and `rejection_reason_text` columns on `recommendations` so the reason persists with the rejection record
-- Pipeline filter, subscription runner, and quick-discover all honour the blocklist as an independent layer above the rejection cooldown
+- Pipeline filter, subscription runner, and Quick Discover similar-result filtering honor the blocklist independently of the rejection cooldown; the separately stored Quick Discover seed is an exception (wording clarified after release)
 - 28 new i18n keys translated across all 15 shipped locales
 - Backup/restore round-trips include `artist_blocks`
 - Server-side Zod validation enforces UI invariants (`not_right_now` is incompatible with permanent; `reasonText` only valid when `reason='other'`)
@@ -1084,7 +1092,7 @@ Six data-safety fixes from the deep audit.
 
 ### Added
 
-- Discovery modes on the dedicated `/discover/modes` page, with runnable ListenBrainz, Release Radar, and Similar Artist Web flows
+- Discovery modes within Discover, with runnable ListenBrainz, Release Radar, and Similar Artist Web flows (wording clarified after release).
 - Discovery-mode subscriptions that reuse the existing subscription runner, scheduler, job history, and browser coverage
 
 ### Fixed

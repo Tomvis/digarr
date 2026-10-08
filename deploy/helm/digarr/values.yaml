@@ -66,7 +66,7 @@ podDisruptionBudget:
 ingress:
   enabled: false
   className: nginx
-  # Namespace of the ingress controller. Used by the NetworkPolicy ingress
+  # Namespace of the Ingress or Gateway data plane. Used by the NetworkPolicy ingress
   # rule to allow traffic from this namespace only. The controller's
   # namespace must carry the `kubernetes.io/metadata.name` label
   # (automatic on Kubernetes >= 1.22).
@@ -147,7 +147,7 @@ readinessProbe:
 # Three modes, selected by database.backend:
 #
 # Mode 1: Embedded PGlite (database.backend = "pglite")
-#   No separate database. The app stores data in a single file under
+#   No separate database. The app stores its data directory at
 #   database.pglite.path on a dedicated PVC. Single-writer: the chart
 #   forces strategy=Recreate and requires replicaCount=1. No password
 #   needed. Skips the bundled Postgres entirely.
@@ -155,11 +155,17 @@ readinessProbe:
 # Mode 2: Bundled PostgreSQL (database.backend = "postgres", postgresql.enabled = true)
 #   Uses the official postgres:17-alpine image as a StatefulSet.
 #   You MUST set postgresql.auth.password -- there is no default.
+#   Chart-generated URLs do not encode usernames, passwords, or database names:
+#   use URI-unreserved characters; a random hex password is suitable.
+#   Keep bundled passwords and database names plain, not percent-encoded.
 #
 # Mode 3: External PostgreSQL (database.backend = "postgres", postgresql.enabled = false)
-#   Point database.host at your own PostgreSQL instance, cloud RDS,
-#   CNPG cluster, etc. Or supply a pre-created Secret via
-#   database.existingSecret with a DATABASE_URL key.
+#   Set database.host and database.password for your own PostgreSQL instance,
+#   cloud RDS, CNPG cluster, etc. Chart-generated URLs also insert these
+#   username/password/database-name values unencoded; use URI-unreserved
+#   characters, or supply a Secret via
+#   database.existingSecret with a complete DATABASE_URL key; percent-encode
+#   its username/password/database-name components when needed.
 # ---------------------------------------------------------------------------
 
 # Bundled PostgreSQL -- official postgres image, no Bitnami dependency
@@ -199,10 +205,12 @@ database:
   password: ""
   # Name of an existing Secret with key DATABASE_URL
   existingSecret: ""
-  # Embedded PGlite (used only when backend=pglite). Requires a PVC for the data file.
+  # Embedded PGlite (used only when backend=pglite). Requires a PVC for the data directory.
   pglite:
     path: /app/data
     persistence:
+      # Keep persistence enabled. Setting enabled=false uses emptyDir and loses
+      # the database on pod replacement.
       enabled: true
       size: 2Gi
       storageClass: ""
@@ -222,7 +230,7 @@ namespace:
 # ---------------------------------------------------------------------------
 # Optional Gateway API HTTPRoute (replaces Ingress on clusters running
 # Gateway API controllers like Cilium, Traefik, Envoy Gateway, Istio).
-# Ingress-NGINX reaches EOL in March 2026; this is the forward path.
+# Ingress-NGINX reached EOL in March 2026; this is the forward path.
 # ---------------------------------------------------------------------------
 gateway:
   enabled: false
@@ -240,10 +248,9 @@ gateway:
 # Optional PVC for /app/backups
 # ---------------------------------------------------------------------------
 # Default is emptyDir -- backups live only for the pod lifetime. Enable
-# persistence to survive pod restarts and cluster events.
-# Strongly recommended with database.backend=pglite: the pre-migration
-# auto-backup is the only rollback artifact, and an emptyDir loses it on
-# restart (the chart's NOTES.txt warns when this is left disabled in pglite mode).
+# persistence to survive pod replacement. Pre-migration JSON auto-backups
+# are partial and do not replace a consistent database or data-volume backup.
+# See docs/guides/switching-backends.md for complete recovery boundaries.
 backups:
   persistence:
     enabled: false
