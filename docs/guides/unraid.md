@@ -1,10 +1,10 @@
 # Installing Digarr on Unraid
 
-Digarr ships an Unraid Community Applications (CA) container template at
+Digarr ships a manually installed Unraid container template at
 [`deploy/unraid/digarr.xml`](../../deploy/unraid/digarr.xml). The release
 pipeline updates its version tag and records the matching image digest in a
 comment. The container uses the version tag; the comment does not enforce a
-digest pin.
+digest pin. Community Applications (CA) uses a separate template maintained in the Selfhosters repository; [iuliandita/unraid-templates](https://github.com/iuliandita/unraid-templates) also carries a companion copy.
 
 Digarr ships with a **built-in embedded database (PGlite)** -- no separate
 PostgreSQL container is required. New installs run as a single container that
@@ -14,8 +14,10 @@ PostgreSQL, that stays fully supported via the optional Database URL field (see
 
 ## Prerequisites
 
-- Unraid 6.9+ with the **Community Applications** plugin installed
+- Unraid 6.9+. The **Community Applications** plugin is needed only for Option A.
 - Access to an AI provider or local model. Hosted providers need an API key; a local Ollama server does not. Configure this during setup.
+
+The first account becomes admin. Restrict access to the published port until the intended admin account exists and you have verified it, including when `DIGARR_INITIAL_USERNAME` and `DIGARR_INITIAL_PASSWORD` are configured. The HTTP listener opens before environment-based bootstrap finishes ([#785](https://github.com/iuliandita/digarr/issues/785)). The template exposes the service on host interfaces unless you restrict the binding or firewall.
 
 ---
 
@@ -24,14 +26,15 @@ PostgreSQL, that stays fully supported via the optional Database URL field (see
 Digarr is published in the Community Applications store via the Selfhosters
 [repository](https://github.com/selfhosters/unRAID-CA-templates/blob/master/templates/digarr.xml). Search for Digarr in Apps.
 
-### Option A: Community Applications store (recommended)
+### Option A: Community Applications store
 
 1. In the Unraid web UI go to **Apps** and search for **Digarr**.
-2. Click **Install** and fill in the configuration (see Step 2), then click
-   **Apply**.
+2. Click **Install**, switch **Advanced View** on, and fill in the configuration (see Step 2).
+3. For direct HTTP, add `DIGARR_ALLOW_INSECURE_COOKIES=true` if the template lacks it: select **Add another Path, Port, Variable, Label or Device**, choose **Variable**, enter `DIGARR_ALLOW_INSECURE_COOKIES` as the Key and `true` as the Value, then select **Add**. With an HTTPS public origin, leave this override false.
+4. Set **Allowed Origin** to the exact browser origin, generate and retain an **Encryption Key**, and choose an initial password of at least 12 characters. Then click **Apply**.
 
 The store template tracks the `latest` release tag, so **Check for Updates** on
-the Docker tab picks up new releases as they publish.
+the Docker tab picks up new releases as they publish. Older tag help calls this "Latest stable release", but `:latest` is distinct from the seven-day-soak `:stable` channel.
 
 ### Option B: User template (manual copy)
 
@@ -41,7 +44,7 @@ the Docker tab picks up new releases as they publish.
    over SSH:
 
    ```sh
-   curl -L -o /boot/config/plugins/dockerMan/templates-user/my-Digarr.xml \
+   curl -fL -o /boot/config/plugins/dockerMan/templates-user/my-Digarr.xml \
      https://raw.githubusercontent.com/iuliandita/digarr/main/deploy/unraid/digarr.xml
    ```
 
@@ -59,11 +62,15 @@ new releases through the `latest` tag.
 
 ## Step 2: Configure the container
 
-Store templates can lag behind the bundled one. If a field below is missing, add it as a container environment variable using the listed name.
+Switch **Advanced View** on in the container form to expose advanced fields. The bundled template includes Allowed Origin, Encryption Key, and Allow Insecure Cookies. Published store templates can lag behind it; use the add-variable steps above for any missing field.
+
+The personal companion corrections merged in [iuliandita/unraid-templates PR #4](https://github.com/iuliandita/unraid-templates/pull/4), and its published template matches the current fields and help. [Selfhosters PR #697](https://github.com/selfhosters/unRAID-CA-templates/pull/697) remains pending as of October 8, 2026; the Community Applications store still needs the workarounds below. After that PR merges, verify the published store template before removing them.
+
+The current store help omits the HTTP-cookie variable and has stale password, database encoding, origin, model, TLS, and webhook guidance. Follow the settings below, use at least 12 characters for the initial password, manually add `DIGARR_ALLOW_INSECURE_COOKIES` for direct HTTP, and change saved connections in the UI after setup.
 
 Set **Allowed Origin** before first login. For the default direct-HTTP WebUI, use `http://<server-ip>:<port>` and set **Allow Insecure Cookies** to `true`. For HTTPS through a reverse proxy, use its public HTTPS origin and leave the override false. Generate and retain an **Encryption Key** before saving service credentials.
 
-The template exposes these fields (matching
+The bundled template exposes these fields (matching
 [`deploy/unraid/digarr.xml`](../../deploy/unraid/digarr.xml)):
 
 | Field | Variable | Required | Notes |
@@ -71,7 +78,7 @@ The template exposes these fields (matching
 | Web UI Port | host port -> `3000` | Yes | The web interface; WebUI link opens `http://<server-ip>:<port>` |
 | Data | path `/app/data` | Yes | Persistent storage for the embedded database. Default maps `/mnt/user/appdata/digarr/data` -> `/app/data`. Must be writable by the container user (uid 1000) |
 | Data Path | `DB_PATH` | No (advanced) | Container path of the embedded database, default `/app/data` -- leave it matching the Data mapping |
-| Database URL | `DATABASE_URL` | No (advanced) | Leave empty to use the embedded database. Set only to use an external PostgreSQL, e.g. `postgresql://digarr:pass@host:5432/digarr` (see Advanced section) |
+| Database URL | `DATABASE_URL` | No (advanced) | Leave empty to use the embedded database. Set only to use an external PostgreSQL, e.g. `postgresql://digarr:pass@host:5432/digarr`; percent-encode username, password, and database-name components when needed (see [Advanced section](#advanced-external-postgresql)) |
 | Initial Username | `DIGARR_INITIAL_USERNAME` | No | Auto-creates this admin user on first boot |
 | Initial Password | `DIGARR_INITIAL_PASSWORD` | No | Password for the initial admin (min 12 chars) |
 | AI Provider | `AI_PROVIDER` | No | `anthropic`, `openai`, `gemini`, `ollama`, `openai-compatible` (or set in UI) |
@@ -81,22 +88,24 @@ The template exposes these fields (matching
 | Lidarr URL / API Key | `LIDARR_URL`, `LIDARR_API_KEY` | No | Optional -- discovery works without Lidarr |
 | ListenBrainz | `LISTENBRAINZ_USERNAME`, `LISTENBRAINZ_TOKEN` | No | Listening source (advanced) |
 | Last.fm | `LASTFM_USERNAME`, `LASTFM_API_KEY` | No | Listening source (advanced) |
-| Allowed Origin | `ALLOWED_ORIGIN` | No | Required behind a reverse proxy, e.g. `https://digarr.example.com` |
-| Allow Insecure Cookies | `DIGARR_ALLOW_INSECURE_COOKIES` | No | Defaults to `false`. Set `true` only for an intentional direct-HTTP deployment; direct HTTP exposes the session cookie to interception |
-| Encryption Key | `DIGARR_ENCRYPTION_KEY` | No | Random key (32+ characters recommended) for encrypting API keys, tokens, and connection passwords. If blank, those fields are stored unencrypted and the app logs a production warning; generate and persist a key before entering secrets |
-| Disable Registration | `DIGARR_DISABLE_REGISTRATION` | No | Defaults to `true`; set `false` to allow new sign-ups |
+| Allowed Origin | `ALLOWED_ORIGIN` | Set explicitly | Exact browser origin for direct HTTP or a reverse proxy, e.g. `http://<server-ip>:3000` or `https://digarr.example.com`; no path or trailing slash |
+| Allow Insecure Cookies | `DIGARR_ALLOW_INSECURE_COOKIES` | Direct HTTP only | Defaults to `false`. Set `true` only for an intentional direct-HTTP deployment; direct HTTP exposes the session cookie to interception |
+| Encryption Key | `DIGARR_ENCRYPTION_KEY` | Recommended | Random key (32+ characters recommended) for encrypting API keys, tokens, and connection passwords. If blank, those fields are stored unencrypted and the app logs a production warning; use [protected key generation](../AUTHENTICATION.md#generate-a-new-encryption-key) and copy the value into this field before entering secrets; retain the same key on upgrades |
+| Disable Registration | `DIGARR_DISABLE_REGISTRATION` | No | Defaults to `true`; set `false` for local password sign-ups. OIDC account provisioning is controlled by the identity provider |
 | Skip TLS Verify | `SKIP_TLS_VERIFY` | No | First-run env auto-setup TLS setting; afterward use saved connection settings |
 | Webhook URL | `WEBHOOK_URL` | No | Optional bootstrap for a single webhook channel: a Discord HTTPS webhook (embed payload) or a public HTTPS endpoint that accepts Digarr's raw JSON payload. Applied only during first-run env auto-setup with `AI_PROVIDER` and `AI_MODEL` |
 
+The template requires explicit dropdown selections for Disable Registration and Skip TLS Verify, with defaults `true` and `false`; the environment settings themselves remain optional.
+
 `WEBHOOK_URL` seeds one channel during env auto-setup. Changing it after setup does not update the saved channels. Notifications are
 multi-channel -- add webhook, ntfy, Telegram, or Apprise channels (each with its
-own event subscriptions) under **Settings -> Notifications** in the web UI.
+own event subscriptions) under **Settings > Connections > Notifications** in the web UI.
 
 Use HTTPS for webhook delivery. Plain HTTP is accepted for compatibility but
 exposes notification data and any credential embedded in the URL while in transit.
 
 Subsonic, Plex, Jellyfin, Emby, Spotify, Deezer, and Discogs connections are not
-template fields -- add them later under **Settings -> Connections** in the web UI.
+template fields -- add them later under **Settings > Connections** in the web UI.
 
 ### Recommended: persistent backups volume
 
@@ -108,11 +117,11 @@ database migrations (it keeps the last 14 auto-backups). Add a path mapping in
 - Container path: `/app/backups`
 - Host path: e.g. `/mnt/user/appdata/digarr/backups`
 
+Before startup, make both host folders (`data` and `backups`) writable by container UID 1000. Create them first, then set their ownership with `chown 1000:1000 /mnt/user/appdata/digarr/data /mnt/user/appdata/digarr/backups` from the Unraid terminal.
+
 With the embedded database, your library data lives in the mapped `/app/data`
 folder, so persisting that mapping is what protects your recommendations and
-settings across updates; the backups volume is the pre-migration safety net.
-(With external PostgreSQL, persisting the Postgres database serves that role
-instead.)
+settings across updates. With external PostgreSQL, persist the Postgres database instead. Automatic JSON backups are partial and can fail without blocking migrations; see [Backup & restore](../OPERATIONS.md#backup--restore). Take a [complete database backup](switching-backends.md#backup-boundaries-and-recovery) and retain the encryption key separately before upgrading.
 
 ---
 
@@ -120,9 +129,9 @@ instead.)
 
 1. Click **Apply** to create and start the container.
 2. Open the **WebUI** link (or `http://<server-ip>:3000`).
-3. If you set `DIGARR_INITIAL_USERNAME` / `DIGARR_INITIAL_PASSWORD`, log in with
-   those; otherwise complete the setup wizard to create the first admin.
-4. Database migrations run automatically on every startup. With the embedded
+3. If `DIGARR_INITIAL_USERNAME` / `DIGARR_INITIAL_PASSWORD` are configured, sign in with those and complete any unfinished setup. Otherwise, complete setup and register the first admin account when prompted. The setup wizard saves configuration; it does not create an account.
+4. After signing in, verify the saved connections and targets in Settings. Configure missing ones there: setup performed before authentication cannot save user-scoped connections or targets ([#783](https://github.com/iuliandita/digarr/issues/783)).
+5. Database migrations run automatically on every startup. With the embedded
    database this is self-contained; with external PostgreSQL, if Digarr starts
    before Postgres is ready it retries with backoff, so transient startup-order
    races resolve on their own.
@@ -132,12 +141,12 @@ instead.)
 ## Advanced: external PostgreSQL
 
 Skip this section unless you want Digarr to run against your own PostgreSQL
-instead of the embedded database. You will need a PostgreSQL 14+ instance
+instead of the embedded database. You will need a PostgreSQL 15+ instance
 reachable from the Digarr container (a `postgres` container on the same Docker
 network is the simplest option).
 
 1. **Apps** (Community Applications) > search for **postgres** > install the
-   `postgresql` container (use a 14+ tag, e.g. `postgres:17-alpine`).
+   `postgresql` container (use a 15+ tag, e.g. `postgres:17-alpine`).
 2. Set these environment variables on the Postgres container:
    - `POSTGRES_USER` = `digarr`
    - `POSTGRES_PASSWORD` = pick a strong password
@@ -151,15 +160,20 @@ network is the simplest option).
    When `DATABASE_URL` is set, Digarr uses PostgreSQL and ignores the embedded
    database; the `/app/data` mapping is then unused.
 
+Digarr passes an explicit `DATABASE_URL` unchanged. Percent-encode the username, password, and database-name components when needed, not the whole URL: `pass#word` becomes `pass%23word`, and a literal `%` becomes `%25`. Keep the original, unencoded password in `POSTGRES_PASSWORD`, direct `DB_PASS`, or a password file. Enter real credentials in the protected configuration or GUI, not command-line arguments. For separate `DB_*` settings, use only URI-unreserved characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) in `DB_USER` and `DB_NAME`; other names require a complete, percent-encoded `DATABASE_URL` ([#773](https://github.com/iuliandita/digarr/issues/773)). `DB_PASS_FILE` trims surrounding whitespace, so password files must not contain intentional leading or trailing whitespace.
+
 ## Updating
 
-Digarr publishes multi-arch images (amd64 + arm64). To update from the Unraid
-**Docker** tab, click the container > **Check for Updates** (or **Force Update**)
-and apply. With the CA store template (Option A) the container tracks the
-`latest` release tag, so that is all there is to it. With the bundled template
-(Option B), edit the container and change its Repository field to the new
-release tag, then click **Apply**. Re-copy the template if you also want future
-containers to use that version.
+Digarr publishes multi-arch images (amd64 + arm64). Read the target release notes before updating; the store's moving `latest` tag can cross a database migration.
+
+For the embedded database:
+
+1. Stop Digarr from the Unraid Docker tab. Confirm it is stopped before copying database files.
+2. Copy the mapped data and backups folders to a separate backup location. Defaults are `/mnt/user/appdata/digarr/data` and `/mnt/user/appdata/digarr/backups`; use the actual host paths in your container settings. Keep the encryption key separately and record the current image version or digest. Copy the backup off the server too.
+3. With Option A, use **Check for Updates** or **Force Update**. With Option B, edit the Repository field to the desired release tag and click **Apply**. Re-copying the bundled template changes defaults for future containers.
+4. Start Digarr, check `/health` for its version and backend, and verify sign-in and saved connections.
+
+For external PostgreSQL, use a consistent full database backup instead of copying `/app/data`; that mapping is unused. Retain the original database or stopped data copy until the upgrade is verified. Rollback after a migration requires the previous image and its matching pre-upgrade database, plus the retained key. See [backup boundaries and recovery](switching-backends.md#backup-boundaries-and-recovery).
 
 ## Notes
 
