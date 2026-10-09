@@ -144,6 +144,7 @@ import {
   findMusicRaterArtistScores,
   findMusicRaterScoresByNames,
   hasMusicRaterRowsMissingSiteScores,
+  pruneMusicRaterAlbums,
   upsertMusicRaterAlbums,
 } from './db/queries/music-rater'
 import { deleteExpiredPendingOAuth } from './db/queries/oauth-pending'
@@ -1335,14 +1336,15 @@ async function executeMusicRaterSync(userId: number): Promise<void> {
       connections.musicRaterApiKey,
       settings?.skipTlsVerify ?? false,
     )
-    const { synced } = await syncMusicRaterCorpus(
+    const { synced, pruned } = await syncMusicRaterCorpus(
       {
         client: { listAlbums: (offset) => client.listAlbums(offset) },
         upsert: (uid, rows) => upsertMusicRaterAlbums(db, uid, rows),
+        prune: (uid, keepIds) => pruneMusicRaterAlbums(db, uid, keepIds),
       },
       userId,
     )
-    await jobRecorder.complete(jobId, { metadata: { synced } })
+    await jobRecorder.complete(jobId, { metadata: { synced, pruned } })
   } catch (err: unknown) {
     await recordFailureSafely(jobRecorder, jobId, errMsg(err))
     throw err

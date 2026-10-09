@@ -21,6 +21,8 @@ export type MusicRaterSyncDeps = {
     listAlbums(offset: number): Promise<{ items: MusicRaterAlbum[]; total: number }>
   }
   upsert(userId: number, rows: MusicRaterAlbumRow[]): Promise<void>
+  /** Drop this user's rows whose music-rater album id is not in `keepIds`. */
+  prune?(userId: number, keepIds: number[]): Promise<number>
 }
 
 function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
@@ -76,9 +78,10 @@ function toRow(album: MusicRaterAlbum): MusicRaterAlbumRow {
 export async function syncMusicRaterCorpus(
   deps: MusicRaterSyncDeps,
   userId: number,
-): Promise<{ synced: number }> {
+): Promise<{ synced: number; pruned: number }> {
   let offset = 0
   const seenIds = new Set<number>()
+  let complete = false
 
   for (;;) {
     const page = await deps.client.listAlbums(offset)
@@ -91,8 +94,21 @@ export async function syncMusicRaterCorpus(
     for (const item of page.items) seenIds.add(item.id)
     offset += page.items.length
 
-    if (seenIds.size >= page.total) break
+    if (seenIds.size >= page.total) {
+      complete = true
+      break
+    }
   }
 
-  return { synced: seenIds.size }
+  // music-rater DELETES album rows when it merges duplicates (re-key,
+  // merge-duplicates), and the upsert alone never removes them, so a merged-
+  // away album lived on here as a stale twin (26 found 2026-10-09, MUSIC-53).
+  // Prune only after a COMPLETE pass: an empty-page stop may be a truncated
+  // read, and pruning against it would drop live rows.
+  let pruned = 0
+  if (complete && deps.prune && seenIds.size > 0) {
+    pruned = await deps.prune(userId, [...seenIds])
+  }
+
+  return { synced: seenIds.size, pruned }
 }

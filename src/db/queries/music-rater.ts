@@ -451,6 +451,27 @@ const ENDORSING_UNSCORED_TYPES = ['aoty', 'aotm', 'tymhm', 'sitf', 'ymio', 'cont
 const UNSCORED_PICK_RATIO = 0.8
 
 /**
+ * Delete this user's synced rows whose music-rater album no longer exists
+ * (merged away upstream). Returns the number deleted.
+ */
+export async function pruneMusicRaterAlbums(
+  db: Database,
+  userId: number,
+  keepIds: number[],
+): Promise<number> {
+  const deleted = await db
+    .delete(musicRaterAlbums)
+    .where(
+      and(
+        eq(musicRaterAlbums.userId, userId),
+        sql`NOT (${musicRaterAlbums.musicRaterAlbumId} = ANY(${sql.param(keepIds)}::int[]))`,
+      ),
+    )
+    .returning({ id: musicRaterAlbums.id })
+  return deleted.length
+}
+
+/**
  * How well critics rate each artist, 0..1: the mean of the artist's three best
  * album ratios in this user's corpus, where an unscored editorial pick counts
  * as UNSCORED_PICK_RATIO. Keyed by digarr-normalised artist name. One query

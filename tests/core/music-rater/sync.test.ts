@@ -103,3 +103,48 @@ describe('syncMusicRaterCorpus', () => {
     expect(upsert).not.toHaveBeenCalled()
   })
 })
+
+describe('syncMusicRaterCorpus prune (MUSIC-53)', () => {
+  it('prunes rows music-rater merged away after a complete pass', async () => {
+    const listAlbums = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [album(1), album(2)], total: 3 })
+      .mockResolvedValueOnce({ items: [album(3)], total: 3 })
+    const upsert = vi.fn().mockResolvedValue(undefined)
+    const prune = vi.fn().mockResolvedValue(2)
+
+    const result = await syncMusicRaterCorpus({ client: { listAlbums }, upsert, prune }, 42)
+
+    expect(prune).toHaveBeenCalledWith(42, [1, 2, 3])
+    expect(result).toEqual({ synced: 3, pruned: 2 })
+  })
+
+  it('never prunes after an empty-page stop that fell short of total', async () => {
+    const listAlbums = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [album(1)], total: 5 })
+      .mockResolvedValueOnce({ items: [], total: 5 })
+    const prune = vi.fn().mockResolvedValue(0)
+
+    const result = await syncMusicRaterCorpus(
+      { client: { listAlbums }, upsert: vi.fn().mockResolvedValue(undefined), prune },
+      1,
+    )
+
+    expect(prune).not.toHaveBeenCalled()
+    expect(result.pruned).toBe(0)
+  })
+
+  it('never prunes on an empty corpus', async () => {
+    const prune = vi.fn().mockResolvedValue(0)
+    await syncMusicRaterCorpus(
+      {
+        client: { listAlbums: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+        upsert: vi.fn(),
+        prune,
+      },
+      1,
+    )
+    expect(prune).not.toHaveBeenCalled()
+  })
+})
