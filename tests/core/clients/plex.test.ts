@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHttpClient } from '@/core/clients/http'
 import { createPlexClient } from '@/core/clients/plex'
 
 const mockGet = vi.fn()
@@ -17,6 +18,10 @@ beforeEach(() => {
   mockGet.mockReset()
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 const TEST_URL = 'http://plex.local:32400'
 const TEST_TOKEN = 'test-plex-token'
 const LISTENING_OPTIONS = {
@@ -24,6 +29,140 @@ const LISTENING_OPTIONS = {
   accountId: 7,
   machineIdentifier: 'machine-1',
 }
+
+describe('plex history metadata paths', () => {
+  const row = {
+    type: 'track',
+    accountID: 7,
+    librarySectionID: 1,
+    grandparentKey: '/library/metadata/101',
+    grandparentTitle: 'Portishead',
+    key: '/library/metadata/102',
+    title: 'Roads',
+    viewedAt: 1710000000,
+  }
+  const mockWarn = vi.fn()
+
+  beforeEach(() => {
+    mockWarn.mockReset()
+    vi.spyOn(console, 'warn').mockImplementation(mockWarn)
+  })
+
+  it.each(['recent', 'top'] as const)(
+    'uses metadata paths for %s listening history',
+    async (method) => {
+      mockGet
+        .mockResolvedValueOnce({ MediaContainer: { machineIdentifier: 'machine-1' } })
+        .mockResolvedValueOnce({
+          MediaContainer: {
+            totalSize: 2,
+            Metadata: [row, { ...row, key: '/library/metadata/103', title: 'Wandering Star' }],
+          },
+        })
+      const client = createPlexClient(TEST_URL, TEST_TOKEN, LISTENING_OPTIONS)
+
+      if (method === 'recent') {
+        await expect(client.getRecentlyPlayed()).resolves.toEqual([
+          {
+            artistName: 'Portishead',
+            trackName: 'Roads',
+            artistRatingKey: '101',
+            viewedAt: 1710000000000,
+          },
+          {
+            artistName: 'Portishead',
+            trackName: 'Wandering Star',
+            artistRatingKey: '101',
+            viewedAt: 1710000000000,
+          },
+        ])
+      } else {
+        await expect(client.getTopArtists()).resolves.toEqual([
+          { name: 'Portishead', ratingKey: '101', viewCount: 2, genres: [] },
+        ])
+      }
+      expect(mockWarn).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { grandparentRatingKey: '201', ratingKey: '202' },
+    { grandparentRatingKey: 201, ratingKey: 202 },
+    { grandparentRatingKey: 'artist-201', ratingKey: 'track-202' },
+  ])('prefers bare rating keys over metadata paths: %j', async (keys) => {
+    mockGet.mockResolvedValueOnce({
+      MediaContainer: { totalSize: 1, Metadata: [{ ...row, ...keys }] },
+    })
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    const history = await client.getHistory({ accountId: 7, librarySectionId: '1' })
+
+    expect(history).toEqual([
+      expect.objectContaining({
+        artistRatingKey: String(keys.grandparentRatingKey),
+        ratingKey: String(keys.ratingKey),
+      }),
+    ])
+  })
+
+  it.each([
+    { grandparentKey: undefined, key: undefined },
+    { grandparentKey: '/removed/101', key: '/removed/102' },
+    {
+      grandparentKey: 'https://plex.local/library/metadata/101',
+      key: 'https://plex.local/library/metadata/102',
+    },
+    { grandparentKey: '/library/metadata/101/children', key: '/library/metadata/102?token=secret' },
+    { grandparentKey: '/library/metadata/', key: '/library/metadata/' },
+  ])('skips invalid or removed metadata paths: %j', async (keys) => {
+    mockGet.mockResolvedValueOnce({
+      MediaContainer: { totalSize: 2, Metadata: [{ ...row, ...keys }, row] },
+    })
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    const history = await client.getHistory({ accountId: 7, librarySectionId: '1' })
+
+    expect(history).toEqual([expect.objectContaining({ artistRatingKey: '101', ratingKey: '102' })])
+    expect(mockWarn).not.toHaveBeenCalled()
+  })
+
+  it('warns with counts only when all track candidates have malformed required fields', async () => {
+    mockGet.mockResolvedValueOnce({
+      MediaContainer: {
+        totalSize: 3,
+        Metadata: [
+          { ...row, grandparentTitle: 123 },
+          { ...row, title: '' },
+          { ...row, viewedAt: undefined },
+        ],
+      },
+    })
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    await expect(client.getHistory({ accountId: 7, librarySectionId: '1' })).resolves.toEqual([])
+
+    expect(mockWarn).toHaveBeenCalledExactlyOnceWith(
+      '[plex] History page contained 3 track entries but 0 usable tracks; required fields are missing or malformed',
+    )
+  })
+
+  it.each([
+    { name: 'empty', metadata: [] },
+    { name: 'non-track', metadata: [{ ...row, type: 'movie' }] },
+    { name: 'outside since', metadata: [{ ...row, viewedAt: 1600000000 }] },
+  ])('does not warn for $name history pages', async ({ metadata }) => {
+    mockGet.mockResolvedValueOnce({
+      MediaContainer: { totalSize: metadata.length, Metadata: metadata },
+    })
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    await expect(
+      client.getHistory({ accountId: 7, librarySectionId: '1', since: 1700000000 }),
+    ).resolves.toEqual([])
+
+    expect(mockWarn).not.toHaveBeenCalled()
+  })
+})
 
 describe('plex client.getTopArtists()', () => {
   it('aggregates the selected account history instead of library-wide view counts', async () => {
@@ -520,5 +659,123 @@ describe('plex client.getAlbumsForArtist()', () => {
         primaryType: 'Album',
       },
     ])
+  })
+})
+
+describe('plex client.searchTracks()', () => {
+  const sections = {
+    MediaContainer: {
+      Directory: [
+        { key: '7', type: 'movie', title: 'Movies' },
+        { key: '3', type: 'artist', title: 'Music' },
+        { key: '5', type: 'artist', title: 'Other music' },
+      ],
+    },
+  }
+  const track = {
+    type: 'track',
+    title: 'Roads',
+    grandparentTitle: 'Portishead',
+    duration: 302500,
+    Media: [{ Part: [{ file: '/music/Portishead/Roads.flac' }] }],
+  }
+
+  it.each([
+    { sectionId: '5', expectedSection: '5', token: 'selected-user-token', limit: 2 },
+    { sectionId: undefined, expectedSection: '3', token: 'fallback-user-token', limit: 200 },
+  ])('bounds search to the authorized section and token: %j', async (options) => {
+    mockGet
+      .mockResolvedValueOnce(sections)
+      .mockResolvedValueOnce({ MediaContainer: { Metadata: [] } })
+    const client = createPlexClient(TEST_URL, options.token, { sectionId: options.sectionId })
+
+    await client.searchTracks(' AC/DC & Friends? ', options.limit)
+
+    expect(createHttpClient).toHaveBeenLastCalledWith({
+      baseUrl: TEST_URL,
+      headers: { 'X-Plex-Token': options.token, Accept: 'application/json' },
+    })
+    expect(mockGet.mock.calls[0]?.[0]).toBe('/library/sections')
+    const request = new URL(String(mockGet.mock.calls[1]?.[0]), TEST_URL)
+    expect(request.pathname).toBe(`/library/sections/${options.expectedSection}/all`)
+    expect(Object.fromEntries(request.searchParams)).toEqual({
+      type: '10',
+      sourceType: '8',
+      'title=': 'AC/DC & Friends?',
+      limit: String(Math.min(options.limit, 100)),
+      'X-Plex-Container-Start': '0',
+      'X-Plex-Container-Size': String(Math.min(options.limit, 100)),
+    })
+    expect(mockGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('maps actual artist, file paths and milliseconds while omitting incomplete tracks', async () => {
+    mockGet.mockResolvedValueOnce(sections).mockResolvedValueOnce({
+      MediaContainer: {
+        librarySectionID: 3,
+        Metadata: [
+          track,
+          { ...track, grandparentTitle: 'Another credit', duration: Number.NaN },
+          { ...track, duration: -1, Media: [{ Part: [{}, { file: '/music/alternate.flac' }] }] },
+          { ...track, title: ' ' },
+          { ...track, grandparentTitle: undefined },
+          { ...track, Media: [{ Part: [{ key: '/library/parts/1/file.flac' }] }] },
+          { ...track, type: 'album' },
+        ],
+      },
+    })
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    await expect(client.searchTracks('Portishead')).resolves.toEqual([
+      {
+        name: 'Roads',
+        artist: 'Portishead',
+        path: '/music/Portishead/Roads.flac',
+        duration: 302.5,
+      },
+      { name: 'Roads', artist: 'Another credit', path: '/music/Portishead/Roads.flac' },
+      { name: 'Roads', artist: 'Portishead', path: '/music/alternate.flac' },
+    ])
+  })
+
+  it.each(['99', '7', 'none'])('refuses missing or non-music sections: %s', async (sectionId) => {
+    mockGet.mockResolvedValueOnce(
+      sectionId === 'none' ? { MediaContainer: { Directory: [] } } : sections,
+    )
+    const client = createPlexClient(TEST_URL, TEST_TOKEN, {
+      sectionId: sectionId === 'none' ? undefined : sectionId,
+    })
+
+    await expect(client.searchTracks('Portishead')).rejects.toThrow(/music library section/i)
+    expect(mockGet).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    null,
+    {},
+    { MediaContainer: { Metadata: {} } },
+    { MediaContainer: { Metadata: null } },
+    { MediaContainer: { Metadata: [null] } },
+    { MediaContainer: { Metadata: [[]] } },
+    { MediaContainer: { librarySectionID: 5, Metadata: [] } },
+    { MediaContainer: { Metadata: [{ ...track, librarySectionID: 5 }] } },
+  ])('rejects malformed or cross-section search responses: %j', async (response) => {
+    mockGet.mockResolvedValueOnce(sections).mockResolvedValueOnce(response)
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+
+    await expect(client.searchTracks('Portishead')).rejects.toThrow(/Plex/)
+  })
+
+  it('accepts empty results and avoids unbounded searches for empty or invalid input', async () => {
+    const client = createPlexClient(TEST_URL, TEST_TOKEN)
+    await expect(client.searchTracks(' ')).resolves.toEqual([])
+    await expect(client.searchTracks('Portishead', 0)).resolves.toEqual([])
+    await expect(client.searchTracks('Portishead', Number.NaN)).rejects.toThrow(/finite limit/)
+    expect(mockGet).not.toHaveBeenCalled()
+    mockGet.mockResolvedValueOnce(sections).mockResolvedValueOnce({ MediaContainer: {} })
+    await expect(client.searchTracks('Portishead')).resolves.toEqual([])
+    expect(new URL(String(mockGet.mock.calls[1]?.[0]), TEST_URL).searchParams.get('limit')).toBe(
+      '25',
+    )
   })
 })

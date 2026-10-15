@@ -1,28 +1,31 @@
 # Roadmap
 
-> Updated: 2026-10-07 | Current: v1.19.0
+> Updated: 2026-10-15 | Current: v2.0.0
 >
 > Priorities change with feedback. This is current intent, not a promise.
 
 ## Current release
 
-v1.19.0 adds optional genre priorities and playlist generation outcomes. It improves source-relative taste evidence, discovery seed selection, artist matching, and listening-history and preview failure explanations.
+v2.0.0 fixes discovery filtering, album coverage and approval, saved playlist exports, setup, and recovery. OIDC identities now use exact issuer/subject pairs; existing SSO installations require verified recovery after migration. Read the [upgrade procedure](OPERATIONS.md#upgrading-from-v1190-to-v200) before updating.
 
 Digarr already supports artist and album recommendations, scheduled discovery, playlists, multi-user accounts, and library sync with Lidarr, Plex, Jellyfin, Emby, and Subsonic. The interface and AI discovery output support 15 languages. Next priorities are better recommendations, usable playlists, and clear reports of what reached each target. Security and reliability remain release requirements.
 
 ## Shipped highlights
 
-- Optional genre priorities with preference-group ordering and browsing. Confidence scoring stays unchanged.
-- Playlist generation outcomes separate selected, resolved, and included artists, with exact artist matching and configured fallback sources.
-- Source-relative taste evidence and genre-aware AI profiles preserve distinct interests and sparse-history uncertainty.
-- Equal-weight seed rotation and library backfill keep discovery seed budgets useful.
-- Listening-history states and unavailable preview reasons explain empty results and failures.
-- Evidence-preserving maintenance rescoring and cleaned listening-profile genre lists.
-- Replayable recommendation-quality reports exercise the production prompt; listener fit needs separate human review.
+- Album coverage paginates complete catalogs and excludes secondary release types; Gap-Fill failures retain the selected slice for retry.
+- Quick Discover seeds follow owner-scoped filters; individual, bulk, and automatic album approval retain the recommended release.
+- Saved playlists refresh their bound remote destinations, search connected local libraries, and report unmatched exports without substituting tracks.
+- Per-channel digest positions retain failed delivery windows; complete persistent-state backups reject unsafe partial restores.
+- First-account creation precedes the browser setup wizard; configured admin bootstrap completes before HTTP opens.
+- Settings saves respect user/admin permissions, mask secret-bearing preferences, and retain explicit configuration failures.
+- Exact OIDC issuer/subject matching includes a dry-run recovery helper for verified legacy identities.
+- Release automation prepares separate signed Alpine and Debian container inventories with explicit amd64 scope. Publication and attestations require release-time verification.
 
-See [v1.19.0](../CHANGELOG.md#v1190---2026-10-06) for details.
+See [v2.0.0](../CHANGELOG.md#v200---2026-10-15) for the full changes and migration requirements.
 
-## Known integration limitation
+## Known integration limitations
+
+The community Unraid template corrections remain pending in [Selfhosters PR #697](https://github.com/selfhosters/unRAID-CA-templates/pull/697). Follow the [Unraid workarounds](guides/unraid.md#step-2-configure-the-container) until the published template is verified. The optional Debian fallback retains upstream HIGH vulnerabilities without an available fix; Alpine remains the default. See [current limitations](OPERATIONS.md#known-limitations).
 
 TIDAL Favorite Artists is experimental. Authorization, refresh, and favorite-artist retrieval have not been tested with a live account. This is an accepted release limitation, with [community testing requested](AUTHENTICATION.md#tidal-feedback). The Experimental badges stay until these flows are verified.
 
@@ -36,7 +39,7 @@ Planned direction, in this order. Make recommendations easier to hear and use be
 
 1. **First useful listen.** Make discovery-only and existing-library setup paths clearer, document recipes using existing subscription presets, and evaluate setup friction and the shipped Audition failure explanations. Extend the replayable recommendation-quality baseline with human listening review, including niche genres and non-English artist names, before changing ranking.
 2. **Preserve recommended tracks.** Start with one recording-aware source and retain the recommended recording through review, playlist generation, and export. Show unresolved matches instead of silently substituting another song by the artist. Artist and album approval remain available.
-3. **Explain playlist outcomes.** Build on the shipped local per-artist generation outcomes to show submitted items, partial output, and failures for each target. Distinguish submitted tracks from verified delivery when a target supports verification. Strict local-generation matching and complete-release import checks remain required; media-server exports still have a [first-result substitution limitation](https://github.com/iuliandita/digarr/issues/758).
+3. **Explain playlist outcomes.** Build on the shipped local per-artist generation outcomes to show submitted items, partial output, and failures for each target. Distinguish submitted tracks from verified delivery when a target supports verification. Strict local-generation matching and complete-release import checks remain required. Media-server exports now reject unmatched search results and report skipped counts in Job History; per-target reports in playlist details and read-back verification remain future work.
 4. **Control exploration and repetition.** Make familiar versus adventurous discovery understandable using existing controls first. Add recently played track exclusions where reliable history is available, with an explicit history window and missing-data behavior. Recording-level exclusions depend on preserving track identities; permanent blocks still take precedence.
 
 Delivery reports can improve while preserving track identities. Compare ranking and repetition changes with the baseline; more tracks do not prove better recommendations.
