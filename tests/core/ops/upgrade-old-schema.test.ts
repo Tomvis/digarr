@@ -21,7 +21,8 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 })
 
 // Last migration shipped in v1.19.0; 0052-0054 add a settings column, the
 // playlist_exports table and a users column on top of it.
-const PREVIOUS_RELEASE_LAST_MIGRATION = '0051_plex_accounts_slskd_retry'
+// fork: the previous deployed release (1.19.0 + fork) ends at its own 0902 migration
+const PREVIOUS_RELEASE_LAST_MIGRATION = '0902_subsonic_music_folder'
 
 type Harness = {
   db: OpsDb
