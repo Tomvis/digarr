@@ -54,7 +54,11 @@ Editing an English value makes `i18n:check` fail until the change is stamped,
 so translations cannot silently fall behind the English.
 
 1. Edit the value in `en.ts`.
-2. Update the same key in all 14 locale catalogs.
+2. Update the same key in all 14 locale catalogs, by hand or with
+   `bun run i18n:translate --stale --write`, which translates only the keys
+   whose English changed since the last stamp (set `TRANSLATION_BASE_URL`,
+   `TRANSLATION_API_KEY` and optionally `TRANSLATION_MODEL` for any
+   OpenAI-compatible endpoint). Review machine output before stamping.
 3. Run `bun run i18n:stamp`. It refuses to stamp a key whose English changed
    while some translation of it did not (compared with the merge base of
    `develop`; override with `--base <ref>`).
@@ -118,6 +122,18 @@ Catalog tests also require every raw locale file to contain the complete English
 key set.
 
 Run locally: `bun run i18n:check`.
+
+## Spell check (advisory)
+
+`bun run i18n:spell [<locale>...]` runs hunspell over the translated catalogs
+and lists each unknown word once per language, with the key it appears in. It
+catches typos and stripped accents the ASCII-marker list misses. It needs
+`hunspell` plus the dictionaries (Debian/Ubuntu `hunspell-de-de`,
+`hunspell-fr`, ...; or set `DICPATH` to a folder of `.aff`/`.dic` files);
+languages without a dictionary are skipped and named. Japanese, Korean and
+Chinese are not checked. Correct words the dictionary does not know go in
+`scripts/i18n-spell-allowlist.txt`. CI runs it in the non-blocking
+`i18n-spell` job and posts the report to the job summary.
 
 ## Accented characters
 
