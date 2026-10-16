@@ -106,7 +106,7 @@ export const en = {
   'discover.loadFailed': "Couldn't load recommendations.",
   'discover.emptyFiltered': 'No recommendations match the selected decades.',
   'discover.clearFilters': 'Clear filters',
-  'discover.pageRange': '{0}--{1} of {2}',
+  'discover.pageRange': '{0}-{1} of {2}',
   'discover.emptyAll':
     'No recommendations yet. Import some favorite artists or run your first scan to get started.',
   'discover.emptyApproved':
@@ -314,7 +314,7 @@ export const en = {
   'discover.exported': 'exported',
   'discover.hideFeedbackInsights': 'Hide feedback insights',
   'discover.moodTip':
-    'Tip: describe what you are in the mood for in your own words, in any language -- like "rainy day jazz" or "upbeat 90s pop".',
+    'Tip: describe what you are in the mood for in your own words, in any language - like "rainy day jazz" or "upbeat 90s pop".',
   'discover.noPendingAbove': 'No pending recommendations above',
   'discover.noPendingBelow': 'No pending recommendations below',
   'discover.noPendingToClear': 'No pending recommendations to clear',
@@ -706,7 +706,7 @@ export const en = {
   'todaysPick.matchScore': 'Match score',
   'todaysPick.match': 'match',
   'todaysPick.skipHint':
-    'Skip shows you the next artist without rejecting -- skipped artists will come back in future scans.',
+    'Skip shows you the next artist without rejecting - skipped artists will come back in future scans.',
   'todaysPick.skipTitle': 'Skip for now - this artist will come back later',
   'pipeline.stage.collect': 'Reading library',
   'pipeline.stage.analyze': 'Building taste profile',
@@ -1047,7 +1047,7 @@ export const en = {
   'settings.aiPrivacyBadgeLocal': 'Fully local',
   'settings.sending': 'Sending...',
   'settings.connectionsTip':
-    'Connect at least one listening source -- ListenBrainz, Last.fm, Spotify, Plex, Jellyfin, Emby, or Discogs. Discovery starts from the artists you already play or own.',
+    'Connect at least one listening source - ListenBrainz, Last.fm, Spotify, Plex, Jellyfin, Emby, or Discogs. Discovery starts from the artists you already play or own.',
   'settings.listenbrainzDescription': 'Open-source listening history tracking.',
   'settings.lastfmDescription': 'Music scrobbling and listening history.',
   'settings.spotifyDescription': 'Listening history from Spotify.',
@@ -1338,7 +1338,7 @@ export const en = {
   'service.testing': 'Testing...',
   'service.saved': 'Saved',
   'service.testPassed': 'Test passed',
-  'service.testPassedUnsaved': 'Test passed -- not saved yet',
+  'service.testPassedUnsaved': 'Test passed - not saved yet',
 
   // OAuth connect callback banner
   'oauth.connectedTitle': 'Connected',
@@ -1664,7 +1664,7 @@ export const en = {
   // Pipeline progress messages (emitted via SSE, shown in the UI)
   'pipeline.message.loadingLibrary': 'Loading your library...',
   'pipeline.message.firstSyncBackground':
-    'First library sync running in background -- proceeding without it',
+    'First library sync running in background - proceeding without it',
   'pipeline.message.loadedLibrarySingular': 'Loaded {0} library artists across {1} source',
   'pipeline.message.loadedLibraryPlural': 'Loaded {0} library artists across {1} sources',
   'pipeline.message.buildingProfile': 'Building your taste profile...',
@@ -1692,7 +1692,7 @@ export const en = {
   // Library first-sync banner
   'firstSyncBanner.title': 'Building your library catalog',
   'firstSyncBanner.body':
-    'Digarr is matching your library against MusicBrainz. The MusicBrainz rate limit allows roughly 60 artists per minute, so a 5,000-artist library takes around 80 minutes to fully reconcile. This only happens once -- subsequent syncs use the local cache and complete in seconds.',
+    'Digarr is matching your library against MusicBrainz. The MusicBrainz rate limit allows roughly 60 artists per minute, so a 5,000-artist library takes around 80 minutes to fully reconcile. This only happens once - subsequent syncs use the local cache and complete in seconds.',
 
   // Library sync progress messages
   'librarySync.message.syncingSource': 'Syncing {0}...',
