@@ -1,6 +1,6 @@
 # Configuration and operations
 
-These notes describe v2.0.0. Start with the [README](../README.md) for installation. Most connection, playlist, notification, and maintenance settings live in the web UI; public origin and the environment settings below require a restart.
+These notes describe v2.0.1. Start with the [README](../README.md) for installation. Most connection, playlist, notification, and maintenance settings live in the web UI; public origin and the environment settings below require a restart.
 
 <a id="known-limitations-in-v1190"></a>
 
@@ -151,7 +151,7 @@ Take a complete destination backup first and prefer restoring into a fresh datab
 
 **Auto-backup before migrations:** On an existing database with pending migrations, Digarr attempts a backup to `DIGARR_BACKUP_DIR` (default: `./backups/`). It keeps the last 14 auto-backups, counted by migration runs rather than days. Copy backups off the server as well; a local volume does not protect against disk loss.
 
-Automatic backups include the persistent application snapshot and optional metadata. A directory, snapshot-read, or write failure stops startup before migrations; older schemas missing current tables or columns also stop. Keep previous backups until a new one is written. Fresh databases skip this step. For an older schema that cannot produce this snapshot, take and verify a native consistent database backup, retain its exact encryption key and previous image, then explicitly set `DIGARR_AUTO_BACKUP=false` for that upgrade. Re-enable it afterward. This override bypasses the safety check, so do not use it to ignore an unexplained backup failure.
+Automatic backups include the persistent application snapshot and optional metadata. The snapshot reads only the tables and columns the database already has, so an older schema that lacks what the new release adds still produces a backup. The file lists the omitted tables and columns under `absentSchema`. Restoring it never clears an omitted table, so a restore into a database that already holds rows in one (for example saved playlist exports after the upgrade) is refused as a partial-backup conflict; restore into a fresh database. A directory, snapshot-read, or write failure stops startup before migrations and logs one line saying so. Keep previous backups until a new one is written. Fresh databases skip this step. If the snapshot fails, take and verify a native consistent database backup, retain its exact encryption key and previous image, then fix the cause. `DIGARR_AUTO_BACKUP=false` bypasses the safety check, so only set it for a failure you understand and only for that upgrade.
 
 ### Upgrading from v1.19.0 to v2.0.0
 
@@ -163,9 +163,9 @@ This upgrade runs three migrations:
 
 1. Stop every app instance and other writers. Record the previous image and configuration, retain the exact `DIGARR_ENCRYPTION_KEY` separately, and keep a working local-admin login or session.
 2. Take a native consistent backup: `pg_dump -Fc` for PostgreSQL, or an archive/snapshot of the entire stopped PGlite data volume. Verify restoration into a separate database or data directory with the previous compatible image and original key before upgrading. A readable archive listing alone does not verify recovery. Follow the [complete backup procedures](../deploy/docker/README.md#back-up-and-update).
-3. The current JSON pre-migration snapshot can fail because the old schema lacks the fields or tables added by 0052, 0053, or 0054. Only after the native backup and separate restore are verified, set `DIGARR_AUTO_BACKUP=false` for this one upgrade. This bypass is for the understood old-schema incompatibility; investigate any other backup failure.
-4. Start v2.0.0 once to run migrations. If legacy OIDC bindings exist, stop the app again and use the recovery helper's locked dry run, then `--apply`, for each verified identity. Keep every process off a PGlite directory while the helper uses it. Leave unverifiable accounts unbound.
-5. Re-enable automatic backups by removing the override or setting `DIGARR_AUTO_BACKUP=true`. Restart, check `/health` for the intended version/backend, and verify local login, recovered SSO, saved connections, playlist outcomes, and digest scheduling. Keep the original backup and image until recovery is verified.
+3. v2.0.1 and later write the JSON pre-migration snapshot against the v1.19.0 schema without an override. v2.0.0 as released fails it (missing the fields and table added by 0052, 0053, and 0054); only if you are installing v2.0.0, and only after the native backup and separate restore are verified, set `DIGARR_AUTO_BACKUP=false` for this one upgrade. Investigate any other backup failure.
+4. Start the new version once to run migrations. If legacy OIDC bindings exist, stop the app again and use the recovery helper's locked dry run, then `--apply`, for each verified identity. Keep every process off a PGlite directory while the helper uses it. Leave unverifiable accounts unbound.
+5. If you set the override, re-enable automatic backups by removing it or setting `DIGARR_AUTO_BACKUP=true`. Restart, check `/health` for the intended version/backend, and verify local login, recovered SSO, saved connections, playlist outcomes, and digest scheduling. Keep the original backup and image until recovery is verified.
 
 If admin settings responses from v1.19.0 were shared, review them for exposed fanart credentials or legacy webhook URLs and replace exposed credentials with their provider. v2.0.0 masks these values for admins and omits them for other users; upgrading does not revoke earlier exposure.
 

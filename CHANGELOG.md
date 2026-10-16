@@ -4,6 +4,22 @@ All notable user-facing changes are documented here.
 
 Releases that have been promoted to the `:stable` Docker channel carry a `(stable)` marker after the version heading. Promotion happens after a release has been live for at least seven days with no follow-up patch.
 
+## Unreleased
+
+## v2.0.1 - 2026-10-16
+
+### Upgrade notes
+
+Upgrading from v1.19.0 no longer needs `DIGARR_AUTO_BACKUP=false`: the automatic pre-migration backup now works against the v1.19.0 schema. Use v2.0.1 instead of v2.0.0 for that upgrade. The [v1.19.0 to v2.x procedure](docs/OPERATIONS.md#upgrading-from-v1190-to-v200) still applies, including a verified native backup first. v2.0.0 itself is unchanged and still needs the override.
+
+### Fixed
+
+- Make the pre-migration auto-backup read only the tables and columns the database already has, so upgrading from the previous release no longer fails with a missing-column error before migrations run (v2.0.0 from v1.19.0 needed `DIGARR_AUTO_BACKUP=false`). The snapshot lists what it omitted under `absentSchema`; backup format version and retention are unchanged. A real backup failure still stops startup before migrations, now with one log line on what to do. New upgrade test builds the v1.19.0 schema on PGlite and PostgreSQL. Found by independent review. [#872](https://github.com/iuliandita/digarr/issues/872).
+
+### Documentation
+
+- Correct the API reference scope and release guidance after v2.0.0. Require copyable README/Compose version examples to match the release before tagging, independently of post-publication digest updates. The v2.0.0 source archive retains its old 1.19 examples; use the [correct image pins](deploy/docker/README.md#image-channels). [#870](https://github.com/iuliandita/digarr/issues/870).
+
 ## v2.0.0 - 2026-10-15
 
 ### Upgrade notes

@@ -141,15 +141,15 @@
         "scripts/prepare-rollback-backup.ts": "16f86f11d35ca8d4f20cda207fafb2c60323b301f1d9e3befe1e583981529a36",
         "scripts/rotate-encryption-key.ts": "c9e1fc5ce94c60923c2d12d4abe4a4b4a181c56cb41696588c95cb6284fe461d",
         "scripts/rotation-sites.ts": "17a11f3c319771e7fa54dc65f196a262ad89d0ae1b06afb7f3e3f0afd9de6f5e",
-        "src/core/ops/backup.ts": "840403e0dafc3c9237a6eea921202bc3b3cef317d78968b6f284e72efd03e8fe",
+        "src/core/ops/backup.ts": "0bbaf8a90072aaf0464c6466a83f6897b8b659bacfcc099976f5d59cb8c8e398",
         "src/core/ops/cron-scheduler.ts": "98d5c7888eb6112adf6ae7fd6d1ce0c9cc549e51836d87ea79de704ee527a9f1",
         "src/core/ops/hygiene.ts": "09dd4061ae12c51142e843c65bf05d2a373acbd2a91be14fdc3ba7037c30ca6c",
         "src/core/ops/initial-admin.ts": "7f8b81e3e103c8e7f103afae6ba61ae5116c06cb26d4ede30c19b21d439018f7",
         "src/core/ops/legacy-listening-connections.ts": "3481616486fb80bd76abeb1474cc6a9062d8718e1cb21737668dc5d3859dcb3d",
         "src/core/ops/maintenance.ts": "63514a654f08d9caddcbdc8547504d9e188467887b32e913d4b3d125cb39ce20",
         "src/core/ops/migrate-backend.ts": "024368e3da8aaa6aff92bd05025e49f9b4297a654050f85663bc0190987e57fe",
-        "src/core/ops/types.ts": "05133c0670a772c804601094eb2cd46e07bc92297dec21ea043e0d1283ef4b86",
-        "src/core/ops/upgrade.ts": "9fbcd673397927afdf479c49978c36bf9472d6dcd04c81405327e32dc0347a03",
+        "src/core/ops/types.ts": "6a77240d367f7cd2450caf75c654fac51ecf52a16e8fa00b4101ad5fa9a48243",
+        "src/core/ops/upgrade.ts": "214afb1720a7eb69822641b4632047320f8b3b390bff222ab6d8faca7d538780",
         "src/db/backend.ts": "9fa10571c5dd38ac40c4fc4fe9b5ce2b79466c051632ef6612942eef135bf9b9",
         "src/db/connect.ts": "8ceabe90f6765e1700741b20561967406d166a88f542dc10b0bf62151ac2983c",
         "src/db/index.ts": "b7542782e276e575fc784669a6269da82ac84a07f8f69eab514c87dc8eb4ed2e",
@@ -182,14 +182,14 @@
         "src/db/schema.ts": "aa0365573cac5ecce8d909c778c9cdab17a8c37fb0b7038b6e2c2c3a36a6d3ca",
         "src/db/wait.ts": "97e291aa80a8538ed29ce4969b3ae96b942a3156b5a9e61a3d317738288fe076"
       },
-      "digest": "7c2657d1411032c0f7403535243be75489abf55cb06c7e9d0f3ba99b41121b5c",
+      "digest": "e8388206b1a3337aa3368ec4b20f38ab631c719dfc33e33844a5ec9f32002e25",
       "review": {
         "outcome": "docs-updated",
         "docs": ["CHANGELOG.md", "docs/OPERATIONS.md", "docs/guides/switching-backends.md"],
-        "note": "Review combined 0052 digest positions, 0053 playlist bindings and 0054 exact OIDC identities, consistent JSON backup boundaries and backend copies. Document verified native restoration before the one-upgrade snapshot override and issuer recovery.",
-        "breaking": "Legacy issuer-less SSO accounts require verified historical issuer recovery; older subject-only images cannot safely use migrated identities.",
-        "migration": "Before upgrade, stop writers, preserve the original key and previous image, and verify a native backup in a separate database. Apply all three migrations once with the understood automatic-backup override, then re-enable backups and recover verified issuer bindings. Rollback restores the matching native backup separately; external sends and playlist writes remain.",
-        "digest": "7c2657d1411032c0f7403535243be75489abf55cb06c7e9d0f3ba99b41121b5c"
+        "note": "Pre-migration snapshot reads only the tables and columns present in the active schema, fails if no Digarr tables are found there, records omissions in an optional absentSchema field, and logs one actionable line before rethrowing a real backup failure. OPERATIONS and switching-backends say releases after v2.0.0 need no override for added columns or tables while v2.0.0 itself still does, and OPERATIONS notes that restoring an omitted-table snapshot into a database holding rows in that table is refused.",
+        "breaking": "none",
+        "migration": "Upgrade: no schema migration, and the backup format version and retention are unchanged; absentSchema is an optional additive field the restore path never reads, and absent tables are omitted entirely so a restore cannot clear them. Rollback: reverting restores the strict snapshot and its missing-column failure, so the native backup guidance for older schemas still applies.",
+        "digest": "e8388206b1a3337aa3368ec4b20f38ab631c719dfc33e33844a5ec9f32002e25"
       }
     },
     "configuration": {
@@ -712,11 +712,11 @@
         "deploy/k8s/namespace.yaml": "2fd1e21e38de3c11c972b51400af1000fa473949f36124444e1edccea17b98d7",
         "deploy/k8s/networkpolicy.yaml": "0e29f929c9747d8be2f51387becfaf8cc517403f3c6c50ac4b2c8dee89be4e61",
         "deploy/k8s/poddisruptionbudget.yaml": "8aac8eca6bf9c96d743bb0f1e1f5eacbafa6da1ab899a187d581e4da8404019d",
-        "deploy/k8s/rendered.yaml": "8460a99dae6271fbf949e19d1ef5a894e08f20dc4f2cce0aa41f55cb0a03a41e",
+        "deploy/k8s/rendered.yaml": "7ccb5911657fc59ee9c8428a67197dd2aacf6e63624b82097a09bf61f2c20d36",
         "deploy/k8s/service.yaml": "c249f4a6056f586b7c34d9ade0dc1472078db8dd9a11a5c9c395ba981694d99c",
         "deploy/k8s/serviceaccount.yaml": "8a28cec502a939570c9b339f6c05a7027e6a209f38885d2ffeca2c7eac348809"
       },
-      "digest": "cdbef75a8512e92b91a62fdc055a2e195edbb5ccb6f014189d8720aa3aa91037",
+      "digest": "63f0c59ec9b78b36dce6bb070e5c5162c2861508ec63a5bcd246bc4846b8dae1",
       "review": {
         "outcome": "docs-updated",
         "docs": [
@@ -725,16 +725,16 @@
           "docs/guides/unraid.md",
           "CHANGELOG.md"
         ],
-        "note": "Review Bun 1.4.3 image variants, version-only Helm regeneration, bootstrap failure behavior, exact database identifiers and combined upgrade steps. Keep published image pins unchanged until digest sync and community template status pending.",
-        "breaking": "Legacy OIDC upgrade needs verified issuer recovery and a matching native backup; incomplete first-boot credentials now stop startup.",
+        "note": "Version-only chart and rendered manifest bump to 2.0.1, with upgrade guidance in the Docker, chart and Unraid guides now saying 2.0.1 and later need no backup override and only 2.0.0 as released does. Published image pins and digests stay at 2.0.0 until the post-publish digest sync; no variable, port, volume, permission or WebUI changes.",
+        "breaking": "none",
         "migration": "",
-        "digest": "cdbef75a8512e92b91a62fdc055a2e195edbb5ccb6f014189d8720aa3aa91037"
+        "digest": "63f0c59ec9b78b36dce6bb070e5c5162c2861508ec63a5bcd246bc4846b8dae1"
       }
     },
     "release": {
       "files": {
         ".github/workflows/backmerge-develop.yml": "8d0f9d262ecaff00f6a79de3e4fc330f6d927df182e108a883f96507a4bc30f9",
-        ".github/workflows/ci.yml": "be6065dd23116ea5e25253a5ec4471d2c8aaa5c795a15ab87967b6f67b384e5d",
+        ".github/workflows/ci.yml": "b68e8f46f3f66baa8d8061fc737d235ba1fa91bda04a8be49e4da1130b5c5044",
         ".github/workflows/compatibility.yml": "c5f286e828ba590189437c5a10fbe53cdd929b5713f22d6d587b4f5aeffd9a3f",
         ".github/workflows/dependabot-bun-lockfile.yml": "179d1f98a640acef73341dfc3b96a5940d244bb3c34ca4bada339b9b2cfb2fef",
         ".github/workflows/docs-companions.yml": "64cb2594f3dfdc5a16855757cc072e698d0ac26e23501421c656a7b9afebc36d",
@@ -743,20 +743,20 @@
         ".github/workflows/nightly.yml": "2fd42a0786838da5a8cebf31c5671ede0b17a9901b631a328a7940c390eee590",
         ".github/workflows/promote-stable.yml": "1a4edcb95aa107aa3586638ce59f48fb6b766ddd8423121914ecbc37330fa0e8",
         ".github/workflows/release-readiness.yml": "c69fa5bd0eebcbaf3f5866a6ad9defdbe7a7f425343a2a7afdd6099259ee7477",
-        ".github/workflows/release.yml": "496bddbb1f824e79159d71e9fe40fbb87b1b3c7179837af9c0850b5314609c6e",
-        ".github/workflows/security.yml": "51cd8a2c24e75ce95c6c122d855d3a6c997423146b1441c111b21f0b2a06b38c",
+        ".github/workflows/release.yml": "59df9e5106292421322e75b2f358ad69053a57efc83f1d73bb03095434a6b43f",
+        ".github/workflows/security.yml": "b7b2aeb688fcf24b7c50217bfc671d31916599de6f5cc5c970cf17a55cecba5d",
         ".github/workflows/stale.yml": "56d7610f63e1121b4ee30697f8948c698c2586d59c02f5239a174cafc8bddedc",
-        "package.json": "37e213c0b4f6d7c73867f84d5cd05cd1a6e51e8a5d210c6c2789e2340cc9b38d",
+        "package.json": "f2c7a0e50dd4a2e9ae36a61d4eb190916d7ff5a6a753471bc8af1120595545dd",
         "vite.config.ts": "c161286e35d04885837e1306144cdd77d72e922329eebf463923f57501293b59"
       },
-      "digest": "b8d7124494f6d0dc088170b670fe0cce420fcf9802a2f661f966a423b592582c",
+      "digest": "de2a09a9b218749ad9ef067a3d70624e609f7d3e83204af8f7eedf47bdbc887c",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["README.md", "CHANGELOG.md", "docs/ROADMAP.md", "deploy/docker/README.md"],
-        "note": "Prepare v2.0.0 class A versions and combined release guidance. Preserve latest versus seven-day stable promotion, amd64-only container inventory scope and release-time verification requirements for both variants and registries.",
-        "breaking": "The batch changes the database and SSO identity contract; follow the combined v1.19.0 upgrade and separate-database rollback procedure.",
+        "docs": ["CHANGELOG.md", "README.md", "docs/ROADMAP.md", "docs/OPERATIONS.md"],
+        "note": "Patch release v2.0.1 bumps every class A surface together: package.json, chart, changelog section, roadmap header and highlights, README banner and pin example, API header, Compose pin comments. No workflow, channel or promotion change; image pins stay at 2.0.0 until digest sync.",
+        "breaking": "none",
         "migration": "",
-        "digest": "b8d7124494f6d0dc088170b670fe0cce420fcf9802a2f661f966a423b592582c"
+        "digest": "de2a09a9b218749ad9ef067a3d70624e609f7d3e83204af8f7eedf47bdbc887c"
       }
     },
     "maintenance": {
@@ -768,7 +768,7 @@
         "scripts/check-docs-impact.ts": "630e9a5f475e4b1d8a301f3b8a9db61ced4d32b83f79e7415fe1227776e74c36",
         "scripts/check-release-identity.ts": "00fb342ce3f44204688d57a328a414079210ee9caf41447c7a356c359d88c1ac",
         "scripts/check-unraid-companions.py": "4f1e106e256c111847958b6e04c4d3959c46f35f90628d7f5cba38812d06c7af",
-        "scripts/check-version-drift.ts": "74fd4742e9dc6d56f44006b326d355c3d5856743540465af50549e5114ff5293",
+        "scripts/check-version-drift.ts": "6995a5262c167abf9bb515b2f9f705e3895944c0e2d29e3c5b8ce074de2714f3",
         "scripts/ci/compose-up-retry.sh": "3e14eef80e6506f9cf131a249c15ef3b23fab18e3bace10b49b53630bb3b1f20",
         "scripts/ci/wait-for-compose-health.sh": "a238f49a6c2b3e60c8a5dbeb326431523a1b45bb660a5029082c21e220e55857",
         "scripts/dev-setup.sh": "afa2e79675b77b29af40ba6298446d51de5dad0d3ca0478934bb0be58f1e6fdd",
@@ -782,16 +782,16 @@
         "scripts/lib/docs-contracts.ts": "59eebd0fd90430ffbe0408af122ecf275ec2544d694aa616cdd4d07ac8b4a6fc",
         "scripts/recommendation-quality.ts": "c1916747ce26ba33a5baa3076ac02df4d754489e56b465d9c88924dc7d82b555",
         "scripts/recover-oidc-binding.ts": "f71b07c52a0c0d463d81a815e49cec7d19b88fe8bb6c7e5c13ca9d34280aca8f",
-        "scripts/sync-deploy-digests.ts": "d063d2a855fd1d7a49df53b0a072ce2146103dd8ed68b97bb3d0f26d34b51c3a"
+        "scripts/sync-deploy-digests.ts": "c6cf0b81715fc6f1c275b39584aeb9f4ed11ff8b9fcddd53be0963c54cd4c57e"
       },
-      "digest": "f28d09f06571025a4918b3506f4d143bd578a4874c349bb070105d1f08435b0b",
+      "digest": "418414657afba2313f551b8aa0f553d39bbc3a176c69d326300f7530231b9e4f",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["CHANGELOG.md"],
-        "note": "Document the new recovery helper and its dry-run default in the changelog; linked authentication instructions cover legacy-only row validation, stopped-workload invocation, native-backup upgrade and rollback. Existing maintenance commands retain their behavior.",
+        "docs": ["docs/MAINTENANCE.md"],
+        "note": "Require copyable Compose and README version examples plus the API reference version to match package.json before tagging, while actual published Helm and Unraid pins retain their post-publication lag. Document the release checklist and preserve immutable published tags.",
         "breaking": "none",
         "migration": "",
-        "digest": "f28d09f06571025a4918b3506f4d143bd578a4874c349bb070105d1f08435b0b"
+        "digest": "418414657afba2313f551b8aa0f553d39bbc3a176c69d326300f7530231b9e4f"
       }
     }
   }
