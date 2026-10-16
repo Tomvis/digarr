@@ -37,6 +37,7 @@ import {
   updatePreferredLocale,
 } from './lib/api'
 import { useI18n } from './lib/i18n'
+import { MENU_CLASS, MENU_ITEM_CLASS } from './lib/menu-styles'
 import { isSettingsActive, type NavItem, PRIMARY_NAV, TOOLS_NAV } from './lib/nav'
 import { PreviewContext } from './lib/preview-context'
 import { queryClient } from './lib/query-client'
@@ -142,12 +143,6 @@ function iconButtonClass(active = false) {
     active ? 'bg-surface-2 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
   )
 }
-
-const MENU_CLASS =
-  'absolute top-full z-50 mt-2 rounded-surface border border-border bg-surface py-1 shadow-menu'
-
-const MENU_ITEM_CLASS =
-  'flex w-full items-center gap-2 px-3 py-2 text-left text-body transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
 
 function PrimaryNavLink({ item }: { item: NavItem }) {
   const { t } = useI18n()
@@ -652,8 +647,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </nav>
-        {/* Mobile padding clears the fixed bottom nav and the home-indicator inset */}
-        <main className="pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
+        {/* Clears the fixed bottom nav, home-indicator inset and preview player */}
+        <main className="pb-(--bottom-stack)">{children}</main>
         <BottomNav />
         <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         <PreviewPlayer
@@ -682,7 +677,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               : undefined
           }
         />
-        <footer className="hidden md:block fixed bottom-2 right-3 text-micro text-muted select-none pointer-events-none z-10">
+        <footer className="hidden md:block fixed bottom-[calc(var(--player-offset)+0.5rem)] right-3 text-micro text-muted select-none pointer-events-none z-10">
           v{VERSION}
           {CHANNEL === 'nightly' ? ` (${GIT_SHA.slice(0, 7)})` : ''}
         </footer>
@@ -707,7 +702,11 @@ function InnerApp() {
     return (
       <>
         <SetupWizard onComplete={() => setSetupComplete(true)} />
-        <Toaster theme="system" />
+        <Toaster
+          theme="system"
+          offset={{ bottom: 'calc(var(--bottom-stack) + 1.5rem)' }}
+          mobileOffset={{ bottom: 'calc(var(--bottom-stack) + 0.75rem)' }}
+        />
       </>
     )
   }
@@ -755,7 +754,11 @@ function InnerApp() {
             </Suspense>
           </AppShell>
         </ErrorBoundary>
-        <Toaster theme="system" />
+        <Toaster
+          theme="system"
+          offset={{ bottom: 'calc(var(--bottom-stack) + 1.5rem)' }}
+          mobileOffset={{ bottom: 'calc(var(--bottom-stack) + 0.75rem)' }}
+        />
       </BrowserRouter>
     </QueryClientProvider>
   )
