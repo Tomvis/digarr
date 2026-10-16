@@ -154,7 +154,7 @@ export function evaluateDiscoveryModeAvailability(
       enabled: false,
       fallbackUsed: false,
       providerPath: [],
-      reason: 'Connect a listening source first.',
+      reason: 'Connect ListenBrainz, Spotify, or Last.fm to use this mode.',
     }
   }
 

@@ -7,8 +7,8 @@ image:
   # channel for clusters where reproducibility is not a goal, set tag: "stable" and remove
   # the digest line - :stable is promoted only after a release has been live >= 7 days
   # without a follow-up patch.
-  tag: "1.18.0"
-  digest: "sha256:66066cc96d06651e5b0c59003fa44e47216bc14dfc369c85e2e95e60e9e2a00f"
+  tag: "2.0.0"
+  digest: "sha256:e94b688477e4ab00853a7ea747a4967c52240558575ae0b21c572c82a4526e99"
   pullPolicy: Always
 
 # uid 10001 deliberately differs from the image's bundled `bun` user (uid 1000):
@@ -66,7 +66,7 @@ podDisruptionBudget:
 ingress:
   enabled: false
   className: nginx
-  # Namespace of the ingress controller. Used by the NetworkPolicy ingress
+  # Namespace of the Ingress or Gateway data plane. Used by the NetworkPolicy ingress
   # rule to allow traffic from this namespace only. The controller's
   # namespace must carry the `kubernetes.io/metadata.name` label
   # (automatic on Kubernetes >= 1.22).
@@ -147,7 +147,7 @@ readinessProbe:
 # Three modes, selected by database.backend:
 #
 # Mode 1: Embedded PGlite (database.backend = "pglite")
-#   No separate database. The app stores data in a single file under
+#   No separate database. The app stores its data directory at
 #   database.pglite.path on a dedicated PVC. Single-writer: the chart
 #   forces strategy=Recreate and requires replicaCount=1. No password
 #   needed. Skips the bundled Postgres entirely.
@@ -155,11 +155,18 @@ readinessProbe:
 # Mode 2: Bundled PostgreSQL (database.backend = "postgres", postgresql.enabled = true)
 #   Uses the official postgres:17-alpine image as a StatefulSet.
 #   You MUST set postgresql.auth.password -- there is no default.
+#   Supply raw username/password/database values, never pre-encoded. The chart
+#   encodes URL components but keeps the bundled server values unchanged.
+#   Reserved database names require the runtime fix from issue 834. Older
+#   v1.19.0 images still need URI-unreserved names other than . or ..:
+#   https://github.com/iuliandita/digarr/issues/834
 #
 # Mode 3: External PostgreSQL (database.backend = "postgres", postgresql.enabled = false)
-#   Point database.host at your own PostgreSQL instance, cloud RDS,
-#   CNPG cluster, etc. Or supply a pre-created Secret via
-#   database.existingSecret with a DATABASE_URL key.
+#   Set database.host and database.password for your own PostgreSQL instance,
+#   cloud RDS, CNPG cluster, etc. Supply raw user/password/name values; the
+#   chart encodes each URL component. The database-name limitation above applies.
+#   Alternatively, database.existingSecret supplies a complete DATABASE_URL;
+#   encode its components yourself. The chart does not rewrite that URL.
 # ---------------------------------------------------------------------------
 
 # Bundled PostgreSQL -- official postgres image, no Bitnami dependency
@@ -199,10 +206,12 @@ database:
   password: ""
   # Name of an existing Secret with key DATABASE_URL
   existingSecret: ""
-  # Embedded PGlite (used only when backend=pglite). Requires a PVC for the data file.
+  # Embedded PGlite (used only when backend=pglite). Requires a PVC for the data directory.
   pglite:
     path: /app/data
     persistence:
+      # Keep persistence enabled. Setting enabled=false uses emptyDir and loses
+      # the database on pod replacement.
       enabled: true
       size: 2Gi
       storageClass: ""
@@ -222,7 +231,7 @@ namespace:
 # ---------------------------------------------------------------------------
 # Optional Gateway API HTTPRoute (replaces Ingress on clusters running
 # Gateway API controllers like Cilium, Traefik, Envoy Gateway, Istio).
-# Ingress-NGINX reaches EOL in March 2026; this is the forward path.
+# Ingress-NGINX reached EOL in March 2026; this is the forward path.
 # ---------------------------------------------------------------------------
 gateway:
   enabled: false
@@ -240,10 +249,10 @@ gateway:
 # Optional PVC for /app/backups
 # ---------------------------------------------------------------------------
 # Default is emptyDir -- backups live only for the pod lifetime. Enable
-# persistence to survive pod restarts and cluster events.
-# Strongly recommended with database.backend=pglite: the pre-migration
-# auto-backup is the only rollback artifact, and an emptyDir loses it on
-# restart (the chart's NOTES.txt warns when this is left disabled in pglite mode).
+# persistence to survive pod replacement. Pre-migration JSON auto-backups
+# preserve persistent application state but exclude ephemeral authorization and
+# schema history. Keep a consistent database or data-volume backup for rollback.
+# See docs/guides/switching-backends.md for complete recovery boundaries.
 backups:
   persistence:
     enabled: false

@@ -366,7 +366,7 @@ export const ptBR = {
   'discover.rejectAll': 'Rejeitar tudo',
   'discover.rejectAllBelow': 'Rejeitar tudo abaixo',
   'discover.auditionAll': 'Ouvir prévias',
-  'discover.nothingToAudition': 'Nenhum item pendente com prévia',
+  'discover.nothingToAudition': 'Nenhuma recomendação pendente',
   'discover.rejectAllPending': 'Rejeitar todas as pendências',
   'discover.rejectAllPendingMessage':
     'Rejeitar todas as recomendações pendentes? Isto não pode ser desfeito.',
@@ -518,8 +518,11 @@ export const ptBR = {
   'playlist.deleteFailed': 'Falha ao excluir a playlist',
   'playlist.deleteWarning': 'Excluir esta playlist? Esta ação não pode ser desfeita.',
   'playlist.deletedNamed': 'Playlist excluída',
-  'playlist.detailHint':
-    'Esta playlist foi gerada a partir das suas recomendações aprovadas. Clique em Gerar agora para atualizá-lo com novas escolhas, baixá-lo como M3U ou XSPF ou adicionar um destino de lista de reprodução para enviar execuções futuras para Navidrome, Jellyfin ou Plex automaticamente.',
+  'playlist.detailHint': 'Gere esta playlist a partir das suas recomendações aprovadas.',
+  'playlist.detailAuditionHint':
+    'Gere esta playlist com artistas pendentes para ouvi-los antes de aprová-los.',
+  'playlist.detailActionsHint':
+    'Após a geração, baixe as faixas como M3U ou XSPF ou adicione um destino de playlist para enviar as próximas gerações ao Navidrome, Jellyfin ou Plex automaticamente.',
   'playlist.disable': 'Desativar playlist',
   'playlist.download': 'Baixar',
   'playlist.downloadFailed': 'Falha ao baixar a lista de reprodução',
@@ -938,7 +941,8 @@ export const ptBR = {
   'discoveryMode.notImplementedYet': 'Este modo ainda não foi implementado.',
   'discoveryMode.notShippedYet': 'Este modo ainda não está disponível.',
   'discoveryMode.reason.connectListenBrainz': 'Conecte o ListenBrainz para usar este modo.',
-  'discoveryMode.reason.connectListeningSource': 'Conecte primeiro uma fonte de escuta.',
+  'discoveryMode.reason.connectReleaseRadarProviders':
+    'Conecte ListenBrainz, Spotify ou Last.fm para usar este modo.',
   'discoveryMode.reason.connectListenBrainzOrLastfm':
     'Conecte o ListenBrainz ou o Last.fm para usar este modo.',
   'discoveryMode.reason.connectDiscogs': 'Conecte o Discogs para usar este modo.',
@@ -1258,6 +1262,8 @@ export const ptBR = {
     'Usado quando o servidor de metadados do Lidarr estiver indisponível. Padrão: api.musicinfo.pro. Defina como a URL da sua própria instância se estiver auto-hospedando.',
   'settings.recommendationsSaved': 'Configurações de recomendações salvas',
   'settings.recommendationsFailed': 'Falha ao salvar configurações',
+  'settings.recommendationsPartiallySaved':
+    'As preferências pessoais foram salvas, mas não foi possível salvar as configurações globais de metadados.',
   'settings.scheduleTip':
     'Defina um agendamento cron para executar o pipeline de descoberta automaticamente. Toda semana às segundas é uma escolha popular.',
   'settings.librarySyncInterval': 'Sincronização da biblioteca',
@@ -1483,6 +1489,9 @@ export const ptBR = {
   'admin.exporting': 'Exportando...',
   'admin.includeCaches': 'Incluir caches',
   'admin.restoreFromBackup': 'Restaurar de backup',
+  'admin.restoreConfirmTitle': 'Restaurar backup?',
+  'admin.restoreConfirmMessage':
+    'Isso substitui os dados incluídos no backup. Faça primeiro um backup desta instância. Continuar?',
   'admin.lastAutoBackup': 'Último backup automático:',
   'admin.backupDownloaded': 'Backup baixado',
   'admin.backupFailed': 'Falha ao criar backup',
@@ -1715,6 +1724,8 @@ export const ptBR = {
   'errors.recommendation.notFound': 'Recomendação não encontrada',
   'errors.subscription.notFound': 'Assinatura não encontrada',
   'errors.playlist.notFound': 'Playlist não encontrada',
+  'errors.playlist.busy':
+    'A geração da playlist ou a recuperação da exportação já está em andamento',
   'settings.channels.title': 'Notificações',
   'settings.channels.description':
     'Envie notificações de conclusão de varredura e de resumo para um ou mais canais.',

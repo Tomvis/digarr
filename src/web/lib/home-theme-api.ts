@@ -7,11 +7,16 @@ export type HomeThemeResponse = {
   effective: EffectiveTheme
 }
 
+const JSON_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'X-Digarr-CSRF': '1',
+}
+
 async function call(init?: RequestInit): Promise<HomeThemeResponse> {
   const res = await fetch('/api/v1/auth/me/theme', {
     credentials: 'same-origin',
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json', 'X-Digarr-CSRF': '1' } : {},
+    headers: init?.body ? JSON_HEADERS : {},
   })
   if (!res.ok) throw new Error(`home theme: HTTP ${res.status}`)
   const body = (await res.json()) as Partial<HomeThemeResponse> | null

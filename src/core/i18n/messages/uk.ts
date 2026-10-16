@@ -366,7 +366,7 @@ export const uk = {
   'discover.rejectAll': 'Відхилити всі',
   'discover.rejectAllBelow': 'Відхилити всі нижче',
   'discover.auditionAll': 'Прослухати',
-  'discover.nothingToAudition': 'Немає елементів в очікуванні з попереднім переглядом',
+  'discover.nothingToAudition': 'Немає рекомендацій в очікуванні',
   'discover.rejectAllPending': 'Відхилити всі незавершені',
   'discover.rejectAllPendingMessage':
     'Відхилити всі очікувані рекомендації? Це неможливо скасувати.',
@@ -515,8 +515,11 @@ export const uk = {
   'playlist.deleteFailed': 'Не вдалося видалити список відтворення',
   'playlist.deleteWarning': 'Видалити цей плейлист? Цю дію неможливо скасувати.',
   'playlist.deletedNamed': 'Плейлист видалено',
-  'playlist.detailHint':
-    'Цей список відтворення було створено на основі ваших схвалених рекомендацій. Натисніть «Створити зараз», щоб оновити його новими вибраними, завантажити як M3U або XSPF або додати цільовий список відтворення, щоб автоматично надсилати майбутні запуски до Navidrome, Jellyfin або Plex.',
+  'playlist.detailHint': 'Створіть цей список відтворення зі схвалених рекомендацій.',
+  'playlist.detailAuditionHint':
+    'Створіть цей список відтворення з виконавців в очікуванні, щоб послухати їх перед схваленням.',
+  'playlist.detailActionsHint':
+    'Після створення завантажте композиції у форматі M3U або XSPF чи додайте ціль списку відтворення, щоб автоматично надсилати майбутні добірки до Navidrome, Jellyfin або Plex.',
   'playlist.disable': 'Вимкнути плейлист',
   'playlist.download': 'Завантажити',
   'playlist.downloadFailed': 'Не вдалося завантажити список відтворення',
@@ -935,7 +938,8 @@ export const uk = {
   'discoveryMode.notShippedYet': 'Цей режим ще не доступний.',
   'discoveryMode.reason.connectListenBrainz':
     'Підключіть ListenBrainz, щоб користуватися цим режимом.',
-  'discoveryMode.reason.connectListeningSource': 'Спочатку підключіть джерело прослуховування.',
+  'discoveryMode.reason.connectReleaseRadarProviders':
+    'Підключіть ListenBrainz, Spotify або Last.fm, щоб користуватися цим режимом.',
   'discoveryMode.reason.connectListenBrainzOrLastfm':
     'Підключіть ListenBrainz або Last.fm, щоб користуватися цим режимом.',
   'discoveryMode.reason.connectDiscogs': 'Підключіть Discogs, щоб використовувати цей режим.',
@@ -1258,6 +1262,8 @@ export const uk = {
     'Використовується, коли сервер метаданих Lidarr недоступний. За замовчуванням api.musicinfo.pro. Вкажіть URL свого екземпляра hearring-aid, якщо ви самостійно його розгортаєте.',
   'settings.recommendationsSaved': 'Налаштування рекомендацій збережено',
   'settings.recommendationsFailed': 'Не вдалося зберегти налаштування',
+  'settings.recommendationsPartiallySaved':
+    'Особисті налаштування збережено, але не вдалося зберегти глобальні налаштування метаданих.',
   'settings.scheduleTip':
     'Встановіть cron-розклад для автоматичного запуску конвеєра. Популярний вибір - щопонеділка.',
   'settings.librarySyncInterval': 'Синхронізація бібліотеки',
@@ -1483,6 +1489,9 @@ export const uk = {
   'admin.exporting': 'Експорт...',
   'admin.includeCaches': 'Включити кеш',
   'admin.restoreFromBackup': 'Відновити з копії',
+  'admin.restoreConfirmTitle': 'Відновити резервну копію?',
+  'admin.restoreConfirmMessage':
+    'Дані, включені до резервної копії, буде замінено. Спочатку створіть резервну копію цього екземпляра. Продовжити?',
   'admin.lastAutoBackup': 'Остання авто-копія:',
   'admin.backupDownloaded': 'Копію завантажено',
   'admin.backupFailed': 'Не вдалося створити копію',
@@ -1712,6 +1721,7 @@ export const uk = {
   'errors.recommendation.notFound': 'Рекомендацію не знайдено',
   'errors.subscription.notFound': 'Підписку не знайдено',
   'errors.playlist.notFound': 'Список відтворення не знайдено',
+  'errors.playlist.busy': 'Створення списку відтворення або відновлення експорту вже триває',
   'settings.channels.title': 'Сповіщення',
   'settings.channels.description':
     'Надсилайте сповіщення про завершення сканування та зведення до одного чи кількох каналів.',

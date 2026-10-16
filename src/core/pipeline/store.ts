@@ -1,4 +1,5 @@
 import type { ScoredArtist } from '@/core/types'
+import { checkPipelineCancelled, PipelineCancelledError } from './cancel'
 import type { GenreFeedback } from './score'
 
 // Minimal database interface - only what store() needs
@@ -51,7 +52,7 @@ export interface StoreDb {
     kind?: 'artist' | 'album'
   }) => Promise<void>
 
-  getRejectedMbids: (cooldownDays: number, userId?: number) => Promise<Set<string>>
+  getRejectedMbids: (cooldownDays: number, userId: number | null) => Promise<Set<string>>
 
   getBlockedMbids: (userId: number) => Promise<Set<string>>
 
@@ -118,6 +119,7 @@ export interface StoreDb {
 }
 
 export type StoreOptions = {
+  signal?: AbortSignal
   userId?: number
   subscriptionId?: number
 }
@@ -127,6 +129,7 @@ export async function store(
   db: StoreDb,
   options: StoreOptions = {},
 ): Promise<number> {
+  checkPipelineCancelled(options.signal)
   const batch = await db.insertBatch({
     status: 'running',
     stats: {
@@ -141,6 +144,7 @@ export async function store(
 
   try {
     for (const artist of artists) {
+      checkPipelineCancelled(options.signal)
       const artistData = {
         mbid: artist.mbid,
         name: artist.name,
@@ -175,11 +179,13 @@ export async function store(
         }
         added++
       } catch (err: unknown) {
+        if (err instanceof PipelineCancelledError || options.signal?.aborted) throw err
         failed++
         console.error(`Failed to store artist ${artist.mbid}:`, err)
       }
     }
 
+    checkPipelineCancelled(options.signal)
     await db.completeBatch(batch.id, {
       discovered: artists.length,
       added,
@@ -191,7 +197,14 @@ export async function store(
     // A throw here (e.g. completeBatch hitting a DB error) would otherwise
     // strand the batch in 'running' forever. Transition it to 'failed' before
     // re-raising so the admin jobs view and stuck-detector see the truth.
-    await db.failBatch(batch.id)
+    try {
+      await db.failBatch(batch.id)
+    } catch (cleanupError) {
+      if (err instanceof PipelineCancelledError) {
+        throw new AggregateError([err, cleanupError], 'Failed to cancel pipeline batch')
+      }
+      console.error('Failed to mark pipeline batch failed:', cleanupError)
+    }
     throw err
   }
 }

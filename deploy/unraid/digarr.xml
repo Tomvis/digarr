@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Digarr</Name>
-  <!-- Digest pin (synced via scripts/sync-deploy-digests.ts): sha256:66066cc96d06651e5b0c59003fa44e47216bc14dfc369c85e2e95e60e9e2a00f -->
-  <Repository>docker.io/iuliandita/digarr:1.18.0</Repository>
+  <!-- Digest pin (synced via scripts/sync-deploy-digests.ts): sha256:e94b688477e4ab00853a7ea747a4967c52240558575ae0b21c572c82a4526e99 -->
+  <Repository>docker.io/iuliandita/digarr:2.0.0</Repository>
   <Registry>https://hub.docker.com/r/iuliandita/digarr</Registry>
   <Branch>
-    <Tag>1.18.0</Tag>
-    <TagDescription>v1.18.0 release</TagDescription>
+    <Tag>2.0.0</Tag>
+    <TagDescription>v2.0.0 release</TagDescription>
   </Branch>
   <Network>bridge</Network>
   <Shell>sh</Shell>
@@ -49,16 +49,16 @@
     Type="Variable" Display="advanced" Required="false" Mask="false">/app/data</Config>
 
   <Config Name="Database URL" Target="DATABASE_URL" Default=""
-    Description="Leave empty to use the built-in database. Set only to use an external PostgreSQL, e.g. postgresql://user:pass@host:5432/digarr"
+    Description="Leave empty to use the built-in database. Set only to use an external PostgreSQL, e.g. postgresql://user:pass@host:5432/digarr. Percent-encode username, password, and database-name components (pass#word becomes pass%23word; a literal % becomes %25), not the whole URL. Keep the original password in PostgreSQL password settings."
     Type="Variable" Display="advanced" Required="false" Mask="true"/>
 
   <!-- Auth (recommended) -->
   <Config Name="Initial Username" Target="DIGARR_INITIAL_USERNAME" Default=""
-    Description="Auto-create this admin user on first boot"
+    Description="Set with Initial Password to create the first admin. Leave both blank for manual registration. Ignored when users already exist."
     Type="Variable" Display="always" Required="false" Mask="false"/>
 
   <Config Name="Initial Password" Target="DIGARR_INITIAL_PASSWORD" Default=""
-    Description="Password for the initial admin user (min 12 chars)"
+    Description="Set with Initial Username, using at least 12 characters. Ignored when users already exist; does not reset passwords."
     Type="Variable" Display="always" Required="false" Mask="true"/>
 
   <!-- AI Provider -->
@@ -118,7 +118,7 @@
     Type="Variable" Display="advanced" Required="false" Mask="true"/>
 
   <Config Name="Disable Registration" Target="DIGARR_DISABLE_REGISTRATION" Default="true|false"
-    Description="Set to false to allow new user registration"
+    Description="Set to false to allow local password registration. OIDC account provisioning is controlled by the identity provider"
     Type="Variable" Display="advanced-hide" Required="true" Mask="false"/>
 
   <Config Name="Skip TLS Verify" Target="SKIP_TLS_VERIFY" Default="false|true"

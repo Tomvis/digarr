@@ -367,7 +367,7 @@ export const it = {
   'discover.rejectAll': 'Rifiuta tutto',
   'discover.rejectAllBelow': 'Rifiuta tutto sotto',
   'discover.auditionAll': 'Preascolto',
-  'discover.nothingToAudition': 'Nessun elemento in sospeso con anteprima',
+  'discover.nothingToAudition': 'Nessuna raccomandazione in sospeso',
   'discover.rejectAllPending': 'Rifiuta tutto in sospeso',
   'discover.rejectAllPendingMessage':
     'Rifiutare tutti i consigli in sospeso? Questa operazione non può essere annullata.',
@@ -518,8 +518,11 @@ export const it = {
   'playlist.deleteFailed': 'Impossibile eliminare la playlist',
   'playlist.deleteWarning': 'Eliminare questa playlist? Questa azione non può essere annullata.',
   'playlist.deletedNamed': 'Playlist eliminata',
-  'playlist.detailHint':
-    'Questa playlist è stata generata dai tuoi consigli approvati. Fai clic su Genera ora per aggiornarlo con nuove scelte, scaricalo come M3U o XSPF o aggiungi una destinazione playlist per inviare automaticamente le corse future a Navidrome, Jellyfin o Plex.',
+  'playlist.detailHint': 'Genera questa playlist dai tuoi consigli approvati.',
+  'playlist.detailAuditionHint':
+    'Genera questa playlist dagli artisti in sospeso per ascoltarli prima di approvarli.',
+  'playlist.detailActionsHint':
+    'Dopo la generazione, scarica i brani come M3U o XSPF oppure aggiungi una destinazione playlist per inviare automaticamente le generazioni future a Navidrome, Jellyfin o Plex.',
   'playlist.disable': 'Disattiva playlist',
   'playlist.download': 'Scarica',
   'playlist.downloadFailed': 'Impossibile scaricare la playlist',
@@ -938,7 +941,8 @@ export const it = {
   'discoveryMode.notImplementedYet': 'Questa modalità non è ancora implementata.',
   'discoveryMode.notShippedYet': 'Questa modalità non è ancora disponibile.',
   'discoveryMode.reason.connectListenBrainz': 'Collega ListenBrainz per usare questa modalità.',
-  'discoveryMode.reason.connectListeningSource': "Collega prima una sorgente d'ascolto.",
+  'discoveryMode.reason.connectReleaseRadarProviders':
+    'Collega ListenBrainz, Spotify o Last.fm per usare questa modalità.',
   'discoveryMode.reason.connectListenBrainzOrLastfm':
     'Collega ListenBrainz o Last.fm per usare questa modalità.',
   'discoveryMode.reason.connectDiscogs': 'Collega Discogs per usare questa modalità.',
@@ -1261,6 +1265,8 @@ export const it = {
     "Usato quando il server di metadati di Lidarr non è disponibile. Predefinito su api.musicinfo.pro. Imposta l'URL della tua istanza se la ospiti tu stesso.",
   'settings.recommendationsSaved': 'Impostazioni raccomandazioni salvate',
   'settings.recommendationsFailed': 'Impossibile salvare le impostazioni',
+  'settings.recommendationsPartiallySaved':
+    'Le preferenze personali sono state salvate, ma non è stato possibile salvare le impostazioni globali dei metadati.',
   'settings.scheduleTip':
     'Imposta una pianificazione cron per eseguire automaticamente il pipeline. Una volta a settimana il lunedì è una scelta popolare.',
   'settings.librarySyncInterval': 'Sync libreria',
@@ -1488,6 +1494,9 @@ export const it = {
   'admin.exporting': 'Esportazione...',
   'admin.includeCaches': 'Includi cache',
   'admin.restoreFromBackup': 'Ripristina da backup',
+  'admin.restoreConfirmTitle': 'Ripristinare il backup?',
+  'admin.restoreConfirmMessage':
+    'Questa operazione sostituisce i dati inclusi nel backup. Esegui prima un backup di questa istanza. Continuare?',
   'admin.lastAutoBackup': 'Ultimo backup automatico:',
   'admin.backupDownloaded': 'Backup scaricato',
   'admin.backupFailed': 'Creazione backup fallita',
@@ -1722,6 +1731,8 @@ export const it = {
   'errors.recommendation.notFound': 'Raccomandazione non trovata',
   'errors.subscription.notFound': 'Abbonamento non trovato',
   'errors.playlist.notFound': 'Playlist non trovata',
+  'errors.playlist.busy':
+    "La generazione della playlist o il recupero dell'esportazione è già in corso",
   'settings.channels.title': 'Notifiche',
   'settings.channels.description':
     'Invia notifiche di completamento scansione e di riepilogo a uno o più canali.',

@@ -20,7 +20,12 @@ function app(recordHomeThemeClaim: (id: number, c: unknown) => Promise<void>) {
   const oidc = {
     handleCallback: vi.fn(async () => ({
       purpose: { kind: 'login' as const },
-      claims: { sub: 'sub-1', preferredUsername: 'lera', homeTheme: claim },
+      claims: {
+        iss: 'https://idp.example',
+        sub: 'sub-1',
+        preferredUsername: 'lera',
+        homeTheme: claim,
+      },
     })),
   }
   const a = new Hono<HonoEnv>()
@@ -28,7 +33,7 @@ function app(recordHomeThemeClaim: (id: number, c: unknown) => Promise<void>) {
     '/',
     oidcRoutes({
       getOidcService: async () => oidc as unknown as OidcService,
-      getUserByOidcSubject: async () => ({ id: 2, username: 'lera' }),
+      getUserByOidcIdentity: async () => ({ id: 2, username: 'lera' }),
       getUserByUsername: async () => null,
       getUserCredentialsById: async () => null,
       createUser: vi.fn(),

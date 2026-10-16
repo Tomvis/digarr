@@ -1,5 +1,5 @@
 import PQueue from 'p-queue'
-import type { ServiceTestResult } from '@/core/types'
+import type { LibraryTrack, ServiceTestResult } from '@/core/types'
 import { errMsg } from '@/core/validation'
 import { createHttpClient } from './http'
 
@@ -77,8 +77,10 @@ type PlexHistoryResponse = {
       accountID?: number | string
       librarySectionID?: number | string
       grandparentRatingKey?: number | string
+      grandparentKey?: string
       grandparentTitle?: string
       ratingKey?: number | string
+      key?: string
       title?: string
       viewedAt?: number
     }>
@@ -135,6 +137,7 @@ export type PlexClient = {
     offset: number
     since?: number
   }) => Promise<{ artists: PlexTopArtist[]; totalCount: number }>
+  searchTracks: (artistName: string, limit?: number) => Promise<LibraryTrack[]>
   getAllArtists: (options?: { pageSize?: number }) => Promise<PlexLibraryArtist[]>
   getAlbumsForArtist: (artistRatingKey: string) => Promise<PlexLibraryAlbum[]>
   getRecentlyPlayed: (limit?: number) => Promise<PlexRecentTrack[]>
@@ -146,6 +149,19 @@ const DEFAULT_HISTORY_PAGE_SIZE = 200
 const MAX_HISTORY_PAGE_SIZE = 500
 const MAX_HISTORY_ITEMS = 5_000
 const MAX_HISTORY_PAGES = 25
+
+function historyRatingKey(ratingKey: unknown, key: unknown): string {
+  const bareKey =
+    typeof ratingKey === 'string'
+      ? ratingKey.trim()
+      : typeof ratingKey === 'number' && Number.isSafeInteger(ratingKey) && ratingKey > 0
+        ? String(ratingKey)
+        : ''
+  if (/^[A-Za-z0-9_-]+$/.test(bareKey)) return bareKey
+  return typeof key === 'string'
+    ? (/^\/library\/metadata\/([A-Za-z0-9_-]+)$/.exec(key)?.[1] ?? '')
+    : ''
+}
 
 export function createPlexClient(
   url: string,
@@ -287,6 +303,8 @@ export function createPlexClient(
       const metadata = res.MediaContainer.Metadata ?? []
       total = res.MediaContainer.totalSize ?? total
       let pageExceededItemLimit = false
+      let trackCount = 0
+      let usableTrackCount = 0
 
       for (const raw of metadata) {
         const returnedAccountId = Number(raw.accountID)
@@ -303,12 +321,14 @@ export function createPlexClient(
         }
         if (raw.type !== 'track') continue
 
-        const artistName = raw.grandparentTitle?.trim()
-        const trackName = raw.title?.trim()
-        const artistRatingKey = String(raw.grandparentRatingKey ?? '').trim()
-        const ratingKey = String(raw.ratingKey ?? '').trim()
-        const viewedAt = Number(raw.viewedAt)
+        const artistName =
+          typeof raw.grandparentTitle === 'string' ? raw.grandparentTitle.trim() : ''
+        const trackName = typeof raw.title === 'string' ? raw.title.trim() : ''
+        const artistRatingKey = historyRatingKey(raw.grandparentRatingKey, raw.grandparentKey)
+        const ratingKey = historyRatingKey(raw.ratingKey, raw.key)
+        const viewedAt = Number(raw.viewedAt ?? Number.NaN)
         if (options.since != null && Number.isFinite(viewedAt) && viewedAt < options.since) continue
+        trackCount += 1
         if (
           !artistName ||
           !trackName ||
@@ -318,6 +338,7 @@ export function createPlexClient(
         ) {
           continue
         }
+        usableTrackCount += 1
         if (items.length >= maxItems) {
           pageExceededItemLimit = true
           continue
@@ -331,6 +352,11 @@ export function createPlexClient(
           ratingKey,
           viewedAt: viewedAt * 1000,
         })
+      }
+      if (trackCount > 0 && usableTrackCount === 0) {
+        console.warn(
+          `[plex] History page contained ${trackCount} track entries but 0 usable tracks; required fields are missing or malformed`,
+        )
       }
 
       start += metadata.length
@@ -419,6 +445,83 @@ export function createPlexClient(
       const name = item.tag?.trim()
       return guid && name ? [{ guid, name }] : []
     })
+  }
+
+  async function searchTracks(artistName: string, limit = 25): Promise<LibraryTrack[]> {
+    if (!Number.isFinite(limit)) throw new Error('Plex track search requires a finite limit')
+    const count = Math.min(100, Math.max(0, Math.trunc(limit)))
+    const query = artistName.trim()
+    if (!query || count === 0) return []
+
+    const sectionId = await getMusicSectionId()
+    if (
+      configuredSectionId &&
+      !(await getMusicSections()).some((section) => section.key === sectionId)
+    ) {
+      throw new Error('Configured Plex music library section is not available')
+    }
+    const params = new URLSearchParams({
+      type: '10',
+      sourceType: '8',
+      'title=': query,
+      limit: String(count),
+      'X-Plex-Container-Start': '0',
+      'X-Plex-Container-Size': String(count),
+    })
+    const res = await get<{
+      MediaContainer?: {
+        librarySectionID?: string | number
+        Metadata?: Array<{
+          type?: string
+          librarySectionID?: string | number
+          title?: string
+          grandparentTitle?: string
+          duration?: number
+          Media?: Array<{ Part?: Array<{ file?: string }> }>
+        }>
+      }
+    }>(`/library/sections/${encodeURIComponent(sectionId)}/all?${params}`)
+    const container = res?.MediaContainer
+    if (
+      !container ||
+      typeof container !== 'object' ||
+      Array.isArray(container) ||
+      (container.Metadata !== undefined && !Array.isArray(container.Metadata))
+    ) {
+      throw new Error('Malformed Plex track search response')
+    }
+    if (container.librarySectionID != null && String(container.librarySectionID) !== sectionId) {
+      throw new Error('Plex returned tracks from a different library section')
+    }
+    const tracks: LibraryTrack[] = []
+    for (const item of (container.Metadata ?? []).slice(0, count)) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new Error('Malformed Plex track search metadata')
+      }
+      if (item.librarySectionID != null && String(item.librarySectionID) !== sectionId) {
+        throw new Error('Plex returned tracks from a different library section')
+      }
+      if (item.type !== 'track') continue
+      const name = typeof item.title === 'string' ? item.title.trim() : ''
+      const artist = typeof item.grandparentTitle === 'string' ? item.grandparentTitle.trim() : ''
+      const path = Array.isArray(item.Media)
+        ? item.Media.flatMap((media) => (Array.isArray(media?.Part) ? media.Part : [])).find(
+            (part) => typeof part?.file === 'string' && part.file.trim(),
+          )?.file
+        : undefined
+      if (!name || !artist || !path) continue
+      tracks.push({
+        name,
+        artist,
+        path,
+        ...(typeof item.duration === 'number' &&
+        Number.isFinite(item.duration) &&
+        item.duration >= 0
+          ? { duration: item.duration / 1000 }
+          : {}),
+      })
+    }
+    return tracks
   }
 
   async function getAllArtists(options?: { pageSize?: number }): Promise<PlexLibraryArtist[]> {
@@ -565,6 +668,7 @@ export function createPlexClient(
     getHistory,
     getTopArtists,
     getTopArtistsPaged,
+    searchTracks,
     getAllArtists,
     getAlbumsForArtist,
     getRecentlyPlayed,

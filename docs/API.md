@@ -1,6 +1,6 @@
 # API Reference
 
-This reference covers v1.18.0; consult the [changelog](../CHANGELOG.md) for release changes. Unversioned `/api/*` routes have been removed; use `/api/v1/*`.
+This reference covers v2.0.1; consult the [changelog](../CHANGELOG.md) for release changes. Unversioned `/api/*` routes have been removed; use `/api/v1/*`.
 
 All endpoints require either a `digarr_session` cookie or an
 `Authorization: Bearer <token>` header unless marked as public. Bearer sessions
@@ -24,13 +24,13 @@ production instance served directly over plain HTTP must set
 and is vulnerable to network interception. See
 [Authentication](AUTHENTICATION.md#cookie-secure-policy).
 
-Locale-aware routes accept `X-Digarr-Locale` to override the saved user locale for that request. If the header is absent, Digarr falls back to the saved user preference and then `Accept-Language`.
+Locale fallback is route-specific. Pipeline run and Quick Discover use `X-Digarr-Locale`, then the saved user locale, `Accept-Language`, and English. Auth messages, settings probes, and the Spotify Liked Songs import use the request header, then `Accept-Language` and English; these paths do not consult the saved locale. API clients should send `X-Digarr-Locale` explicitly for predictable messages on locale-aware routes.
 
-Admin-only endpoints return 403 for non-admin users.
+Admin-only endpoints return 403 for non-admin users. CSRF rejection also returns `403`, with `application/problem+json` and type `/problems/csrf-validation-failed`, before the route handler runs.
 
 ---
 
-## Pagination Shapes
+## Pagination shapes
 
 Digarr uses three pagination styles depending on the route's compatibility history.
 
@@ -68,11 +68,11 @@ For these routes, non-integer `limit` values return `400`. `meta.nextCursor` is 
 Offset-paginated routes:
 - `GET /api/v1/recommendations` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
 - `GET /api/v1/jobs` returns `{ "items": [], "total": 0 }` and accepts `limit` plus `offset`
-- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null, "status": "not_configured" }`
+- `GET /api/v1/listening/top-artists` returns `{ "tracks": [], "total": 0, "offset": 0, "limit": 5, "source": null, "status": "not_configured" }`; Last.fm honors arbitrary offsets in v2.0.0 as described under [Listening](#listening).
 
 ---
 
-## API Metadata
+## API metadata
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -80,9 +80,8 @@ Offset-paginated routes:
 | GET | `/api/v1/docs/openapi.json` | No | OpenAPI 3.1 document with shared schemas plus selected stable route groups |
 
 OpenAPI coverage currently includes auth status/login/register/session
-migration, recommendations, artist blocks, jobs, library reconciliation lists
-and bulk ignore, and settings service probes. The Markdown reference remains
-the complete route inventory.
+migration, recommendation list/get/update, artist blocks, jobs, library reconciliation lists
+and bulk ignore, and settings service probes. Some mutation bodies remain generic objects; bulk recommendations, feedback summaries, playlist projections, and preference writes are not machine-described. The Markdown reference is the complete route inventory and the detailed contract for those operations.
 
 ---
 
@@ -99,10 +98,10 @@ the complete route inventory.
 | GET | `/api/v1/auth/me` | Yes | Current user profile |
 | GET | `/api/v1/auth/validate` | Yes | Lightweight token/session validity check. Returns `204` when valid |
 | PATCH | `/api/v1/auth/me/locale` | Yes | Update the saved user locale. Session auth only. |
-| PATCH | `/api/v1/auth/me/email` | Yes | Set or clear the user's email. Session auth only. |
+| PATCH | `/api/v1/auth/me/email` | Yes (5/min) | Set or clear the user's email. Session auth only. |
 | POST | `/api/v1/auth/change-password` | Yes | Change password. Invalidates all sessions. Rate limited: 5/min |
 | GET | `/api/v1/auth/me/preferences` | Yes | Get merged user preferences |
-| PATCH | `/api/v1/auth/me/preferences` | Yes | Update user preferences (partial merge). Session auth only. |
+| PATCH | `/api/v1/auth/me/preferences` | Yes | Update user preferences (top-level partial merge). Session auth only. |
 | GET | `/api/v1/auth/me/theme` | Yes | Fork (HW-64): home theme claim, in-app choice and effective theme |
 | PUT | `/api/v1/auth/me/theme` | Yes | Fork (HW-64): set the in-app theme (`{color, mode}`) or `{follow: true}`. Session auth only. |
 
@@ -120,6 +119,7 @@ Notes:
 - Login and registration return `{ user, token }` for API clients by default.
   Send `X-Digarr-Auth-Mode: cookie` to receive an HttpOnly session cookie and a
   `{ user }` response without the raw token.
+- Registration trims surrounding username whitespace and requires 2-50 characters. Passwords require at least 12 characters.
 - Registration returns `201`; closed registration returns `403`, an existing
   username returns `409`, and the sixth request from one source within a minute
   returns `429`.
@@ -145,6 +145,12 @@ Notes:
 - `POST /api/v1/auth/change-password` also rejects legacy token auth with `403`; password changes require a session-authenticated user
 - `PATCH /api/v1/auth/me/preferences` also rejects legacy token auth with `403`; preference writes require a session-authenticated user
 - `GET /api/v1/auth/status` returns `required: true` as soon as setup is complete, even if no users exist yet, so the frontend can force registration/login instead of treating the app as public
+
+In v2.0.0, the Recommendations settings page saves user preferences for every user and writes shared AudioDB/Wikidata settings only for admins. Personal preferences and recommendations are refreshed after the user write succeeds. If an admin's later global write fails, the notice explicitly reports that personal preferences saved; it does not imply rollback. Shared metadata controls are admin-only; personal fanart and metadata-fallback controls remain available to everyone. Server permissions are unchanged. v1.19.0 unconditionally attempts the global write, so non-admins see a false save failure and stale cached values ([#792](https://github.com/iuliandita/digarr/issues/792)). Verify saved values with `GET /api/v1/auth/me/preferences`, or use the per-user `PATCH` directly.
+
+In v2.0.0, `PATCH /api/v1/auth/me/preferences` accepts `{"netNewAlbumDiscovery":true}` or `{"netNewAlbumDiscovery":false}`, and the saved boolean is returned by a fresh preferences GET. Omission preserves the saved value; other value types return `400` before writing. Admins may also set `preferences.netNewAlbumDiscovery` through `PATCH /api/v1/settings`. The default remains off, and existing per-user/global fallback rules are unchanged. v1.19.0 silently ignores the per-user key and rejects it in global preferences ([#791](https://github.com/iuliandita/digarr/issues/791)); use Release Radar or Library Gap-Fill until upgrading.
+
+Preference updates merge top-level keys only. A supplied `scoringWeights` object replaces the saved object; omitted weights fall back to defaults rather than retaining saved values. Send the complete intended `scoringWeights` object when changing weights.
 
 ### API Keys
 
@@ -181,11 +187,16 @@ Notes:
 |--------|------|------|-------------|
 | GET | `/api/v1/auth/oidc/login` | No | Redirect to OIDC provider. Requires `ALLOWED_ORIGIN` env var. Sets a browser-bound, one-time, 10-min `HttpOnly` transaction cookie. Rate limited: 10/min |
 | POST | `/api/v1/auth/oidc/link` | Cookie session | Start account linking after current-password verification. Returns `{ url }`. Requires CSRF protection and an unlinked local account. Rate limited: 5/min |
-| GET | `/api/v1/auth/oidc/callback` | Transaction-bound | OIDC callback; consumes the browser-bound transaction once. Login creates the user if needed and sets a session cookie. Linking also requires the initiating session and updates only its account's OIDC subject. Not rate limited |
+| GET | `/api/v1/auth/oidc/callback` | Transaction-bound | OIDC callback; consumes the browser-bound transaction once. Login creates the user if needed and sets a session cookie. Linking also requires the initiating session and updates only its account's OIDC issuer and subject. Not rate limited |
 | POST | `/api/v1/auth/oauth/:provider/initiate` | Yes | Start OAuth flow (`spotify`, `deezer`, `tidal`). Sets a browser-bound, 10-min `HttpOnly` transaction cookie scoped to the provider's callback path. Rate limited: 5/min |
 | GET | `/api/v1/auth/oauth/:provider/callback` | No | OAuth callback; requires the transaction cookie from initiate. The pending authorization is consumed on read, so a `state` works exactly once. Not rate limited |
 | GET | `/api/v1/auth/oauth/:provider/status` | Yes | Check OAuth connection status |
 | DELETE | `/api/v1/auth/oauth/:provider` | Yes | Disconnect OAuth provider |
+
+In v2.0.0, login and linking use the exact validated `iss`/`sub` pair. Legacy
+issuer-less bindings require [operator recovery](AUTHENTICATION.md#recovering-legacy-oidc-bindings);
+they are not matched by subject or email. A different issuer with the same
+subject is a separate identity. Request bodies and callback URLs are unchanged.
 
 **POST /api/v1/auth/oidc/link** body:
 
@@ -230,15 +241,16 @@ Treat these as untrusted when rendering: the pass-through case is provider-contr
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/v1/setup/status` | No | Check if setup is complete |
-| POST | `/api/v1/setup/complete` | No | Complete initial setup |
+| POST | `/api/v1/setup/complete` | Conditional | Complete initial setup; requested Lidarr/Emby services require an authenticated owner |
 
 Setup validation rules:
 - `aiProvider` and `aiModel` are required
 - Lidarr is optional, but `lidarrUrl` and `lidarrApiKey` must be provided together when used
-- Emby is optional, but `embyUrl`, `embyApiKey`, and `embyUserId` must be provided together when used
-- When Lidarr is provided during setup, Digarr auto-creates the default Lidarr target for the first user
-- When Emby is provided during setup, Digarr stores the per-user Emby connection and auto-creates an Emby playlist target
-- Completing setup does not create a user account. If setup finishes before any user exists, the next step is to register or sign in; protected routes stay locked until then
+- In v2.0.0, Emby is optional, but any nonblank `embyUrl`, `embyApiKey`, or `embyUserId` requires the complete trio. Incomplete Lidarr/Emby groups return `400` before persistence.
+- Requested Lidarr/Emby services require an authenticated owner who still exists; otherwise setup returns `401` without saving configuration. The browser creates or signs into an account before opening the wizard. Public AI-only API bootstrap remains available only while the existing authentication guard permits it.
+- In v2.0.0, global setup settings, the requested Emby connection, and requested Lidarr/Emby targets commit in one database transaction. `204` means all requested writes succeeded. A persistence failure returns generic `500` problem details with `code: setup.failed`, rolls back the writes, and leaves setup retryable. Completion is rechecked under a settings-row lock; concurrent/repeated completion returns `409` rather than creating duplicate targets. External service reachability is not verified by this commit.
+- v1.19.0 can discard incomplete Emby fields and return `204` despite failed connection/target writes; register and sign in first, then verify saved connections and targets ([#783](https://github.com/iuliandita/digarr/issues/783)). Environment-based bootstrap is unchanged by this fix.
+- Completing setup does not create a user account. API clients using AI-only bootstrap before registration must still register or sign in before accessing protected routes.
 
 **POST /api/v1/setup/complete** body:
 ```json
@@ -260,11 +272,11 @@ Setup validation rules:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/pipeline/run` | Yes | Start a full discovery scan, or queue it behind an in-flight run. Returns 202 with `{ queued, position }`. |
-| POST | `/api/v1/pipeline/cancel` | Yes | Stop the in-flight run and drop the queue. Returns 202 with `{ cancelled }` (`false` when nothing was running). |
+| POST | `/api/v1/pipeline/run` | Yes | Start a full discovery scan, or queue it behind an in-flight run. Returns 202 with `{ message, status, queued, position }`; `status` is `started`, `queued`, or `duplicate`. |
+| POST | `/api/v1/pipeline/cancel` | Yes | Request cancellation of the in-flight run and drop the queue. Returns 202 with `{ cancelled, message }`; in v2.0.0, `cancelled` is false when idle or already finishing. |
 | GET | `/api/v1/pipeline/status` | Yes | Current pipeline status (running, stage, last run, `queueLength`, caller `queuePosition`) |
 | GET | `/api/v1/pipeline/events` | Yes | SSE stream of pipeline progress events |
-| POST | `/api/v1/pipeline/quick-discover` | Yes | Fire-and-forget: discover artists similar to a given name. Rate limited: 5/min |
+| POST | `/api/v1/pipeline/quick-discover` | Yes | Fire-and-forget: try saving the named seed, then discover similar artists. Rate limited: 5/min |
 | POST | `/api/v1/pipeline/rescan` | Admin | Re-fetch images/metadata for up to 200 existing recommendations. Deduplicates artists, safely reuses shared-provider misses for seven days, and returns `{ attempted, updated, failed, total }` (`total` is a compatibility alias for `attempted`). Rate limited to 2/min; concurrent rescans return 409. |
 
 `POST /api/v1/pipeline/run` is intentionally available to any authenticated
@@ -276,15 +288,13 @@ rejected: the response is still 202 with `queued: true` and the caller's 1-based
 The queue drains automatically when the active run finishes. The queue is
 in-memory and per-process.
 
-`POST /api/v1/pipeline/cancel` stops a wedged or unwanted scan without a
-restart. It is available to any authenticated user (symmetric with "Run Scan":
-single-flight means one run total). Cancellation is cooperative -- the run
-checks an abort signal at every stage boundary and inside artist resolution, so
-a stop lands within about one request timeout. The queue is cleared so nothing
-starts behind the stopped run, the job is recorded with status `cancelled`, and
-a terminal `cancelled` progress event closes the SSE stream. A run that ignores
-the signal is force-reset after a short grace window so the app is never left
-permanently "running".
+`POST /api/v1/pipeline/cancel` is available to any authenticated user and clears the pending queue. In v2.0.0, `cancelled: true` accepts a cooperative stop request; it does not report that the worker has stopped. Storage checks between complete artist/recommendation units, and automatic approval checks before new recommendations and targets. An operation already in flight finishes and records its actual result before stopping. Saved recommendations and remote additions remain; cancellation does not roll them back. An actual target or database failure remains a failure even when cancellation was requested. Interrupted storage marks its batch failed, while the pipeline job records cancellation after cleanup succeeds.
+
+The running flag stays true until active work and awaited batch/job bookkeeping settle. A terminal `cancelled` or `complete` progress event follows that settlement. Cleanup failures surface as errors, preserving the original failure, rather than claiming successful cancellation ([#790](https://github.com/iuliandita/digarr/issues/790), [#850](https://github.com/iuliandita/digarr/issues/850)). There is no forced unlock after 15 seconds. A hung operation keeps the pipeline busy until it settles or the process is deliberately restarted; inspect retained recommendations and target outcomes before retrying.
+
+After the run commits to final success bookkeeping, cancellation is too late: the response is `202` with `cancelled: false` and message `Pipeline finishing`, while `running` remains true until finalization settles. An idle request returns `cancelled: false` with `No pipeline run in progress`. The browser resets the Stop button when cancellation is declined. The queue is cleared in all cases.
+
+v1.19.0 checks cancellation only before storage and can continue storage or target additions after its 15-second backstop clears the indicator. Do not use that indicator as evidence that writes stopped. On every version, follow the [migration prerequisites](guides/switching-backends.md#prerequisites): pipeline settlement does not prove that every background job or other writer is idle.
 
 `POST /api/v1/pipeline/rescan` is admin-only because it writes shared artist
 metadata using the requesting admin's configured providers. It runs one rescan
@@ -294,10 +304,13 @@ preventing overlapping calls from multiplying shared provider traffic.
 The rescan image policy matches normal discovery: TheAudioDB runs first. On a
 miss, the configured Lidarr/SkyHook, fanart.tv, and musicinfo.pro fallbacks run
 concurrently; results still prefer Lidarr, then fanart.tv, then musicinfo.pro.
+
 A failed fallback does not stop the remaining image providers or the independent
-MusicBrainz disambiguation refresh. Complete misses from the globally shared
-AudioDB/Lidarr configuration refresh the seven-day negative cache so repeated
-rescans do not immediately repeat the same work. User-scoped fanart.tv or
+MusicBrainz disambiguation refresh.
+
+Complete misses from the globally shared AudioDB/Lidarr configuration refresh
+the seven-day negative cache so repeated rescans do not immediately repeat the
+same work. User-scoped fanart.tv or
 musicinfo.pro configurations bypass that shared cache, and transient or
 rate-limited lookups are not cached as misses.
 
@@ -306,6 +319,14 @@ rate-limited lookups are not cached as misses.
 { "artistName": "Radiohead" }
 ```
 
+In v2.0.0, Quick Discover treats the submitted artist as an explicit add-to-queue request: it resolves the seed through MusicBrainz and retains its score of `1.0`. Before storage, both the seed and similar results follow the same library, existing-recommendation, permanent-block, owner-scoped rejection-cooldown, and score-threshold checks. The seed can remain pending even when no similar artists are found; a newly saved seed is excluded from the later similar results.
+
+Job `artistsStored` counts successful recommendation writes from both completed storage batches, including a seed-only result; failed per-artist writes do not inflate it. `artistsDiscovered` continues to count similar-provider candidates, excluding the explicit seed. Fatal storage errors or unavailable completed-batch statistics fail the job; completed writes are retained, so inspect Job History and the queue before retrying. Individual write failures remain recorded in the storage batch.
+
+v1.19.0 bypasses the seed filters and excludes the seed from job stored counts ([#795](https://github.com/iuliandita/digarr/issues/795)). After upgrading, an excluded seed will no longer be added explicitly. Existing saved recommendations are unchanged; no schema migration is added. Rollback restores the bypass and old counts.
+
+Quick Discover and manual discovery-mode runs return `409 application/problem+json` with type `/problems/pipeline-already-running` when a pipeline scan is active. They do not join the full-scan FIFO queue.
+
 Locale notes:
 - `POST /api/v1/pipeline/run` and `POST /api/v1/pipeline/quick-discover` honor `X-Digarr-Locale`
 - For authenticated users, the explicit request locale wins over the saved user locale for that request
@@ -313,7 +334,7 @@ Locale notes:
 
 ---
 
-## Discovery Modes
+## Discovery modes
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -324,7 +345,7 @@ Locale notes:
 - Always returns the shipped discovery-mode catalog, including modes that are visible but currently unavailable
 - In the web UI, these modes are exposed from Discover -> Discovery Modes
 - Each mode includes `availability.enabled`, `availability.fallbackUsed`, `availability.providerPath`, and an optional `availability.reason`
-- Each mode also includes a `stability` field (`stable` or `experimental`), mirroring the search-source field. `tidal-favorite-artists` is `experimental`: live-account validation of TIDAL connect, token refresh, and populated favorite-artist results is deferred. Clients should badge experimental modes rather than hide them. See [TIDAL feedback](../README.md#tidal-feedback) for safe community reports.
+- Each mode also includes a `stability` field (`stable` or `experimental`), mirroring the search-source field. `tidal-favorite-artists` is `experimental`: live-account validation of TIDAL connect, token refresh, and populated favorite-artist results is deferred. Clients should badge experimental modes rather than hide them. See [TIDAL feedback](AUTHENTICATION.md#tidal-feedback) for safe community reports.
 - Unavailable modes stay visible for roadmap transparency, should be treated as read-only UI metadata, and are not runnable jobs
 
 **POST /api/v1/discovery-modes/run** body:
@@ -340,8 +361,8 @@ Locale notes:
 ```
 
 **POST /api/v1/discovery-modes/run** behavior:
-- Returns `202 { "message": "Discovery run started" }` after validation; the actual run continues in the background
-- The accepted response now includes `jobId`, so clients can poll the job detail endpoint while the run continues in the background
+- Returns `202 { "message": "Discovery run started", "jobId": 123 }` after validation; the actual run continues in the background
+- The accepted response includes `jobId`. Admin clients can poll `/api/v1/jobs/:id`; job endpoints return `403` for non-admins. Ordinary users can refresh Discover to see stored recommendations; the bundled mode card shows the accepted-run feedback, not an unrestricted job-detail subscription
 - The server re-evaluates availability and execution context from the current user connections before starting the run
 - Returns `400` with the availability reason when a mode is currently unavailable, matching the `availability.reason` shown in the UI
 - Mode-specific preflight preparation can still reject the request before `202`; for example, Artist Radio resolves free-text artist seeds to MusicBrainz IDs before the job is accepted
@@ -356,17 +377,21 @@ Locale notes:
 | GET | `/api/v1/recommendations/:id` | Yes | Get single recommendation with artist data |
 | PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or revert a recommendation to `pending`. Reverting undoes an approval: it always reverts the row, and also removes the Lidarr artist digarr added when it can do so safely (see below) |
 | POST | `/api/v1/recommendations/bulk` | Yes | Bulk approve/reject (reject accepts an optional shared `reason` + `permanent` block) |
-| GET | `/api/v1/recommendations/feedback-summary` | Yes | Genre approval rates (top 20), scoped to the calling user's own feedback |
-| GET | `/api/v1/recommendations/popular-albums/availability` | Yes | Which popularity sources are reachable for the caller; backs the popular-album approve option. Returns `{ available, spotify, lastfm }` (booleans). |
+| GET | `/api/v1/recommendations/feedback-summary` | Yes | Genre approval rates (top 20, at least 3 acted-on recommendations per genre), scoped to the calling user's own feedback |
+| GET | `/api/v1/recommendations/popular-albums/availability` | Yes | Credential availability for the popular-album approve option: Spotify token resolution succeeds and/or a Last.fm API key is stored. Does not probe album lookups; a subsequent lookup can still fail. Returns `{ available, spotify, lastfm }` (booleans). |
+
+**GET /api/v1/recommendations/feedback-summary** returns `{ summary: [{ genre, approved, rejected, other, total, rate }] }` in v2.0.0, ordered by descending rate and limited to 20 genres with at least 3 acted-on recommendations each. `total` counts recommendations with an action timestamp. `approved` counts current `approved` and `added_to_lidarr` statuses; `rejected` counts only current `rejected` rows, including those without a reason. `other` counts the remaining acted-on rows, such as failed approvals and recommendations restored to pending. Thus `approved + rejected + other = total`. `rate` remains `approved / total`, including those other outcomes in the denominator, so it is not a pure like/dislike ratio. Recommendation scoring is unchanged.
+
+v1.19.0 has no `other` field and labels every non-approved acted-on row as `rejected` ([#789](https://github.com/iuliandita/digarr/issues/789)). API consumers upgrading to v2.0.0 must use `other` when reconciling totals instead of assuming `approved + rejected = total`. There is no schema migration or stored-row rewrite; rollback restores the old response calculation.
 
 **GET /api/v1/recommendations** query params:
-- `status` - `pending`, `approved`, `rejected`, `added_to_lidarr`, `add_failed` (comma-separated)
-- `kind` - `artist` or `album`; omit to return both. Backs the Discover kind filter and the Albums tab (`?kind=album`)
+- `status` - `pending`, `approved`, `rejected`, `added_to_lidarr`, `add_failed`, `duplicate`, `queued` (comma-separated)
+- `kind` - `artist` or `album`; omitted or unrecognized values return both. Backs the Discover kind filter and the Albums tab (`?kind=album`)
 - `batchId` - filter by batch
 - `sort` - `score_desc` (default), `score_asc`, `created_desc`, `acted_on_desc`, `taste`
 - `tasteTier` - optional `primary` or `secondary`; secondary excludes primary matches
 
-- `decades` - era filter, comma-separated: `60s`, `70s`, `80s`, `90s`, `00s`, `10s`, `20s`
+- `decades` - era filter, comma-separated: `60s`, `70s`, `80s`, `90s`, `00s`, `10s`, `20s+` (2020-2099). URL-encode the plus sign as `%2B`; unknown tokens are ignored
 - `limit` - 1-200 (default 20)
 - `offset` - pagination offset
 
@@ -391,27 +416,53 @@ Each item carries a `kind` field (`artist` or `album`). For `kind: "album"`, `re
 }
 ```
 
+The writable `status` values are `approved`, `rejected`, and `pending`; use `pending` to restore a recommendation.
+
 Approval notes:
 - `approvalMode` defaults to `single_target`
-- `monitorOption` accepts `all`, `new`, `selected`, `popular`, or `none`, and defaults to `none` when omitted: the artist is added to Lidarr without monitoring any albums and no search is triggered. These are Digarr's names, translated to the target's own vocabulary at the boundary: `all` monitors the whole discography and triggers a search for missing albums, and `new` monitors only future releases (Lidarr's `future`) without searching for anything existing. `popular` resolves the artist through Spotify, ranks album releases by Spotify popularity, maps the top 3 matches back to MusicBrainz release groups, and sends them to Lidarr as selected albums.
+- `monitorOption` accepts `all`, `new`, `selected`, `popular`, or `none`, and defaults to `none` when omitted: the artist is added to Lidarr without monitoring any albums and no search is triggered.
+
+  These are Digarr's names, translated to the target's own vocabulary at the boundary: `all` monitors the whole discography and triggers a search for missing albums, and `new` monitors only future releases (Lidarr's `future`) without searching for anything existing.
+- `popular` tries Spotify popularity first, then Last.fm top albums when Spotify returns no candidates. It maps up to three matching MusicBrainz release groups and sends them to Lidarr as selected albums. If neither source returns candidates, approval fails with `no_source`; if candidates cannot be mapped, it fails with `no_match`.
 - `selectedAlbumIds` contains MusicBrainz release-group MBIDs when `monitorOption` is `selected`; clients may omit it for `popular` because Digarr resolves the top albums server-side.
-- use `approvalMode: "combined_lidarr_slskd"` with an `slskd-*` `targetId` to add to Lidarr first and then queue the matched release in `slskd`
+- For artist recommendations, use `approvalMode: "combined_lidarr_slskd"` with an `slskd-*` `targetId` to add to Lidarr first and then queue the matched release in `slskd`
 - `lidarrTargetId` is optional; when the selected `slskd` target is linked to a Lidarr target, Digarr uses that linked target as the fallback, and an explicit `lidarrTargetId` only overrides that default
-- approving a `kind: "album"` recommendation routes to targets with the `addAlbum` capability: it adds the artist **unmonitored** (no whole-discography grab, and reuses the artist if already tracked), then monitors and searches only the approved album. `monitorOption` / `selectedAlbumIds` are ignored for album recs since the album is resolved from `recommendedReleaseGroupId`
-- rejected recommendations may include `reason`, `reasonText`, and `permanent`; `permanent: true` also adds the artist to the caller's blocklist
+- approving a `kind: "album"` recommendation with a release-group ID routes to targets with the `addAlbum` capability: it adds the artist **unmonitored** (no whole-discography grab, and reuses the artist if already tracked), then monitors and searches only the approved album. `monitorOption` / `selectedAlbumIds` are ignored for album recs since the album is resolved from `recommendedReleaseGroupId`
+- Legacy album rows without a release-group ID fall back to artist approval. Album dispatch does not perform the combined Lidarr-then-slskd sequence. Use `single_target` for individual albums, because combined-mode prerequisites can reject a request before dispatch.
+- After validation, album approval calls every enabled `addAlbum` target, or the selected `targetId`. Explicit target selection currently requires `addArtist` too; an album-only target cannot be selected this way. With no album-capable target, the result is `add_failed` with empty `targetActions`. The no-target artist path instead returns `approved`.
+- Automatic album approval uses `addAlbum` with the stored release-group ID; the automatic monitoring setting applies only to artist recommendations. Missing release identities or configured acquisition targets without a working album method fail without artist acquisition. With no acquisition targets, valid albums are marked `approved` for discovery-only use. Album target IDs stay in `targetActions`; successful slskd queueing does not claim a completed Lidarr import.
+- Rejected recommendations may include `reason`, `reasonText`, and `permanent`; `permanent: true` adds an album block for album recommendations with a release-group MBID, or an artist block for artist recommendations and legacy album rows without that identity
+
+For PATCH rejections, reasons are `already_own`, `wrong_style`, `not_interested`, `tried_didnt_like`, `not_right_now`, and `other`. A permanent rejection cannot use `not_right_now`. Nonempty `reasonText` requires `reason: "other"`; input is limited to 400 characters, then control characters are stripped, whitespace is trimmed, and the result is limited to 200. Omit unused fields rather than sending null.
+
+Invalid request shapes return JSON `{error, code: "validation_failed", details}`. Target selection and popularity failures return JSON `{error}` with an optional `no_source` or `no_match` code. PATCH rejection refinement failures return `application/problem+json` with an `issues` array.
 
 Approve response (status `approved`):
 ```json
 {
   "status": "added_to_lidarr",
-  "targetActions": { "lidarr-1": { "status": "added", "externalId": 42 } },
+  "targetActions": {
+    "lidarr-1": { "status": "added", "externalId": 42 },
+    "lidarr-2": { "status": "failed", "error": "connection refused" }
+  },
   "targetSummary": { "total": 2, "succeeded": 1, "failed": 1,
-    "failures": [{ "id": "lidarr-2", "name": "Lidarr Backup", "error": "connection refused" }] }
+    "failures": [{ "id": "lidarr-2", "name": "Lidarr Backup", "error": "connection refused" }],
+    "warnings": [] }
 }
 ```
-- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (approving never deletes an artist from a target that took it - only an explicit revert, below, does).
-- `targetActions` is the full merged map persisted on the rec; `targetSummary` describes only the targets attempted by *this* request, so clients can report partial outcomes at submit time.
+- Adds are **best-effort per target, not transactional**: a target that fails does not roll back targets that already succeeded (Digarr never deletes an artist from a target that took it).
+- `targetActions` is the full merged map persisted on the rec; `targetSummary` describes only the targets attempted by *this* request, so clients can report partial outcomes at submit time. Its `warnings` array contains non-fatal target warnings.
 - To retry just the failed targets, re-`PATCH` once per failed `targetId` (this preserves the successful targets' actions and will not regress the rec to `add_failed` if others already succeeded).
+
+**POST /api/v1/recommendations/bulk** accepts 1-500 positive integer `ids` and `action: "approve" | "reject"`. Approval returns per-row results, for example `{ "results": [{ "id": 1, "status": "added_to_lidarr" }] }`, with status `added_to_lidarr`, `approved`, `add_failed`, or `not_found`; missing or unowned IDs return `not_found` entries. Rejection returns `{ "updated": 1 }` for owned rows.
+
+Bulk rejection accepts a shared `reason` (including null or omission) and `permanent`, which defaults to false. In v2.0.0, `action: "reject"` with `permanent: true` and `reason: "not_right_now"` returns `400` before any updates, matching PATCH's compatibility rule. The bulk error is JSON `{error, code: "validation_failed", details}` with a `permanent` field issue. v1.19.0 accepts that incompatible combination ([#786](https://github.com/iuliandita/digarr/issues/786)). A null or omitted reason remains valid with either permanent value; `not_right_now` remains valid with `permanent: false`. Reject-only compatibility rules do not apply to bulk approval.
+
+Bulk rejection does not save free-text reasons: `reasonText` is not a bulk field and the handler passes null. With no shared reason or permanent block, the fast path updates status without rewriting existing reason fields.
+
+Optional target/profile overrides apply to approval. An unknown `targetId` returns `400` with `{ "error": "Unknown targetId: <id>" }`; a selected target without either artist or album approval support returns `400` with `{ "error": "Target does not support recommendation approval: <id>" }`. These are plain JSON errors, not problem-detail envelopes.
+
+Bulk approval dispatches each owned recommendation by kind. Album rows use `addAlbum` targets and their release-group MBID, monitoring and searching only that release in Lidarr. An album without a release-group identity or a compatible target returns `add_failed` without artist acquisition. Artist rows retain artist approval behavior. Mixed batches return each row's outcome independently. Successful Lidarr album additions return `added_to_lidarr`; a successful non-Lidarr target, including a queued slskd acquisition, returns `approved` and keeps its outcome in `targetActions`. A queued download does not establish import completion. This corrects the v1.19.0 limitation in [#756](https://github.com/iuliandita/digarr/issues/756).
 
 Revert request (status `pending`) body:
 ```json
@@ -430,7 +481,7 @@ Revert response:
 - With `removeLidarrArtist: true`, Digarr attempts to remove the Lidarr artist it added, but only when `lidarrArtistId` is set on the rec **and** the artist has no downloaded files (checked in Lidarr); the removal never deletes files (`deleteFiles: false` always). The target is resolved against the recommendation's own user, the same way approval resolves targets. `lidarrArtistId` is cleared only when removal actually succeeds - a failed removal keeps it, so the row does not forget an artist that still exists in Lidarr.
 - `lidarrRemovalSkippedReason` is present (and `lidarrArtistRemoved` is `false`) whenever an attempted removal was skipped or failed: `not_added_by_digarr` (no `lidarrArtistId` on the rec), `has_files` (the artist has downloaded albums), or `removal_failed` (Lidarr call errored). It is omitted when `lidarrArtistRemoved` is `true`, and also when `removeLidarrArtist` was `false` - nothing was attempted, so there is no reason to report.
 
-## Artist Blocks
+## Artist blocks
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -443,6 +494,10 @@ Revert response:
 - `limit` - integer, clamped to 1-200 (default 50). Non-integer values return `400`
 - `cursor` - opaque cursor from `nextCursor`
 
+List items contain `artistId`, `name`, nullable `mbid`, nullable `reason` and `reasonText`, and an ISO-8601 `blockedAt`. Creating or deleting a block returns `204` with no body.
+
+Deleting an artist block removes only the permanent block. It does not clear a previous rejection or its cooldown, which defaults to 90 days from rejection. Unblocking therefore does not immediately make a recently rejected artist eligible for recommendations. In v2.0.0, scans, subscriptions, and Quick Discover seeds and similar results use only the run owner's rejected recommendations for cooldowns. Another account's rejections and legacy rejections without an owner do not suppress an account's results. Legacy subscriptions without an owner consult only unowned rejections. The receiving run's configured cooldown window is unchanged. v1.19.0 shares rejection cooldowns across accounts ([#788](https://github.com/iuliandita/digarr/issues/788)); permanent blocks remain per-user. In v2.0.0, Quick Discover also applies these filters to its direct seed; see [Quick Discover](#pipeline) and [#795](https://github.com/iuliandita/digarr/issues/795).
+
 **POST /api/v1/artist-blocks** body:
 ```json
 {
@@ -452,7 +507,9 @@ Revert response:
 }
 ```
 
-## Album Blocks
+For manual artist blocks, `artistId` must be a positive integer. `reason` accepts the rejection reasons above or null; `reasonText` is nullable and limited to 200 characters after control-character removal and trimming. The rejection-only restrictions on `other` and `not_right_now` do not apply to this endpoint.
+
+## Album blocks
 
 Album blocks are created when the caller permanently rejects an album recommendation. They
 are keyed by MusicBrainz release-group MBID and are independent of artist blocks.
@@ -499,7 +556,9 @@ returns `204` even when the row is already absent.
 Path params:
 - `:id` values are positive integers. Fractional, negative, zero, or unsafe integer values return `400`
 
-**GET /api/v1/preview/audio** query params:
+In v2.0.0, `GET /api/v1/albums/:mbid` retains the broad Album/EP/Single catalog and adds optional `secondaryTypes` metadata when MusicBrainz provides a valid string array. This list is not restricted to studio albums; the coverage-only rule below does not change album picking, Release Radar or release matching.
+
+**GET /api/v1/preview/audio** is rate limited to 30 requests per minute. Query params:
 - `url` - Deezer CDN preview URL (must match `*.dzcdn.net`)
 - `token` - auth token (for `<audio>` elements that can't send headers)
 
@@ -543,10 +602,10 @@ Path params:
 | POST | `/api/v1/subscriptions` | Yes | Create subscription |
 | PATCH | `/api/v1/subscriptions/:id` | Yes | Update subscription |
 | DELETE | `/api/v1/subscriptions/:id` | Yes | Delete subscription |
-| POST | `/api/v1/subscriptions/:id/run` | Yes | Trigger manual run (202) |
+| POST | `/api/v1/subscriptions/:id/run` | Yes | Await manual run, then return 202 |
 | GET | `/api/v1/subscriptions/:id/runs` | Yes | Run history |
 | POST | `/api/v1/subscriptions/import/spotify-liked-songs` | Yes | Create/reuse the helper Spotify Liked Songs subscription and trigger an import run (202) |
-| POST | `/api/v1/subscriptions/import/spotify-playlist` | Yes | Import from a Spotify playlist (accepts URL, URI, or bare ID). Returns 202. |
+| POST | `/api/v1/subscriptions/import/spotify-playlist` | Yes | Create/reuse a Spotify playlist import subscription (URL, URI, or bare ID). Returns 202; inspect run history for the outcome. |
 | POST | `/api/v1/subscriptions/import/csv` | Yes | Upload CSV of artist names (multipart form, field: `file`, max 1MB, 500 artists). Returns 202. |
 | POST | `/api/v1/subscriptions/import/deezer-favorites` | Yes | Create/reuse Deezer Favorites subscription and trigger import (202) |
 | POST | `/api/v1/subscriptions/import/deezer-followed` | Yes | Create/reuse Deezer Followed Artists subscription and trigger import (202) |
@@ -556,7 +615,13 @@ Path params:
 | GET | `/api/v1/subscriptions/scheduler` | Yes | Scheduler job status, scoped to the calling user's own subscriptions |
 | POST | `/api/v1/subscriptions/bulk-toggle` | Yes | Enable/disable all subscriptions |
 
-**Adapter types**: `genre`, `similar`, `discovery-mode`, `spotify-liked-songs`, `spotify-playlist`, `spotify-charts`, `deezer-favorites`, `deezer-followed`, `deezer-flow`, `deezer-playlists`, `lastfm-tag`, `lastfm-charts`, `listenbrainz`, `csv-import`
+Manual `POST /api/v1/subscriptions/:id/run` awaits library preparation and subscription execution before returning `202`; it is not a background acknowledgement like the import endpoints. The request can stay open through fetching, resolution, storage, and job completion. Some propagated source errors return `503` with `retryable: true`; other unhandled failures can return `500`. A request timeout does not establish whether the job stopped. Check `GET /api/v1/subscriptions/:id/runs` and Job History before retrying, and inspect the recorded outcome even after a `202`.
+
+In v2.0.0, Spotify playlist imports and recurring `spotify-playlist` subscriptions read the current [`/playlists/{id}/items` endpoint](https://developer.spotify.com/documentation/web-api/reference/get-playlists-items) in playlist order until `maxArtistsPerRun` distinct artist names are collected or the playlist ends. Names are deduplicated case-insensitively across pages, including collaborations. Local files contribute usable artist names; missing local artist metadata is skipped. New import subscriptions retain their 100-artist cap; ordinary subscriptions retain their 20-artist default, and reused subscriptions keep their saved cap. Requests use 50 items per page with a 20-page/1,000-item safety bound. If that bound is reached before the cap or playlist end, a later page fails, or pagination/data is invalid, the run fails without resolving/storing the accumulated partial artists. Successful empty playlists remain successful. Pagination links are validated and rebuilt for the same playlist, and redirects are refused. These requests use the subscription owner's token; Spotify restricts this endpoint to playlists they own or collaborate on (`403` otherwise). Pagination is not a snapshot: playlist edits between requests can change the observed items. v1.19.0 reads only the embedded first page and ignores this cap ([#779](https://github.com/iuliandita/digarr/issues/779)).
+
+**Adapter types**: `genre`, `similar`, `discovery-mode`, `spotify-liked-songs`, `spotify-playlist`, `spotify-charts`, `deezer` (with `sourceConfig.feedType` of `favorites`, `followed`, `flow`, or `playlists`; `playlistIds` supplies comma-separated IDs for `playlists`), `lastfm-tag`, `lastfm-charts`, `listenbrainz`, `csv-import`
+
+Deezer subscription token-resolution failures and provider error envelopes fail the run instead of completing with zero artists. Disconnected subscriptions still record a failed attempt for their owner. Manual-run failures return `503` with `service: "deezer"`, `retryable: true` and check/reconnect guidance; this is a source failure, not an application-session `401`. Inspect the saved subscription `lastError` and Job History, then reconnect Deezer in Settings when needed before retrying. Successful empty feeds still complete with zero results and clear the previous error. Playlist feeds retain the 500-distinct-artist cap ([#774](https://github.com/iuliandita/digarr/issues/774)).
 
 **POST /api/v1/subscriptions** body:
 ```json
@@ -592,7 +657,7 @@ Path params:
 ```
 
 Discovery-mode subscription notes:
-- Creation and updates re-check current availability and reject unavailable modes with `400`
+- Creation and updates supplying `sourceConfig` re-check current availability and reject unavailable modes with `400`. Updates containing only fields such as `enabled`, `cron`, or `name` do not re-check availability
 - The saved `providerContext` and `fallbackPolicy` mirror the execution path chosen for the manual form, so scheduled runs stay aligned with what the user configured
 
 ---
@@ -676,19 +741,76 @@ The target test uses the saved provider configuration for `plex-playlist`, `jell
 | DELETE | `/api/v1/playlists/:id` | Yes | Delete playlist |
 | POST | `/api/v1/playlists/:id/generate` | Yes | Generate playlist tracks (202) |
 | GET | `/api/v1/playlists/:id/export/:format` | Yes | Export as json/csv/m3u/xspf |
+| GET | `/api/v1/playlists/:id/exports` | Yes | Owned remote export bindings |
+| POST | `/api/v1/playlists/:id/exports/:targetId/reset` | Yes | Explicitly forget one local export binding |
 | GET | `/api/v1/playlists/scheduler` | Yes | Playlist scheduler status |
 
-**POST /api/v1/playlists/:id/generate** returns `202` with `{ "status": "generating" }` before generation finishes. Generated tracks are saved locally before exports to selected enabled playlist targets. Exports to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets are all attempted; an export failure marks the job failed in Job History, while local tracks and successful remote exports remain. There is no remote rollback.
+**POST /api/v1/playlists** returns the created row with `201`. Example:
 
-**GET /api/v1/playlists/:id** adds `generation`, either `null` for legacy/no-history playlists or `{ jobId, status, startedAt, completedAt, resolution }` for the latest owned generation job. `resolution` is `null` until its local result is recorded, and includes `requestedArtistCount`, `resolvedArtistCount`, `includedArtistCount`, `trackCount` and `outcomes` when available. Each outcome has `artistName`, optional `artistMbid`, `status`, `resolvedTrackCount` and `includedTrackCount`. Outcome statuses are `resolved`, `unmatched`, `unavailable`, `error` and `limited`. A partially included artist remains `resolved` with both counts; `limited` means tracks resolved but none fit the playlist cap. A failed target export can coexist with a saved local resolution summary. This projection does not expose raw job errors, secrets, other users' results, or remote read-back verification.
+```json
+{
+  "name": "Weekly discoveries",
+  "strategy": "weekly_digest",
+  "targetIds": [1, 2],
+  "schedule": "0 9 * * 1",
+  "enabled": true,
+  "config": { "size": 25, "trackSourcePriority": ["spotify", "deezer"] }
+}
+```
+
+Creation requires a trimmed, nonempty `name` (up to 200 characters) and a listed strategy. `targetIds` accepts up to 50 positive integer database IDs, not prefixed target strings; omission means no remote exports. `schedule` is a supported cron expression or null, defaulting to null. `enabled` defaults to true. `config` may include `genre` for `genre_focus` or `mood` for `mood_mix`.
+
+When `config` is absent or null, generation defaults to size 25 and source priority `["spotify"]`, with MusicBrainz as the final MBID-based fallback. Supplied objects also receive those defaults for omitted fields. `size` must be a positive integer; `trackSourcePriority` is an array of `local`, `spotify`, or `deezer`, including an empty array for MusicBrainz-only fallback. Optional `genre` and `mood` are strings. Unknown config keys and invalid values return `400` before saving. Spotify search requires that user's stored Spotify OAuth connection; Deezer search needs no account. Existing partial saved configs receive the same defaults during generation; invalid saved configs fail generation before replacing local tracks or exporting.
+
+**PATCH /api/v1/playlists/:id** accepts optional versions of the same fields and rejects unknown top-level fields. Omitted fields remain unchanged; a supplied `config` object replaces the whole object and fills omitted fields with defaults, while `config: null` resets it to runtime defaults. Example:
+
+```json
+{
+  "schedule": null,
+  "enabled": false,
+  "config": { "size": 10, "trackSourcePriority": ["deezer", "spotify"] }
+}
+```
+
+Playlist PATCH and DELETE return `204` with no body.
+
+Scheduled generation requires the global `preferences.playlistEnabled` setting, which defaults to false. This global switch is API-only; there is no web UI control. An admin can enable it with `PATCH /api/v1/settings` and `{ "preferences": { "playlistEnabled": true } }`. Each playlist must also be enabled and have a schedule. Manual generation does not require the global switch.
+
+`GET /api/v1/playlists/scheduler` returns `{ nextRun, cron, enabled }`. `enabled` is the global switch, not a per-playlist flag. `nextRun` is the earliest registered next run among the current user's playlists, or null. `cron` is the single distinct nonempty schedule across that user's saved playlists, or null when there are none or several; it can be present even when scheduling is disabled.
+
+**POST /api/v1/playlists/:id/generate** returns `202` with `{ "status": "generating" }` before generation finishes.
+
+Generated tracks are saved locally before exports to selected enabled playlist targets. Exports to selected enabled Navidrome, Jellyfin, Emby, Plex, and Spotify targets are all attempted; an export failure marks the job failed in Job History, while local tracks and successful remote exports remain. There is no remote rollback.
+
+Saved playlist generation retains a binding per playlist and target. Its first export creates a remote playlist and checkpoints its ID; subsequent manual and scheduled runs replace tracks in that same playlist. This applies to Navidrome, Jellyfin, Emby, Plex, and Spotify. Existing remote playlists from older versions are not adopted by name: the first run after upgrading creates one new binding. Renaming refreshes the remote name on Spotify and Navidrome; Jellyfin, Emby, and Plex keep the existing name.
+
+Before remote writes, Digarr verifies the destination identity and resolves matching tracks. An empty generation or zero matches preserves the remote playlist and fails the export. Account/server changes, missing or inaccessible remote IDs, and uncertain creation fail without automatically creating another playlist. Replacement can leave partial remote contents after an upstream failure; retry replaces the same saved ID. One application process prevents overlapping generation and recovery for a playlist. Multiple replicas are unsupported for these operations.
+
+**GET /api/v1/playlists/:id/exports** returns `{ exports: [{ targetId, remotePlaylistId, state, updatedAt }] }` for bindings whose playlist and target both belong to the caller. `state` is `creating`, `linked`, or `recovery_required`. Scope hashes and credentials are not returned.
+
+**POST /api/v1/playlists/:id/exports/:targetId/reset** requires exactly `{ "acknowledgePossibleDuplicate": true }` and returns `204`. It forgets only the owned local binding; it does not remove the remote playlist. Inspect the destination and remove or retain the old playlist deliberately before resetting, because the next export can create another copy. Reset is API-only; there is no automatic adoption or remote deletion. Another playlist owner or a missing/transferred target returns `404`; an overlapping generation/recovery returns `409` with `code: "errors.playlist.busy"`.
+
+**GET /api/v1/playlists/:id** adds `generation`, either `null` for legacy/no-history playlists or `{ jobId, status, startedAt, completedAt, resolution }` for the latest owned generation job.
+
+`resolution` is `null` until its local result is recorded, and includes `requestedArtistCount`, `resolvedArtistCount`, `includedArtistCount`, `trackCount` and `outcomes` when available.
+
+Each outcome has `artistName`, optional `artistMbid`, `status`, `resolvedTrackCount` and `includedTrackCount`. Outcome statuses are `resolved`, `unmatched`, `unavailable`, `error` and `limited`. A partially included artist remains `resolved` with both counts; `limited` means tracks resolved but none fit the playlist cap.
+
+A failed target export can coexist with a saved local resolution summary. This projection does not expose raw job errors, secrets, other users' results, or remote read-back verification.
 
 **Strategies**: `audition`, `weekly_digest`, `genre_focus`, `mood_mix`, `rediscover`
 
-`audition` selects the playlist owner's pending recommendations in descending score order, deduplicates artists, and resolves one track per artist up to `config.size`. It does not approve recommendations and skips unresolved tracks instead of inventing placeholder titles. It uses the existing on-demand generation endpoint, schedule, and target selection. Local media-server targets require matching tracks in their libraries.
+`audition` selects the playlist owner's pending recommendations in descending score order, deduplicates artists, and resolves one track per artist up to `config.size`. It does not approve recommendations and skips unresolved tracks instead of inventing placeholder titles. It uses the existing on-demand generation endpoint, schedule, and target selection.
+
+`config.trackSourcePriority` orders local, Spotify, and Deezer lookups. The `local` entry tries the owner's saved Jellyfin, Emby, Subsonic/Navidrome, and Plex connections in that order, preserving the saved user/library or music-section scope. Each provider search is bounded to 25 candidates per artist. The first usable exact-artist match supplies tracks; empty/pathless/failed lookups continue to the next local connection, then the next configured catalog source. Results from different libraries are not combined for an artist. Local paths come from server file metadata and may be inaccessible to an exported playlist's player; audio is not copied and playback is not verified. Jellyfin, Emby, and Subsonic honor the saved operator TLS verification setting; their credentials come only from the playlist owner. Shared service credentials, export-target credentials, and other users' connections are not used. Ownerless playlists have no local or Spotify connection. API defaults remain Spotify only; web-created playlists explicitly prefer local, then Spotify, then Deezer. Matching against a media server occurs separately during export.
+
+MusicBrainz recordings provide a final MBID-based fallback, returning real titles and recording IDs without playable URIs or paths; M3U/XSPF export locations for these rows are MusicBrainz recording pages. Remote targets resolve tracks again.
+
+Navidrome, Jellyfin, Emby, and Plex require an exact title and credited artist after case and whitespace normalization. Unmatched items and missing titles are skipped. Their internal target results report `itemsAdded` and `itemsSkipped`; a nonzero skipped count marks the export job failed in Job History after all selected targets are attempted. Local generation outcomes remain separate from remote matching and do not verify playback. Partial remote playlists and local tracks are retained; there is no rollback. Saved playlist exports reject zero matches before mutation. Separate create-only recommendation exports keep their existing behavior: Navidrome, Jellyfin, and Emby may create an empty playlist when all items are skipped, while Plex fails without creating one.
 
 ---
 
-## Mood Discovery
+## Mood discovery
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -743,7 +865,7 @@ When one enabled source fails, Digarr still returns results from the healthy sou
 
 ---
 
-## Analytics (Admin)
+## Analytics (admin)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -757,7 +879,7 @@ When one enabled source fails, Digarr still returns results from the healthy sou
 
 ---
 
-## Library Health (Admin)
+## Library health (admin)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -872,6 +994,10 @@ Album override notes:
 **GET /api/v1/library/album-coverage/:artistMbid** notes:
 - `artistMbid` must be a valid UUID
 - Returns owned and missing album counts derived from the user's reconciled library snapshot
+- In v2.0.0, counts eligible primary-type `Album` groups with an explicit empty secondary-type array across sequential MusicBrainz pages of up to 100 groups, with duplicate IDs counted once. The shared client retains its type filter and rate limiter. It reads at most 100 pages/10,000 returned groups; if completeness cannot be established within that bound, a required page fails, or pagination is invalid, it rejects the whole lookup instead of returning accumulated partial groups. Catalog edits between requests can change the results; this is not a snapshot. v1.19.0 reads only the first page ([#796](https://github.com/iuliandita/digarr/issues/796)).
+- In v2.0.0, studio selection means primary type `Album` with an explicit empty `secondaryTypes` array. Any secondary type is excluded, including Live, Compilation, Soundtrack and Demo. This depends on MusicBrainz classification and does not prove how an album was recorded. Missing or malformed secondary-type metadata on an Album rejects coverage instead of treating unknown groups as studio albums; resolve the provider metadata/response and retry. Owned excluded groups affect neither count. v1.19.0 discards secondary types and counts every Album group ([#798](https://github.com/iuliandita/digarr/issues/798)). Counts may decrease after upgrade; existing recommendations remain unchanged. No migration is added; rollback restores broader coverage.
+- In v2.0.0, Gap-Fill waits for all queued coverage lookups; any failure fails the manual or subscription job with the original error, without advancing any selected artist's rotation cursor or submitting partial candidates. The whole slice remains eligible for retry. Subscriptions save the error and retain their previous result count. Genuine empty coverage still succeeds and advances the cursor. A persistent lookup failure can hold the selected slice; resolve the provider error and retry. v1.19.0 instead swallows failures and marks all selected artists checked ([#797](https://github.com/iuliandita/digarr/issues/797)). This adds no schema migration or repair of existing cursor values; rollback restores swallowed failures.
+- The shared pagination also applies to artist album lists, release matching, reconciliation and Release Radar. Large catalogs can take longer or fail when a later page is unavailable. No schema migration or stored-row rewrite is added; rollback restores first-page truncation.
 - Powers the coverage badge shown on recommendation cards
 
 **GET /api/v1/library/unreconciled-albums** response notes:
@@ -926,6 +1052,10 @@ covered artists when a populated cache entry is due for refresh.
 
 Response: `{ tracks, total, offset, limit, source, status }`. `source` is `"listenbrainz"`, `"lastfm"`, `"plex"`, or `null`. Last.fm periods are rolling windows (`7day`, `1month`, `12month`, `overall`) and map approximately to the requested calendar range.
 
+In v2.0.0, Last.fm returns the requested offset window by slicing its provider page and, when needed, reading the next page with the same limit. Each attempt reads at most two pages and preserves the first response's provider-reported `total`. If either required read fails, the existing Plex fallback or source-error status applies without returning a partial Last.fm window. Results can change between provider requests; this is not a snapshot.
+
+v1.19.0 returns whole Last.fm pages, so offsets 0 and 1 with limit 5 repeat the same results ([#794](https://github.com/iuliandita/digarr/issues/794)). Older clients must keep `limit` fixed and advance `offset` in multiples of `limit`; that workaround remains compatible in v2.0.0. No schema migration is added; rollback restores the old page behavior.
+
 **GET /api/v1/listening/recent-tracks** query params:
 - `limit` - 1-50 (default 5)
 
@@ -933,9 +1063,11 @@ Response: `{ tracks, hasSource, source, status }`. `hasSource` is `false` when n
 
 Both listening endpoints return `status`: `not_configured` means no eligible source or application settings; `empty` means attempts succeeded but returned no entries; `error` means no entries were available and at least one attempted source failed; `ok` means entries were returned, including a successful fallback after another source failed. Existing fallback priorities are unchanged. Raw upstream errors are not returned. ListenBrainz artist-statistics HTTP 204 responses count as empty success.
 
+Plex accepts artist and track IDs from bare rating keys or canonical metadata paths. Entries missing usable IDs are skipped. A page with in-range tracks but no usable entries emits a count-only server warning; the response remains `empty` if no other source returns tracks. These dashboard requests do not create job records.
+
 ---
 
-## Jobs (Admin)
+## Jobs (admin)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -945,12 +1077,16 @@ Both listening endpoints return `status`: `not_configured` means no eligible sou
 
 **GET /api/v1/jobs** query params:
 - `type` - `pipeline`, `quick_discover`, `subscription`, `target`, `playlist`, `library_sync`
-- `status` - `running`, `completed`, `failed`, `stuck`
+- `status` - `running`, `completed`, `failed`, `stuck`; see [stuck-job time limits](OPERATIONS.md#job-history-and-stuck-jobs)
 - `limit` - 1-100 (default 50)
 - `offset` - pagination offset (minimum 0)
 - Invalid `type` or `status` values return `400`
+- Cancelled jobs can appear in unfiltered results, but `status=cancelled` is not accepted as a filter
+- Missing job detail returns `404` with `application/json` body `{ "error": "Job not found" }`
 
 Pipeline job `sourceResults` describe each source's discovery contribution. Configured listening sources without `similarArtists` report `{ "status": "skipped", "reason": "unsupported_capability" }`. Supported sources not queried because of an explicit discovery mode or an empty seed list use `explicit_run` or `no_seeds`; absent connections use `not_configured`. Successful similarity lookups use `ok` with an `artists` count, including zero. Any failed seed lookup uses `error` with the redacted upstream message, even when other seeds return candidates. Profile collection and library sync are separate operations. Existing job records retain their recorded outcomes.
+
+Source health samples the 20 most recent pipeline/quick-discover runs with source results from the last 24 hours. Within that sample, `/api/v1/jobs/health` counts only `ok` and `error` attempts for each source; successful zero-artist lookups count as `ok`. Skips do not count as successes or errors, and sources with no attempts are omitted from `sources`. Zero errors yields `ok`, an error rate below 50% yields `degraded`, and 50% or more yields `failing`. Skipped runs still occupy the sample; the query does not pull in older attempts to replace them. Individual job records retain their skip reasons. v1.19.0 counts skips as failures; this is corrected in v2.0.0 ([#769](https://github.com/iuliandita/digarr/issues/769)).
 
 ---
 
@@ -958,14 +1094,17 @@ Pipeline job `sourceResults` describe each source's discovery contribution. Conf
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/settings` | Yes | Get settings (secrets masked) |
+| GET | `/api/v1/settings` | Yes | Get settings (partial secret masking; see notes) |
 | PATCH | `/api/v1/settings` | Yes | Update settings (admin for global, any user for own connections) |
+| GET | `/api/v1/settings/plex/sections` | Yes | List music libraries using the current user's saved Plex connection |
 | POST | `/api/v1/settings/test/:service` | Admin, or own Plex connection | Test service connection |
 | POST | `/api/v1/settings/test-webhook` | Admin | Send a synthetic notification to one channel |
 
 **Testable services**: `lidarr`, `listenbrainz`, `lastfm`, `ai`, `plex`, `jellyfin`, `emby`, `subsonic`, `discogs`, `spotify`, `oidc`, `tidal`, `music-rater`
 
 Settings notes:
+- `GET /api/v1/settings/plex/sections` returns `{ "sections": [{ "key": "3", "title": "Music" }] }` using only the current user's saved URL and token, including for non-admins. An unconfigured connection returns `{ "sections": [] }`; an upstream failure returns `502` problem+json with secret-redacted detail capped at 300 characters. It never changes the saved section or falls back to shared admin credentials.
+- In v2.0.0, global `preferences.fanartApiKey` and legacy `preferences.webhookUrl` are masked as `***` when nonempty for admins and omitted for non-admins. This applies to GET and successful PATCH responses, including scheduler-warning responses; stored values are not modified by projection. Sending `***` for either scalar secret preserves the saved value (or leaves it absent), while a new value replaces it and an empty string clears it. API clients must treat the mask as a placeholder rather than a usable credential. Existing top-level and channel masking stays in place. v1.19.0 exposes global fanart values to non-admins and both scalar secrets to admins ([#793](https://github.com/iuliandita/digarr/issues/793)); review any previously shared responses for exposure. Settings responses still contain connection metadata and should be reviewed before sharing.
 - Plex listener mapping is per user: `plexAccountId` is a positive integer or `null` in PATCH. The server verifies the selected account and derives `plexAccountName` and `plexMachineIdentifier`; clients cannot supply those identity fields. GET returns the stored mapping. Changing the Plex URL or token without selecting an account clears the mapping.
 - The Plex probe returns `accounts: [{id, name}]` and `machineIdentifier` alongside music-library `sections`. Non-admins may probe their own Plex connection, never shared admin credentials. Other service probes stay admin-only. Listening requests require an explicit mapped account and reject mismatched history rows; library sync does not require listener mapping. Plex top-artist analysis requires complete history for the requested period and fails if it exceeds 5,000 entries or 25 pages. Recent-track requests intentionally return only their requested sample. The probe accepts `accountId` (number or explicit `null`); omission uses the saved listener, while `null` tests library-only access.
 - Non-admin users can update only their own connection fields; global setting changes return `403`
@@ -978,13 +1117,13 @@ Settings notes:
   `403` for non-admin callers, and `502` when the upstream service probe fails
 - The `502` body's `detail` field carries the upstream failure message (secrets redacted,
   capped at 300 chars) so the caller can see e.g. which model name the provider rejected
-- Probe fields omitted from the request body fall back to the stored settings, so an empty
-  body tests exactly what is saved
+- Send a JSON object for probes: `{}` uses saved credentials where supported. Missing, empty, malformed, or non-object payloads return `400` problem+json with type `/problems/probe-invalid-input` before saved credentials are read. Access checks run first. Where supported, non-empty connection and credential strings override saved values. Empty strings (including URLs, API keys, tokens, usernames, passwords, provider, and model) fall back to saved values, so a successful probe may test the previous configuration rather than the empty values supplied. For Lidarr, omitted `skipTlsVerify` uses the saved value, defaulting to false when unset. Explicit `true` or `false` overrides it; other supplied types return `400` without running a probe.
+- Probe selectors have separate clearing rules: Plex `sectionId: ""` selects automatic library detection, and `accountId: null` tests library-only access. Jellyfin/Emby `libraryId: ""` selects all libraries. Omitted selectors reuse saved values; `sectionId: null` and `libraryId: null` also reuse saved values. These probe rules differ from saving null selectors through settings PATCH.
 - The `plex` probe additionally returns the selected library and every music-type library on
   the server: `{ "sectionId": "5", "sections": [{ "key": "5", "title": "Music" }] }`. Save the
-  chosen key as the per-user `plexSectionId` setting; empty/null means auto-detect (first
-  music-type library). Useful when a server has several `artist`-type libraries (e.g.
-  audiobooks next to music)
+  chosen key as the per-user `plexSectionId` setting. Empty/null auto-detects the first
+  music-type library for library sync only. Listening history and pipeline listening
+  discovery require an explicit saved music-library section and mapped account.
 - The `jellyfin` and `emby` probes likewise return the user's music libraries (and the
   selected one when configured): `{ "libraryId": "abc", "libraries": [{ "id": "abc", "name":
   "Music" }] }`. Save the chosen id as the per-user `jellyfinLibraryId` / `embyLibraryId`
@@ -992,16 +1131,17 @@ Settings notes:
   artists, favorites, recent listening, and library sync are scoped to that library
 
 Notification channels:
+- Channel IDs must be unique within `preferences.channels`; duplicate IDs return `400` without saving. Digest delivery positions are server-owned, omitted from settings responses, and cannot be edited through PATCH. Disabling a channel or its digest subscription pauses its position; removing and re-adding the same ID resumes it. A new ID starts from the current cadence. Endpoint/type edits under the same ID keep the position.
 - `GET /api/v1/settings` returns a `channels` array under `preferences`, and `PATCH` accepts the
   same. Each channel is one of four shapes, discriminated on `type`. Shared fields: `id` (opaque
   string, stable edit/remove key), `enabled` (boolean), `events` (subset of `["batch_complete",
   "digest"]`), and the admin-only `allowPrivateTarget` (boolean, optional).
-  - `webhook` - `{ ..., url }` (Discord/Slack payloads auto-detected)
+  - `webhook` - `{ ..., url }` (Discord payloads are formatted automatically; other endpoints must accept Digarr JSON)
   - `ntfy` - `{ ..., server, topic, priority?, token? }` (`priority` 1-5)
   - `telegram` - `{ ..., botToken, chatId }` (plain-text messages)
   - `apprise` - `{ ..., endpoint, urls }` (`urls` newline-separated, fans out to 80+ services)
 - Channel secrets (`telegram.botToken`, `ntfy.token`, `apprise.urls`) are returned masked as `***`;
-  sending `***` back on `PATCH` preserves the stored ciphertext instead of overwriting it.
+  sending `***` back on `PATCH` preserves the stored value instead of overwriting it.
   Webhook URLs are partially masked so their destination remains recognizable; submitting the unchanged masked URL preserves the saved value. Encryption at rest requires `DIGARR_ENCRYPTION_KEY`.
 - The `channels` array is stripped from `GET` responses for non-admins, and non-admin `PATCH` of it
   returns `403` (same rule as other global settings).
@@ -1017,7 +1157,7 @@ Notification channels:
 
 ---
 
-## Users (Admin)
+## Users (admin)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -1043,11 +1183,11 @@ Admins can promote other users. First-user admin creation is serialized in the d
 
 ---
 
-## Admin (Admin)
+## Admin (admin)
 
 All `/api/v1/admin/*` endpoints require admin authentication.
 
-### Backup & Restore
+### Backup & restore
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -1056,10 +1196,18 @@ All `/api/v1/admin/*` endpoints require admin authentication.
 | GET | `/api/v1/admin/backup/last` | Admin | Last auto-backup metadata. |
 
 Backup files use a version-1 envelope. Current exports omit `data.oidcTokens`.
+The v1.19.0 web restore dialog omits `confirm=true` and cannot restore a backup, including through its forced path ([#784](https://github.com/iuliandita/digarr/issues/784)). Use the authenticated endpoint above, with a complete destination backup and the matching encryption key.
+
+In v2.0.0, the browser requests destructive-operation confirmation before uploading the file, then sends `?confirm=true`. A key mismatch requires a second explicit confirmation before retrying the same file with `?confirm=true&force=true`. Canceling either dialog sends no restore request for that step. Cookie authentication, CSRF protection, backup validation, and restore transaction behavior are unchanged.
+
 Restore accepts an optional legacy `data.oidcTokens` array for compatibility:
 an absent or empty array is silent, while nonempty rows are never restored and
 add `Ignored 1 legacy OIDC token record.` or
 `Ignored N legacy OIDC token records.` to `warnings`.
+
+Default JSON exports are consistent snapshots of persistent application state and required artist dependencies, including album blocks, library snapshots/overrides, health state, recording cache, and slskd jobs. `?includeCaches=true` adds optional artist metadata and a `-with-caches` filename suffix. Automatic snapshots also include that metadata. Ephemeral sessions, pending authorizations, rate limits, and migration history are excluded. Retain the matching encryption key separately; exact schema rollback requires a native consistent database backup. See [backup boundaries](guides/switching-backends.md#backup-boundaries-and-recovery).
+
+Restore replaces included tables in one transaction. Unsafe partial backups return `422` with `{ "code": "partial_backup_conflict", "error": "...", "affectedTables": ["albumBlocks"] }` before any deletes. This covers omitted dependent destination state and unresolved artist references; `force=true` cannot bypass it. Safe legacy partial files remain accepted. Take a complete destination backup first and prefer a fresh database. Required automatic-backup failures stop startup before migrations; the explicit override is documented in the recovery guide.
 
 ### Upgrade
 
@@ -1067,16 +1215,33 @@ add `Ignored 1 legacy OIDC token record.` or
 |--------|------|------|-------------|
 | GET | `/api/v1/admin/migrations/pending` | Admin | Pending migration status. |
 
-### Database Migration
+### Database migration
 
-Copy all stateful data from the current backend (PGlite or PostgreSQL) into a different one. The source is never modified. See [Switching the Database Backend](guides/switching-backends.md).
+Copy the application restore registry from the current backend (PGlite or PostgreSQL) into a different one. The source is never modified.
+
+Sessions, rate-limit counters, and pending OAuth transactions are excluded; sign in again and restart unfinished provider connections after cutover. See [migration scope](guides/switching-backends.md#what-is-not-copied).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/v1/admin/migrate-backend/test` | Admin | Validate target reachability. Non-destructive (for PGlite it only checks path containment, no file is created). Body: `{ backend: 'pglite', path }` or `{ backend: 'postgres', ... }`. Returns `{ ok, backend, description }`, or `502 { ok: false, code, error }` on failure. |
-| POST | `/api/v1/admin/migrate-backend` | Admin | Run the copy. Body: `{ target, overwrite? }`. Returns the `MigrationReport` `{ ok, verified, contentVerified, tablesMigrated, mismatches, targetEnvHint, ... }` **only on `200`**. All error statuses use the `application/problem+json` envelope `{ type, title, status, code, ... }`: a verification failure is `422 code: migration_verify_failed` (the full report rides under a `report` extension); `409 code: pipeline_running` when a pipeline is running; `409 code: migration_in_progress` when a migration is already running; `409 code: target_not_empty` when the target is non-empty without `overwrite`; `422 code: encryption_mismatch` when the source and target `DIGARR_ENCRYPTION_KEY` differ. |
+| POST | `/api/v1/admin/migrate-backend` | Admin | Copy data. Body: `{ target, overwrite? }`. Success returns `MigrationReport`; errors use the problem envelope described below. |
 
-### Data Hygiene
+A successful copy returns `200` with `MigrationReport`: `{ ok, verified, contentVerified, tablesMigrated, mismatches, targetEnvHint, ... }`. Errors use `application/problem+json` with `{ type, title, status, code, ... }`:
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 422 | `migration_verify_failed` | Verification failed; the full report is in the `report` extension. |
+| 409 | `pipeline_running` | A pipeline is running. |
+| 409 | `migration_in_progress` | Another migration is running. |
+| 409 | `target_not_empty` | A copy-managed destination table has data and `overwrite` is false, including targets without users. In v2.0.0, checks run before target migrations and again under target table locks before any copy deletes ([#775](https://github.com/iuliandita/digarr/issues/775)). |
+| 409 | `same_database` | Source and target identify the same database. |
+
+A missing pre-migration table is compatible with a fresh or older target; inspection or lock failures abort. Schema migrations still run outside the copy transaction, and explicit overwrite still clears excluded sessions/rate limits outside it. Stop source and destination writers through cutover and take complete backups before replacing an existing target. No new schema migration is added by the destination-guard correction.
+
+The same-process copy preserves encrypted values and has no source/target key-mismatch check. Retain the running encryption key when restarting on the new backend.
+
+
+### Data hygiene
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|

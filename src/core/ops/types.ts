@@ -8,6 +8,8 @@ export interface BackupFile {
   createdAt: string
   encryptionKeyHash: string | null
   includesCaches: boolean
+  // Tables and columns that did not exist in the source database (pre-migration snapshots only).
+  absentSchema?: { tables: string[]; columns: Record<string, string[]> }
   data: BackupData
 }
 
@@ -23,13 +25,15 @@ export interface BackupData {
   recommendations: Record<string, unknown>[]
   playlists: Record<string, unknown>[]
   playlistTracks: Record<string, unknown>[]
+  playlistExports?: Record<string, unknown>[]
   artistBlocks: Record<string, unknown>[]
-  // Optional caches
+  // Optional in legacy backups; included by every new backup.
   artists?: Record<string, unknown>[]
   artistGenreAliases?: Record<string, unknown>[]
   genres?: Record<string, unknown>[]
+  // Optional metadata cache.
   artistMetadata?: Record<string, unknown>[]
-  // Optional full-fidelity tables
+  // Optional in legacy/selective backups; included by default.
   albumBlocks?: Record<string, unknown>[]
   libraryArtists?: Record<string, unknown>[]
   libraryAlbums?: Record<string, unknown>[]
@@ -51,6 +55,7 @@ export interface RestoreResult {
 export interface BackupOptions {
   includeCaches?: boolean
   full?: boolean
+  tolerateMissingSchema?: boolean
 }
 
 export interface RestoreOptions {

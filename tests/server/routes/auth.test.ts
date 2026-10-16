@@ -90,6 +90,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       preferredLocale: null,
       email: null,
       oidcSubject: null,
+      oidcIssuer: null,
       authProvider: 'local',
       listenbrainzUsername: null,
       listenbrainzToken: null,
@@ -128,6 +129,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       preferredLocale: null,
       email: null,
       oidcSubject: null,
+      oidcIssuer: null,
       authProvider: 'local',
       listenbrainzUsername: null,
       listenbrainzToken: null,
@@ -202,7 +204,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     },
     runSubscription: vi.fn(async () => {}),
     getOidcService: vi.fn(async () => null),
-    getUserByOidcSubject: vi.fn(async () => null),
+    getUserByOidcIdentity: vi.fn(async () => null),
     getUserByEmail: vi.fn(async () => null),
     updateUser: vi.fn(async () => {}),
     listUsers: vi.fn(async () => []),
@@ -360,6 +362,7 @@ describe('POST /api/v1/auth/register', () => {
       preferredLocale: null,
       email: null,
       oidcSubject: null,
+      oidcIssuer: null,
       authProvider: 'local',
       listenbrainzUsername: null,
       listenbrainzToken: null,
@@ -416,6 +419,7 @@ describe('POST /api/v1/auth/register', () => {
       preferredLocale: null,
       email: null,
       oidcSubject: null,
+      oidcIssuer: null,
       authProvider: 'local',
       listenbrainzUsername: null,
       listenbrainzToken: null,
@@ -1120,6 +1124,7 @@ describe('GET /api/v1/auth/me', () => {
           preferredLocale: null,
           email: null,
           oidcSubject: null,
+          oidcIssuer: null,
           authProvider: 'local',
           listenbrainzUsername: null,
           listenbrainzToken: null,
@@ -1179,6 +1184,7 @@ describe('GET /api/v1/auth/me', () => {
           preferredLocale: 'de',
           email: null,
           oidcSubject: null,
+          oidcIssuer: null,
           authProvider: 'local',
           listenbrainzUsername: null,
           listenbrainzToken: null,
@@ -1630,6 +1636,29 @@ describe('POST /api/v1/auth/change-password', () => {
 })
 
 describe('PATCH /api/v1/auth/me/preferences', () => {
+  it('rejects malformed album discovery values before writing preferences', async () => {
+    const where = vi.fn().mockResolvedValue({ rowCount: 1 })
+    const set = vi.fn().mockReturnValue({ where })
+    const update = vi.fn().mockReturnValue({ set })
+    const db = { update } as unknown as AppDependencies['db']
+    const app = new Hono<HonoEnv>()
+    app.use('*', async (c, next) => {
+      c.set('userId', 1)
+      await next()
+    })
+    app.route('/', authRoutes(makeDeps({ db })))
+
+    for (const value of ['true', 'false', 1, 0, null, [], {}]) {
+      const response = await app.request('/api/v1/auth/me/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ netNewAlbumDiscovery: value, scoreThreshold: 0.9 }),
+      })
+      expect(response.status).toBe(400)
+    }
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('saves many optional genre priorities, clears them, and rejects invalid lists', async () => {
     const where = vi.fn().mockResolvedValue({ rowCount: 1 })
     const set = vi.fn().mockReturnValue({ where })

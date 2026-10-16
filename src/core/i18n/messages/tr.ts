@@ -364,7 +364,7 @@ export const tr = {
   'discover.rejectAll': 'Tümünü Reddet',
   'discover.rejectAllBelow': 'Aşağıdakilerin Tümünü Reddet',
   'discover.auditionAll': 'Dinle',
-  'discover.nothingToAudition': 'Önizlemesi olan bekleyen öğe yok',
+  'discover.nothingToAudition': 'Bekleyen öneri yok',
   'discover.rejectAllPending': 'Bekleyenlerin tümünü reddet',
   'discover.rejectAllPendingMessage': 'Bekleyen tüm öneriler reddedilsin mi? Bu geri alınamaz.',
   'discover.rejectFailed': 'Reddedilemedi',
@@ -508,8 +508,11 @@ export const tr = {
   'playlist.deleteFailed': 'Oynatma listesi silinemedi',
   'playlist.deleteWarning': 'Bu çalma listesi silinsin mi? Bu işlem geri alınamaz.',
   'playlist.deletedNamed': 'Çalma listesi silindi',
-  'playlist.detailHint':
-    "Bu oynatma listesi onaylanan önerilerinizden oluşturuldu. Yeni seçimlerle yenilemek, M3U veya XSPF olarak indirmek veya gelecekteki çalıştırmaları Navidrome, Jellyfin veya Plex'e otomatik olarak göndermek için bir çalma listesi hedefi eklemek için Şimdi Oluştur'a tıklayın.",
+  'playlist.detailHint': 'Bu çalma listesini onaylanan önerilerinizden oluşturun.',
+  'playlist.detailAuditionHint':
+    'Bu çalma listesini bekleyen sanatçılardan oluşturup onaylamadan önce dinleyin.',
+  'playlist.detailActionsHint':
+    'Oluşturduktan sonra parçaları M3U veya XSPF olarak indirin ya da sonraki oluşturma sonuçlarını otomatik olarak Navidrome, Jellyfin veya Plex hizmetlerine göndermek için bir çalma listesi hedefi ekleyin.',
   'playlist.disable': 'Çalma listesini devre dışı bırak',
   'playlist.download': 'İndir',
   'playlist.downloadFailed': 'Oynatma listesi indirilemedi',
@@ -926,7 +929,8 @@ export const tr = {
   'discoveryMode.notImplementedYet': 'Bu mod henüz uygulanmadı.',
   'discoveryMode.notShippedYet': 'Bu mod henüz kullanılamıyor.',
   'discoveryMode.reason.connectListenBrainz': 'Bu modu kullanmak için ListenBrainz bağlayın.',
-  'discoveryMode.reason.connectListeningSource': 'Önce bir dinleme kaynağı bağlayın.',
+  'discoveryMode.reason.connectReleaseRadarProviders':
+    'Bu modu kullanmak için ListenBrainz, Spotify veya Last.fm bağlayın.',
   'discoveryMode.reason.connectListenBrainzOrLastfm':
     'Bu modu kullanmak için ListenBrainz veya Last.fm bağlayın.',
   'discoveryMode.reason.connectDiscogs': "Bu modu kullanmak için Discogs'u bağlayın.",
@@ -1244,6 +1248,8 @@ export const tr = {
     "Lidarr'ın meta veri sunucusu kapalıyken kullanılır. Varsayılan api.musicinfo.pro. Kendi sunucunuzu barındırıyorsanız kendi hearring-aid örnek URL'nizi girin.",
   'settings.recommendationsSaved': 'Öneri ayarları kaydedildi',
   'settings.recommendationsFailed': 'Ayarlar kaydedilemedi',
+  'settings.recommendationsPartiallySaved':
+    'Kişisel tercihler kaydedildi, ancak genel meta veri ayarları kaydedilemedi.',
   'settings.scheduleTip':
     "Keşfetme pipeline'ını otomatik çalıştırmak için bir cron programı ayarlayın. Pazartesi günü haftalık seçim popüler bir tercihtir.",
   'settings.librarySyncInterval': 'Kütüphane eşitleme',
@@ -1468,6 +1474,9 @@ export const tr = {
   'admin.exporting': 'Disa aktariliyor...',
   'admin.includeCaches': 'Onbellekleri dahil et',
   'admin.restoreFromBackup': 'Yedekten geri yükle',
+  'admin.restoreConfirmTitle': 'Yedek geri yüklensin mi?',
+  'admin.restoreConfirmMessage':
+    'Bu işlem, yedekte yer alan verileri değiştirir. Önce bu kurulumun yedeğini alın. Devam edilsin mi?',
   'admin.lastAutoBackup': 'Son otomatik yedek:',
   'admin.backupDownloaded': 'Yedek indirildi',
   'admin.backupFailed': 'Yedek oluşturma başarısız',
@@ -1701,6 +1710,8 @@ export const tr = {
   'errors.recommendation.notFound': 'Öneri bulunamadı',
   'errors.subscription.notFound': 'Abonelik bulunamadı',
   'errors.playlist.notFound': 'Oynatma listesi bulunamadı',
+  'errors.playlist.busy':
+    'Oynatma listesi oluşturma veya dışa aktarma kurtarma işlemi zaten devam ediyor',
   'settings.channels.title': 'Bildirimler',
   'settings.channels.description':
     'Tarama tamamlanma ve özet bildirimlerini bir veya daha fazla kanala gönderin.',

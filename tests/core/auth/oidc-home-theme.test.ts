@@ -17,7 +17,7 @@ const claim = { theme: 'dusk', mode: 'dark', override: 'follow' }
 async function login(scopes: string, idClaims: Record<string, unknown>) {
   const service = new OidcService({ issuerUrl: 'https://auth.example.com', clientId: 'c', scopes })
   vi.mocked(oidcClient.authorizationCodeGrant).mockResolvedValue({
-    claims: () => ({ sub: 'sub-1', ...idClaims }),
+    claims: () => ({ iss: 'https://auth.example.com', sub: 'sub-1', ...idClaims }),
     access_token: 'at',
   } as never)
   // biome-ignore lint/complexity/useLiteralKeys: seeding a private pending transaction

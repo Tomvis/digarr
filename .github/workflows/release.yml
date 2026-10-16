@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.12.13)"
+        description: "Tag to release (vX.Y.Z, matching package.json)"
         required: true
 
 # Workflow baseline is read-only. Jobs that need more (docker) escalate per-job.
@@ -25,11 +25,24 @@ env:
 jobs:
   quality-gate:
     runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || format('refs/tags/{0}', inputs.tag) }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.3"
+      - name: Validate release identity
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: bun scripts/check-release-identity.ts "$RELEASE_TAG"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
@@ -39,6 +52,7 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run i18n:check
+      - run: bun run check:docs
       - run: bun run test
 
   docker:
@@ -46,33 +60,29 @@ jobs:
     needs: quality-gate
     environment: production
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write # cosign keyless signing via Sigstore OIDC
       attestations: write # actions/attest-build-provenance
     strategy:
       matrix:
         include:
-          # alpine is primary: owns unsuffixed :latest/:vX.Y.Z + the release/SBOM steps.
+          # alpine is primary: owns unsuffixed :latest/:vX.Y.Z and the source SBOM.
           - variant: alpine
-            runtime-image: "oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f"
+            runtime-image: "oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373"
             suffix: ""
             latest: "auto"
+            sbom-file: sbom-container.spdx.json
           - variant: debian
-            runtime-image: "oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61"
+            runtime-image: "oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288"
             suffix: "-debian"
             latest: "false"
+            sbom-file: sbom-container-debian.spdx.json
     steps:
-      # Check out the released tag itself, not the workflow trigger ref. On a
-      # workflow_dispatch run github.ref is the branch HEAD, so without this the
-      # build context and the baked git sha would come from HEAD, not the tag.
+      # Build the exact commit that passed the quality gate.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
-
-      - name: Resolve commit sha
-        id: sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          ref: ${{ needs.quality-gate.outputs.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
@@ -96,19 +106,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve tag
-        id: tag
-        env:
-          INPUT_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [[ ! "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Release tag must look like v1.2.3"
-            exit 1
-          fi
-
-          echo "value=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
@@ -120,9 +117,9 @@ jobs:
             suffix=${{ matrix.suffix }}
             latest=${{ matrix.latest }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.tag.outputs.value }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.value }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.value }}
+            type=semver,pattern={{version}},value=${{ needs.quality-gate.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.quality-gate.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ needs.quality-gate.outputs.tag }}
             type=raw,value=debian,enable=${{ matrix.variant == 'debian' }},suffix=
 
       - name: Build and push
@@ -137,7 +134,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             RUNTIME_IMAGE=${{ matrix.runtime-image }}
-            DIGARR_GIT_SHA=${{ steps.sha.outputs.sha }}
+            DIGARR_GIT_SHA=${{ needs.quality-gate.outputs.sha }}
             DIGARR_CHANNEL=stable
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -166,47 +163,66 @@ jobs:
           cosign sign --yes "${DOCKER_IMAGE}@${DIGEST}"
 
       - name: Generate SBOM (container)
-        if: matrix.variant == 'alpine'
         env:
-          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          SYFT_PLATFORM: linux/amd64
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE_REF }}
-          artifact-name: sbom-container.spdx.json
-          output-file: sbom-container.spdx.json
+          format: spdx-json
+          artifact-name: ${{ matrix.sbom-file }}
+          output-file: ${{ matrix.sbom-file }}
+          upload-release-assets: false
 
       - name: Generate SBOM (source)
         if: matrix.variant == 'alpine'
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
+          format: spdx-json
           artifact-name: sbom-source.spdx.json
           output-file: sbom-source.spdx.json
+          upload-release-assets: false
 
       - name: Attest SBOM (container) via cosign
-        if: matrix.variant == 'alpine'
         env:
           GHCR_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           DOCKER_IMAGE: docker.io/iuliandita/digarr
           DIGEST: ${{ steps.build.outputs.digest }}
+          SBOM_FILE: ${{ matrix.sbom-file }}
         run: |
-          cosign attest --yes --type spdxjson --predicate sbom-container.spdx.json "${GHCR_IMAGE}@${DIGEST}"
-          cosign attest --yes --type spdxjson --predicate sbom-container.spdx.json "${DOCKER_IMAGE}@${DIGEST}"
+          cosign attest --yes --type spdxjson --predicate "$SBOM_FILE" "${GHCR_IMAGE}@${DIGEST}"
+          cosign attest --yes --type spdxjson --predicate "$SBOM_FILE" "${DOCKER_IMAGE}@${DIGEST}"
+
+  publish-sboms:
+    needs: [quality-gate, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*.spdx.json
+          merge-multiple: true
+          path: sboms
 
       - name: Ensure release exists and upload SBOMs
-        if: matrix.variant == 'alpine'
+        working-directory: sboms
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.tag.outputs.value }}
+          TAG: ${{ needs.quality-gate.outputs.tag }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          test -s sbom-container.spdx.json
+          test -s sbom-container-debian.spdx.json
+          test -s sbom-source.spdx.json
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "release $TAG already exists; skipping create"
           else
             gh release create "$TAG" --repo "$REPO" --title "$TAG" --generate-notes
           fi
-          gh release upload "$TAG" sbom-container.spdx.json sbom-source.spdx.json --clobber
+          gh release upload "$TAG" sbom-container.spdx.json sbom-container-debian.spdx.json sbom-source.spdx.json --repo "$REPO" --clobber
 
   verify-digest-sync:
     needs: docker
@@ -242,7 +258,7 @@ jobs:
   # script derives everything from the tag -- so it runs here and lands as a PR
   # rather than waiting to be remembered (#616).
   sync-deploy-digests:
-    needs: docker
+    needs: [quality-gate, docker]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -257,7 +273,7 @@ jobs:
       - name: Sync digests and open the follow-up PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.quality-gate.outputs.tag }}
         run: |
           set -euo pipefail
           bun scripts/sync-deploy-digests.ts "$TAG"

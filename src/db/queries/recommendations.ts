@@ -291,6 +291,7 @@ export async function getGenreFeedbackHistory(
       genre,
       COUNT(*)::int AS total,
       COUNT(CASE WHEN r.status IN ('approved', 'added_to_lidarr') THEN 1 END)::int AS approved,
+      COUNT(CASE WHEN r.status = 'rejected' THEN 1 END)::int AS rejected,
       COUNT(CASE WHEN r.status = 'rejected'
                   AND r.rejection_reason IN ('tried_didnt_like', 'wrong_style')
                  THEN 1 END)::int AS strong_negative
@@ -308,10 +309,12 @@ export async function getGenreFeedbackHistory(
     genre: string
     total: number
     approved: number
+    rejected: number
     strong_negative: number
   }>) {
     genreMap.set(row.genre, {
       approved: row.approved,
+      rejected: row.rejected,
       total: row.total,
       strongNegative: row.strong_negative,
     })
@@ -342,32 +345,28 @@ export async function filterOwnedIds(
 }
 
 /**
- * Artists rejected within the cooldown. Scoped to `userId` when given (plus
- * legacy unowned rows): one user's rejection must not hide an artist from
- * another user's recommendations.
+ * Artists rejected within the cooldown, scoped to the run owner: one user's
+ * rejection must not hide an artist from another user's recommendations.
+ * `null` reads only unowned rejections.
  */
 export async function getRejectedArtistMbids(
   db: Database,
   cooldownDays: number,
-  userId?: number,
+  userId: number | null,
 ): Promise<Set<string>> {
   const cutoff = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000)
-
-  const conditions = [
-    eq(recommendations.status, 'rejected'),
-    gte(recommendations.actedOnAt, cutoff),
-  ]
-  if (userId !== undefined) {
-    conditions.push(
-      sql`(${recommendations.userId} IS NULL OR ${recommendations.userId} = ${userId})`,
-    )
-  }
 
   const rows = await db
     .select({ mbid: artists.mbid })
     .from(recommendations)
     .innerJoin(artists, eq(recommendations.artistId, artists.id))
-    .where(and(...conditions))
+    .where(
+      and(
+        eq(recommendations.status, 'rejected'),
+        gte(recommendations.actedOnAt, cutoff),
+        userId === null ? isNull(recommendations.userId) : eq(recommendations.userId, userId),
+      ),
+    )
 
   return new Set(rows.map((r) => r.mbid))
 }

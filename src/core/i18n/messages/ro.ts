@@ -367,7 +367,7 @@ export const ro = {
   'discover.rejectAll': 'Respingeți tot',
   'discover.rejectAllBelow': 'Respingeți tot ce este mai jos',
   'discover.auditionAll': 'Audiție',
-  'discover.nothingToAudition': 'Nu există elemente în așteptare cu previzualizare',
+  'discover.nothingToAudition': 'Nu există recomandări în așteptare',
   'discover.rejectAllPending': 'Respingeți toate recomandările în așteptare',
   'discover.rejectAllPendingMessage':
     'Respingeți toate recomandările în așteptare? Acest lucru nu poate fi anulat.',
@@ -516,8 +516,11 @@ export const ro = {
   'playlist.deleteFailed': 'Nu s-a șters lista de redare',
   'playlist.deleteWarning': 'Ștergeți acest playlist? Această acțiune nu poate fi anulată.',
   'playlist.deletedNamed': 'Playlist șters',
-  'playlist.detailHint':
-    'Această listă de redare a fost generată din recomandările dvs. aprobate. Faceți clic pe Generare acum pentru a-l reîmprospăta cu noi alegeri, descărcați-l ca M3U sau XSPF sau adăugați o listă de redare țintă pentru a împinge rulările viitoare către Navidrome, Jellyfin sau Plex în mod automat.',
+  'playlist.detailHint': 'Generează această listă de redare din recomandările aprobate.',
+  'playlist.detailAuditionHint':
+    'Generează această listă de redare din artiștii în așteptare pentru a-i asculta înainte de aprobare.',
+  'playlist.detailActionsHint':
+    'După generare, descarcă piesele ca M3U sau XSPF ori adaugă o destinație pentru lista de redare ca să trimiți automat generările viitoare către Navidrome, Jellyfin sau Plex.',
   'playlist.disable': 'Dezactivați playlistul',
   'playlist.download': 'Descărcați',
   'playlist.downloadFailed': 'Nu s-a putut descărca lista de redare',
@@ -939,7 +942,8 @@ export const ro = {
   'discoveryMode.notImplementedYet': 'Acest mod nu este încă implementat.',
   'discoveryMode.notShippedYet': 'Acest mod nu este încă disponibil.',
   'discoveryMode.reason.connectListenBrainz': 'Conectați ListenBrainz pentru a folosi acest mod.',
-  'discoveryMode.reason.connectListeningSource': 'Conectați mai întâi o sursă de ascultare.',
+  'discoveryMode.reason.connectReleaseRadarProviders':
+    'Conectați ListenBrainz, Spotify sau Last.fm pentru a folosi acest mod.',
   'discoveryMode.reason.connectListenBrainzOrLastfm':
     'Conectați ListenBrainz sau Last.fm pentru a folosi acest mod.',
   'discoveryMode.reason.connectDiscogs': 'Conectează Discogs pentru a folosi acest mod.',
@@ -1261,6 +1265,8 @@ export const ro = {
     'Folosit când serverul de metadate Lidarr nu este disponibil. Implicit api.musicinfo.pro. Setați URL-ul propriei instanțe dacă o găzduiți singur.',
   'settings.recommendationsSaved': 'Setările de recomandări salvate',
   'settings.recommendationsFailed': 'Imposibil de salvat setările',
+  'settings.recommendationsPartiallySaved':
+    'Preferințele personale au fost salvate, dar setările globale pentru metadate nu au putut fi salvate.',
   'settings.scheduleTip':
     'Setați o planificare cron pentru a rula pipeline-ul de descoperire automat. O dată pe săptămână, luni, este o alegere populară.',
   'settings.librarySyncInterval': 'Sync bibliotecă',
@@ -1485,6 +1491,9 @@ export const ro = {
   'admin.exporting': 'Export...',
   'admin.includeCaches': 'Include cache',
   'admin.restoreFromBackup': 'Restaureaza din backup',
+  'admin.restoreConfirmTitle': 'Restaurezi backup-ul?',
+  'admin.restoreConfirmMessage':
+    'Această operațiune înlocuiește datele incluse în backup. Creează mai întâi un backup al acestei instanțe. Continui?',
   'admin.lastAutoBackup': 'Ultimul backup automat:',
   'admin.backupDownloaded': 'Backup descarcat',
   'admin.backupFailed': 'Crearea backup-ului a esuat',
@@ -1718,6 +1727,7 @@ export const ro = {
   'errors.recommendation.notFound': 'Recomandarea nu a fost găsită',
   'errors.subscription.notFound': 'Abonamentul nu a fost găsit',
   'errors.playlist.notFound': 'Lista de redare nu a fost găsită',
+  'errors.playlist.busy': 'Generarea listei de redare sau recuperarea exportului este deja în curs',
   'settings.channels.title': 'Notificări',
   'settings.channels.description':
     'Trimite notificări de finalizare a scanării și rezumate către unul sau mai multe canale.',
