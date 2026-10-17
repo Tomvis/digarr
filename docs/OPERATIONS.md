@@ -60,7 +60,7 @@ Add media-server playlist destinations in Settings > Targets, then select those 
 
 Digarr keeps the generated playlist locally if an export fails; admins can inspect the error in Job History. Spotify exports need a connected account with playlist permissions. Regeneration fails and keeps the previous tracks when the selected artists yield no tracks, when more than half of them hit track-source errors, or when the playlist has no owner; the failed job records the per-artist resolution. An empty selection, such as no approvals yet, still produces an empty playlist.
 
-The global scheduling switch is API-only; there is no web UI control. Scheduling requires an admin to enable it with `PATCH /api/v1/settings` and `{ "preferences": { "playlistEnabled": true } }`; it defaults to false. The Playlists page shows "Schedule paused" when scheduling is off and at least one enabled playlist has a schedule; with the switch off, no scheduled playlist regenerates. Check `GET /api/v1/playlists/scheduler` (`enabled`) to confirm the global switch. Each playlist also needs `enabled: true` and a schedule. Manual generation works independently of the global switch.
+Scheduling is off by default. An admin turns it on with the Scheduled generation switch on the Playlists page, which saves `{ "preferences": { "playlistEnabled": true } }` through `PATCH /api/v1/settings`; the API call works too. The Playlists page shows "Schedule paused" when scheduling is off and at least one enabled playlist has a schedule; with the switch off, no scheduled playlist regenerates. Check `GET /api/v1/playlists/scheduler` (`enabled`) to confirm the global switch. Each playlist also needs `enabled: true` and a schedule. Manual generation works independently of the global switch.
 
 Playlists created in the web UI search local libraries, then Spotify, then Deezer. API playlists without a config search only Spotify; explicit `trackSourcePriority` controls which sources are tried. Spotify search requires that user's stored Spotify OAuth connection. Deezer search needs no account. MusicBrainz is the final fallback for artists with an MBID.
 
@@ -92,7 +92,7 @@ Delivery remains at least once: a crash after sending but before saving can dupl
 
 ## Library health
 
-Library Health offers scheduled sync and `Sync Now`. Failed album fetches preserve the previous library snapshot. Admins can inspect failures in Job History.
+Library Health offers scheduled sync and `Sync Now`. Failed album fetches preserve the previous library snapshot. When the last health scan failed or was partial, the page shows a warning with the stored error. Admins can inspect failures in Job History.
 
 ## Large Lidarr libraries
 
@@ -190,6 +190,8 @@ New JSON exports and backend copies preserve issuer/subject pairs and playlist b
 For rollback, stop writers and restore the previous image's matching native backup into a **separate database or data directory**, using the original encryption key and configuration. Never start an older subject-only binary against migrated identities: identical subjects may now belong to different issuers. Older images also do not maintain export bindings and may create remote copies again. External playlist writes and notification sends cannot be rolled back; later application writes require a separately reviewed recovery.
 
 **Recommendation owner backfill (migration 0055):** Recommendations stored without an owner, from single-user releases before per-user recommendations, are assigned to the first admin (the first user when no admin exists). Afterward only their owner can approve, reject, or bulk-update them; previously any signed-in user could. The migration only updates `recommendations.user_id`, adds no columns, and is safe to re-run. The automatic pre-migration backup covers it. Older images can still read the migrated database, but they again let every user act on these rows. To undo the ownership change exactly, restore the native or pre-migration backup into a separate database with the previous image.
+
+**Album block titles (migration 0056):** Adds a nullable `album_blocks.album_title` column (`ADD COLUMN IF NOT EXISTS`, safe to re-run) and fills it for new permanent album rejects. Existing blocks keep a null title and show their release-group ID. The automatic pre-migration backup covers it. Older images ignore the extra column, so rolling back the image works without restoring; restore the pre-migration backup with the previous image only if you need the database byte-for-byte as before.
 
 **Upgrading from before v1.18.0:** Startup migrations add Plex listener identity fields and consolidate duplicate slskd retry jobs, retaining superseded rows and accumulated attempts. Keep a pre-upgrade backup. Existing Plex connections need a listener selection for history; linked slskd targets need a completed-download path visible to Lidarr. See [Plex setup](#connecting-plex-listeners) and [slskd imports](#importing-slskd-downloads-into-lidarr).
 

@@ -161,7 +161,12 @@ export const tr = {
   'todaysPick.approveSpecificTarget': 'Belirli hedefe onayla',
   'todaysPick.discoverSimilar': 'Benzerleri keşfet',
   'pipeline.runningFirstScan': 'İlk tarama çalışıyor',
-  'setup.aiDescription': 'Müzik önerileri oluşturmak için kullanılır. Gerekli.',
+  'setup.aiDescription':
+    "Müzik önerileri oluşturmak için kullanılır. İsteğe bağlı - bu adımı atlayıp daha sonra Ayarlar'dan bir sağlayıcı ekleyebilirsin.",
+  'setup.aiNotConfigured': 'Ayarlanmadı',
+  'setup.aiSkipHint':
+    "Yapay zeka sağlayıcısı olmadan Digarr, Ayarlar'da bağladığın dinleme kaynakları üzerinden benzer sanatçılar bulur.",
+  'setup.skipAi': 'Şimdilik atla',
   'setup.aiProvider': 'Yapay Zeka Sağlayıcı',
   'setup.apiKey': 'API Anahtarı',
   'setup.back': 'Geri',
@@ -213,6 +218,9 @@ export const tr = {
   'setup.skipTlsVerification': 'TLS doğrulamasını atla',
   'setup.startDigging': 'Başla',
   'setup.starting': 'Başlıyor...',
+  'setup.continueRequires': 'Devam etmek için doldur: {0}',
+  'setup.modelExample': 'ör. {0}',
+  'setup.stepOf': 'Adım {0} / {1}',
   'setup.stepComplete': 'Adım tamamlandı',
   'setup.subtitle': 'Bu, onaylanan önerilerin nasıl ele alınacağını belirler.',
   'setup.userId': 'Kullanıcı Kimliği',
@@ -514,6 +522,12 @@ export const tr = {
   'playlists.noScheduleConfigured': 'Yapılandırılan program yok',
   'playlists.playlistPlural': 'çalma listeleri',
   'playlists.playlistSingular': 'çalma listesi',
+  'playlists.schedulingLabel': 'Zamanlanmış oluşturma',
+  'playlists.schedulingOnHint':
+    'Zamanlaması olan çalma listeleri kendiliğinden yeniden oluşturulur.',
+  'playlists.schedulingPausedHint':
+    'Duraklatıldı: bunu açana kadar zamanlaması olan çalma listeleri yeniden oluşturulmaz. Elle oluşturma çalışmaya devam eder.',
+  'playlists.schedulingSaveFailed': 'Çalma listesi zamanlaması değiştirilemedi',
   'playlists.schedulePaused': 'Program duraklatıldı',
   'playlists.scheduled': 'planlanmış',
   'playlists.updateFailed': 'Çalma listesi güncellenemedi',
@@ -773,6 +787,8 @@ export const tr = {
   'libraryHealth.loadFailed': 'Kitaplık denetimleri yüklenemedi.',
   'libraryHealth.syncNow': 'Şimdi eşitle',
   'libraryHealth.snapshotTitle': 'Son anlık görüntü',
+  'libraryHealth.lastSyncProblem':
+    'Son eşitlemede bir sorun oluştu, bu yüzden aşağıdaki kontroller eksik veya güncel olmayabilir.',
   'libraryHealth.lastSynced': 'Son eşitleme',
   'libraryHealth.neverSynced': 'Henüz hiç eşitlenmedi.',
   'libraryHealth.autoSyncEvery': 'Her {0} saatte otomatik eşitleme',

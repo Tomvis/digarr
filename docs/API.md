@@ -222,7 +222,7 @@ Treat these as untrusted when rendering: the pass-through case is provider-contr
 | POST | `/api/v1/setup/complete` | Conditional | Complete initial setup; requested Lidarr/Emby services require an authenticated owner |
 
 Setup validation rules:
-- `aiProvider` and `aiModel` are required
+- AI is optional: omit both `aiProvider` and `aiModel`, or send them together; one without the other returns `400`. Setup without an AI provider requires a signed-in user (`401` otherwise), and discovery then relies on the listening sources connected later
 - Lidarr is optional, but `lidarrUrl` and `lidarrApiKey` must be provided together when used
 - In v2.0.0, Emby is optional, but any nonblank `embyUrl`, `embyApiKey`, or `embyUserId` requires the complete trio. Incomplete Lidarr/Emby groups return `400` before persistence.
 - Requested Lidarr/Emby services require an authenticated owner who still exists; otherwise setup returns `401` without saving configuration. The browser creates or signs into an account before opening the wizard. Public AI-only API bootstrap remains available only while the existing authentication guard permits it.
@@ -418,7 +418,7 @@ Approval notes:
 - Legacy album rows without a release-group ID fall back to artist approval. Album dispatch does not perform the combined Lidarr-then-slskd sequence. Use `single_target` for individual albums, because combined-mode prerequisites can reject a request before dispatch.
 - After validation, album approval calls every enabled `addAlbum` target, or the selected `targetId`. Explicit target selection currently requires `addArtist` too; an album-only target cannot be selected this way. With no album-capable target, the result is `add_failed` with empty `targetActions`. The no-target artist path instead returns `approved`.
 - Automatic album approval uses `addAlbum` with the stored release-group ID; the automatic monitoring setting applies only to artist recommendations. Missing release identities or configured acquisition targets without a working album method fail without artist acquisition. With no acquisition targets, valid albums are marked `approved` for discovery-only use. Album target IDs stay in `targetActions`; successful slskd queueing does not claim a completed Lidarr import.
-- Rejected recommendations may include `reason`, `reasonText`, and `permanent`; `permanent: true` adds an album block for album recommendations with a release-group MBID, or an artist block for artist recommendations and legacy album rows without that identity
+- Rejected recommendations may include `reason`, `reasonText`, and `permanent`; `permanent: true` adds an album block for album recommendations with a release-group MBID, or an artist block for artist recommendations and legacy album rows without that identity. A rejection responds with `{"status": "rejected", "blockCreated": boolean}`; `blockCreated` is `true` only when this request created the block, so a client undo can leave a block that already existed
 
 For PATCH rejections, reasons are `already_own`, `wrong_style`, `not_interested`, `tried_didnt_like`, `not_right_now`, and `other`. A permanent rejection cannot use `not_right_now`. Nonempty `reasonText` requires `reason: "other"`; input is limited to 400 characters, then control characters are stripped, whitespace is trimmed, and the result is limited to 200. Omit unused fields rather than sending null.
 
@@ -500,6 +500,7 @@ are keyed by MusicBrainz release-group MBID and are independent of artist blocks
       "artistName": "Example Artist",
       "artistMbid": "11111111-1111-1111-1111-111111111111",
       "releaseGroupMbid": "00000000-0000-0000-0000-000000000000",
+      "albumTitle": "Example Album",
       "reason": "wrong_style",
       "reasonText": null,
       "blockedAt": "2026-07-12T00:00:00.000Z"
@@ -507,6 +508,8 @@ are keyed by MusicBrainz release-group MBID and are independent of artist blocks
   ]
 }
 ```
+
+`albumTitle` is the album title stored when the block was created; blocks created before the field was added have `null`.
 
 `:releaseGroupMbid` must be a UUID. Invalid values return `400`; a successful delete
 returns `204` even when the row is already absent.
@@ -746,7 +749,7 @@ When `config` is absent or null, generation defaults to size 25 and source prior
 
 Playlist PATCH and DELETE return `204` with no body.
 
-Scheduled generation requires the global `preferences.playlistEnabled` setting, which defaults to false. This global switch is API-only; there is no web UI control. An admin can enable it with `PATCH /api/v1/settings` and `{ "preferences": { "playlistEnabled": true } }`. Each playlist must also be enabled and have a schedule. Manual generation does not require the global switch.
+Scheduled generation requires the global `preferences.playlistEnabled` setting, which defaults to false. Admins can turn it on with the Scheduled generation switch on the Playlists page, or with `PATCH /api/v1/settings` and `{ "preferences": { "playlistEnabled": true } }`. Each playlist must also be enabled and have a schedule. Manual generation does not require the global switch.
 
 `GET /api/v1/playlists/scheduler` returns `{ nextRun, cron, enabled }`. `enabled` is the global switch, not a per-playlist flag. `nextRun` is the earliest registered next run among the current user's playlists, or null. `cron` is the single distinct nonempty schedule across that user's saved playlists, or null when there are none or several; it can be present even when scheduling is disabled.
 

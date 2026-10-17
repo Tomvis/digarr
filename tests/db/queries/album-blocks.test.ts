@@ -46,7 +46,7 @@ function makeInsertDb(): {
   values: ReturnType<typeof vi.fn>
   onConflictDoNothing: ReturnType<typeof vi.fn>
 } {
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
+  const onConflictDoNothing = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) })
   const values = vi.fn().mockReturnValue({ onConflictDoNothing })
   const insert = vi.fn().mockReturnValue({ values })
   return {
@@ -84,6 +84,7 @@ describe('createAlbumBlock', () => {
       userId: 1,
       artistId: 10,
       releaseGroupMbid: 'rg-mbid-1',
+      albumTitle: null,
       reason: 'already_own',
       reasonText: 'I have it on vinyl',
       source: 'rejection',

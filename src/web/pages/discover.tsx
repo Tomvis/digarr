@@ -1,10 +1,9 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
-import { errMsg } from '@/core/validation'
 import { AlbumPicker } from '../components/album-picker'
 import { ApproveDialog } from '../components/approve-dialog'
 import { CardStack } from '../components/card-stack'
@@ -433,40 +432,77 @@ export function DiscoverPage() {
 
   const decadesParam = activeDecades.size > 0 ? [...activeDecades].join(',') : undefined
 
-  const queryParams: Record<string, string> = {
+  const filterParams: Record<string, string> = {
     sort: tasteOrdering === 'score' ? 'score_desc' : 'taste',
-    limit: String(PAGE_SIZE),
-    offset: String(page * PAGE_SIZE),
   }
   const statusParam = STATUS_PARAM[filter]
   const kindParam = KIND_PARAM[kindFilter]
-  if (statusParam) queryParams.status = statusParam
-  if (decadesParam) queryParams.decades = decadesParam
-  if (kindParam) queryParams.kind = kindParam
+  if (statusParam) filterParams.status = statusParam
+  if (decadesParam) filterParams.decades = decadesParam
+  if (kindParam) filterParams.kind = kindParam
   if (tasteOrdering === 'primary' || tasteOrdering === 'secondary') {
-    queryParams.tasteTier = tasteOrdering
+    filterParams.tasteTier = tasteOrdering
   }
 
-  const {
-    data,
-    isLoading: loading,
-    error: loadError,
-  } = useQuery({
-    queryKey: [
-      'recommendations',
-      {
-        filter,
-        kind: kindFilter,
-        page,
-        tasteOrdering,
-        decades: [...activeDecades].sort().join(','),
-      },
-    ],
-    queryFn: () => getRecommendations(queryParams),
+  const filterKey = {
+    filter,
+    kind: kindFilter,
+    tasteOrdering,
+    decades: [...activeDecades].sort().join(','),
+  }
+  const isStack = viewMode === 'stack'
+
+  const pagedQuery = useQuery({
+    queryKey: ['recommendations', { ...filterKey, page }],
+    queryFn: () =>
+      getRecommendations({
+        ...filterParams,
+        limit: String(PAGE_SIZE),
+        offset: String(page * PAGE_SIZE),
+      }),
+    enabled: !isStack,
   })
 
-  const items = (data?.items ?? []) as Recommendation[]
-  const total = data?.total ?? 0
+  // The stack walks every page instead of one grid page (#882).
+  const stackQuery = useInfiniteQuery({
+    queryKey: ['recommendations', 'stack', filterKey],
+    queryFn: ({ pageParam }) =>
+      getRecommendations({
+        ...filterParams,
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.items.length, 0)
+      return last.items.length > 0 && loaded < last.total ? loaded : undefined
+    },
+    enabled: isStack,
+  })
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = stackQuery
+  const loadMoreStack = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const stackItems = useMemo(() => {
+    const seen = new Set<number>()
+    const out: Recommendation[] = []
+    for (const p of stackQuery.data?.pages ?? []) {
+      for (const rec of p.items as Recommendation[]) {
+        if (seen.has(rec.id)) continue
+        seen.add(rec.id)
+        out.push(rec)
+      }
+    }
+    return out
+  }, [stackQuery.data])
+
+  const loading = isStack ? stackQuery.isLoading : pagedQuery.isLoading
+  const loadError = isStack ? stackQuery.error : pagedQuery.error
+  const items = isStack ? stackItems : ((pagedQuery.data?.items ?? []) as Recommendation[])
+  const total = isStack
+    ? (stackQuery.data?.pages.at(-1)?.total ?? 0)
+    : (pagedQuery.data?.total ?? 0)
   const FILTER_LABELS: Record<FilterTab, string> = {
     all: t('discover.all'),
     pending: t('discover.pending'),
@@ -521,7 +557,7 @@ export function DiscoverPage() {
 
   // Warm status
 
-  const mbids = items
+  const mbids = (isStack ? [] : items)
     .map((r) => r.artist.mbid)
     .filter(Boolean)
     .join(',')
@@ -605,11 +641,12 @@ export function DiscoverPage() {
   itemsRef.current = items
 
   const showUndo = useCallback(
-    (id: number, prevStatus: string, action: UndoAction) => {
+    (id: number, prevStatus: string, action: UndoAction, blockCreated = false) => {
       const rec = itemsRef.current.find((item) => item.id === id)
       // Mirrors the server: album recs with a release group get an album block, else an artist block.
+      // A block that existed before this reject is left in place on undo.
       const block =
-        action !== 'blocked' || !rec
+        action !== 'blocked' || !blockCreated || !rec
           ? undefined
           : rec.kind === 'album' && rec.recommendedReleaseGroupId
             ? { releaseGroupMbid: rec.recommendedReleaseGroupId }
@@ -753,8 +790,13 @@ export function DiscoverPage() {
         if (payload?.reason) body.reason = payload.reason
         if (payload?.reasonText) body.reasonText = payload.reasonText
         if (payload?.permanent) body.permanent = true
-        await updateRecommendation(id, body)
-        showUndo(id, prevStatus, payload?.permanent ? 'blocked' : 'rejected')
+        const res = await updateRecommendation(id, body)
+        showUndo(
+          id,
+          prevStatus,
+          payload?.permanent ? 'blocked' : 'rejected',
+          res?.blockCreated === true,
+        )
         refetch()
       } catch {
         toast.error(t('discover.rejectFailed'))
@@ -1268,6 +1310,9 @@ export function DiscoverPage() {
           ) : (
             <CardStack
               recommendations={items}
+              totalCount={total}
+              resetKey={JSON.stringify(filterKey)}
+              onNearEnd={loadMoreStack}
               onApprove={handleApprove}
               onReject={handleReject}
               onDetail={(id) => {
@@ -1528,44 +1573,6 @@ export function DiscoverPage() {
             {t('common.next')}
           </button>
         </div>
-      )}
-
-      {/* FAB: Run Scan - mobile only, above bottom nav */}
-      {!bulkMode && (
-        <button
-          type="button"
-          onClick={() =>
-            triggerPipeline()
-              .then((res) =>
-                toast.success(
-                  res.status === 'duplicate'
-                    ? t('discover.scanAlreadyRunning')
-                    : res.queued
-                      ? t('discover.scanQueued').replace('{0}', String(res.position ?? 0))
-                      : t('discover.scanStarted'),
-                ),
-              )
-              .catch((err) => {
-                toast.error(errMsg(err))
-              })
-          }
-          aria-label={t('app.runScan')}
-          className="md:hidden fixed bottom-[calc(var(--bottom-stack)+1rem)] right-4 z-40 w-12 h-12 rounded-full bg-accent text-accent-fg shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-5 h-5"
-            aria-hidden="true"
-          >
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
-        </button>
       )}
 
       {/* Per-artist Lidarr profile picker dialog */}

@@ -43,7 +43,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
     removeArtistBlock: vi.fn(async () => true),
     addArtistBlock: vi.fn(async () => {}),
@@ -254,6 +254,28 @@ describe('POST /api/v1/setup/complete', () => {
       body: JSON.stringify(body),
     })
     expect(res.status).toBe(204)
+  })
+
+  it('accepts setup without an AI provider (#887)', async () => {
+    const completeSetup = vi.fn(async () => ({ id: 1, setupComplete: true }))
+    const app = createApp(makeDeps({ completeSetup }))
+    for (const body of [{}, { aiProvider: ' ' }]) {
+      const anonymous = await app.request('/api/v1/setup/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      expect(anonymous.status).toBe(401)
+    }
+
+    const res = await app.request('/api/v1/setup/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-session-token' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(204)
+    expect(completeSetup).toHaveBeenCalledTimes(1)
+    expect(completeSetup).toHaveBeenCalledWith({}, expect.anything())
   })
 
   it('strips legacy listening-source fields before persisting setup', async () => {

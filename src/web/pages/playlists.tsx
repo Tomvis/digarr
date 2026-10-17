@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import { PlaylistCard } from '../components/playlist-card'
 import { PlaylistForm } from '../components/playlist-form'
+import { PlaylistSchedulingToggle } from '../components/playlist-scheduling-toggle'
 import { Skeleton } from '../components/ui/skeleton'
 import {
   createPlaylistApi,
@@ -184,6 +185,8 @@ export function PlaylistsPage() {
           {t('playlists.create')}
         </button>
       </div>
+
+      {schedulerInfo && <PlaylistSchedulingToggle enabled={schedulerInfo.enabled} />}
 
       {/* Content */}
       {isLoading ? (

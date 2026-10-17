@@ -285,7 +285,12 @@ describe('getGenreArtists', () => {
 })
 
 describe('rejectRecommendation', () => {
-  type RejectedRow = { artistId: number; kind: string; releaseGroupMbid: string | null }
+  type RejectedRow = {
+    artistId: number
+    kind: string
+    releaseGroupMbid: string | null
+    releaseGroupTitle?: string | null
+  }
 
   function tableName(tableArg: unknown): string | undefined {
     const nameSymbol = Object.getOwnPropertySymbols(tableArg as object).find(
@@ -301,8 +306,12 @@ describe('rejectRecommendation', () => {
     const update = vi.fn().mockReturnValue({ set })
 
     const insertCalls: Array<{ table: string | undefined; values: Record<string, unknown> }> = []
-    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
+    const onConflictDoUpdate = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ inserted: true }]),
+    })
+    const onConflictDoNothing = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+    })
     const insert = vi.fn((table: unknown) => ({
       values: vi.fn((vals: Record<string, unknown>) => {
         insertCalls.push({ table: tableName(table), values: vals })
@@ -323,6 +332,7 @@ describe('rejectRecommendation', () => {
       artistId: 10,
       kind: 'album',
       releaseGroupMbid: 'rg-mbid-1',
+      releaseGroupTitle: 'Example Album',
     })
 
     const artistId = await rejectRecommendation(db, {
@@ -333,13 +343,14 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(10)
+    expect(artistId).toEqual({ artistId: 10, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('album_blocks')
     expect(insertCalls[0]?.values).toMatchObject({
       userId: 5,
       artistId: 10,
       releaseGroupMbid: 'rg-mbid-1',
+      albumTitle: 'Example Album',
       reason: 'wrong_style',
       reasonText: 'not my style',
       source: 'rejection',
@@ -362,7 +373,7 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(20)
+    expect(artistId).toEqual({ artistId: 20, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('artist_blocks')
     expect(insertCalls[0]?.values).toMatchObject({ userId: 5, artistId: 20 })
@@ -384,7 +395,7 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(30)
+    expect(artistId).toEqual({ artistId: 30, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('artist_blocks')
     expect(insertCalls.some((c) => c.table === 'album_blocks')).toBe(false)
@@ -405,7 +416,7 @@ describe('rejectRecommendation', () => {
       permanent: false,
     })
 
-    expect(artistId).toBe(40)
+    expect(artistId).toEqual({ artistId: 40, blockCreated: false })
     expect(insertCalls).toHaveLength(0)
   })
 })

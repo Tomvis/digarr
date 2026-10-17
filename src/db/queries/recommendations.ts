@@ -202,12 +202,13 @@ export type RejectRecommendationParams = {
  * kind forever: album_blocks for an album-kind rec with a release group,
  * artist_blocks otherwise.
  *
- * Returns the artistId of the rejected recommendation, or null if no row matched.
+ * Returns the artistId of the rejected recommendation and whether this reject
+ * created the block (false when it already existed), or null if no row matched.
  */
 export async function rejectRecommendation(
   db: Database,
   params: RejectRecommendationParams,
-): Promise<number | null> {
+): Promise<{ artistId: number; blockCreated: boolean } | null> {
   return db.transaction(async (tx) => {
     const conditions = [eq(recommendations.id, params.recommendationId)]
     if (params.userId !== undefined) {
@@ -226,24 +227,27 @@ export async function rejectRecommendation(
         artistId: recommendations.artistId,
         kind: recommendations.kind,
         releaseGroupMbid: recommendations.recommendedReleaseGroupId,
+        releaseGroupTitle: recommendations.recommendedReleaseGroupTitle,
       })
     if (!rec) return null
 
+    let blockCreated = false
     if (params.permanent && params.userId !== undefined) {
       // Album recs without a release group (e.g. legacy rows) can't be
       // album-blocked, so fall back to the artist block rather than silently
       // dropping the permanent-reject intent.
       if (rec.kind === 'album' && rec.releaseGroupMbid) {
-        await createAlbumBlock(tx, {
+        blockCreated = await createAlbumBlock(tx, {
           userId: params.userId,
           artistId: rec.artistId,
           releaseGroupMbid: rec.releaseGroupMbid,
+          albumTitle: rec.releaseGroupTitle,
           reason: params.reason ?? undefined,
           reasonText: params.reasonText ?? undefined,
           source: 'rejection',
         })
       } else {
-        await tx
+        const [row] = await tx
           .insert(artistBlocks)
           .values({
             userId: params.userId,
@@ -252,17 +256,13 @@ export async function rejectRecommendation(
             reasonText: params.reasonText,
             source: 'rejection',
           })
-          .onConflictDoUpdate({
-            target: [artistBlocks.userId, artistBlocks.artistId],
-            set: {
-              reason: params.reason,
-              reasonText: params.reasonText,
-              blockedAt: new Date(),
-            },
-          })
+          // An existing block (manual or earlier) keeps its own reason and date.
+          .onConflictDoNothing({ target: [artistBlocks.userId, artistBlocks.artistId] })
+          .returning({ id: artistBlocks.id })
+        blockCreated = row !== undefined
       }
     }
-    return rec.artistId
+    return { artistId: rec.artistId, blockCreated }
   })
 }
 

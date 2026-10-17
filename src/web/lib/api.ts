@@ -337,6 +337,8 @@ export type ApprovalResponse = {
   targetActions?: Record<string, unknown>
   targetSummary?: ApprovalTargetSummary
   lidarrError?: string | null
+  /** Rejects only: true when a permanent reject created a new block. */
+  blockCreated?: boolean
 }
 export const updateRecommendation = (id: number, body: Record<string, unknown>) =>
   fetchApi<ApprovalResponse>(`/recommendations/${id}`, {
@@ -1337,6 +1339,7 @@ export type BlockedAlbumApi = {
   artistName: string
   artistMbid: string | null
   releaseGroupMbid: string
+  albumTitle: string | null
   reason: RejectionReason | null
   reasonText: string | null
   blockedAt: string

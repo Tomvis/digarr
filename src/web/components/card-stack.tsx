@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
 import { shouldIgnoreShortcut } from '../hooks/use-keyboard-shortcuts'
 import { useI18n } from '../lib/i18n'
-import { cn, prefersReducedMotion } from '../lib/utils'
+import { prefersReducedMotion } from '../lib/utils'
 import { ArtistThumb } from './artist-thumb'
 import type { Recommendation } from './recommendation-card'
 import { RejectionPicker } from './rejection-picker'
@@ -17,6 +17,12 @@ export type RejectPayload = {
 
 type CardStackProps = {
   recommendations: Recommendation[]
+  /** Server-side total; defaults to the loaded count. */
+  totalCount?: number
+  /** Changing this (e.g. a new filter) returns to the first card. */
+  resetKey?: string
+  /** Called as the user nears the last loaded card so the next page can load. */
+  onNearEnd?: () => void
   onApprove: (id: number, prevStatus?: string) => void
   onReject: (id: number, prevStatus?: string, payload?: RejectPayload) => void
   onDetail: (id: number) => void
@@ -126,16 +132,10 @@ function StackCard({
         {/* Genre/tag pills */}
         {allTags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {allTags.map((tag, i) => (
+            {allTags.map((tag) => (
               <span
                 key={tag}
-                className={cn(
-                  'text-micro px-1.5 py-0.5 rounded-full',
-                  i % 4 === 0 && 'bg-accent/10 text-accent',
-                  i % 4 === 1 && 'bg-info/10 text-info',
-                  i % 4 === 2 && 'bg-approve/10 text-approve',
-                  i % 4 === 3 && 'bg-reject/10 text-reject',
-                )}
+                className="text-micro px-1.5 py-0.5 rounded-full bg-surface-2 text-text"
               >
                 {tag}
               </span>
@@ -225,7 +225,17 @@ function StackCard({
  * Dating-app style card stack: one card at a time, swipe left/right to act.
  * Arrow keys also navigate.
  */
-export function CardStack({ recommendations, onApprove, onReject, onDetail }: CardStackProps) {
+const NEAR_END_CARDS = 5
+
+export function CardStack({
+  recommendations,
+  totalCount,
+  resetKey,
+  onNearEnd,
+  onApprove,
+  onReject,
+  onDetail,
+}: CardStackProps) {
   const { t } = useI18n()
   const [index, setIndex] = useState(0)
   const [exiting, setExiting] = useState<'left' | 'right' | null>(null)
@@ -245,17 +255,29 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
   const approveRef = useRef<() => void>(() => {})
   const rejectRef = useRef<() => void>(() => {})
 
-  // Reset to first card when the recommendations array identity changes.
-  // We track the ref here and trigger via the effect below.
-  const prevRecsRef = useRef(recommendations)
-  const recsChanged = prevRecsRef.current !== recommendations
-  if (recsChanged) prevRecsRef.current = recommendations
+  const shownIdRef = useRef<number | undefined>(undefined)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally react to array identity change, not contents
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new resetKey alone returns to the first card
   useEffect(() => {
     setIndex(0)
     setExiting(null)
+  }, [resetKey])
+
+  // A refetch or an appended page keeps the card on screen instead of jumping back to the start.
+  useEffect(() => {
+    const shownId = shownIdRef.current
+    if (shownId === undefined) return
+    const at = recommendations.findIndex((r) => r.id === shownId)
+    setIndex((i) => (at >= 0 ? at : Math.max(0, Math.min(i, recommendations.length - 1))))
   }, [recommendations])
+
+  useEffect(() => {
+    shownIdRef.current = rec?.id
+  })
+
+  useEffect(() => {
+    if (total > 0 && index >= total - NEAR_END_CARDS) onNearEnd?.()
+  }, [index, total, onNearEnd])
 
   // Keyboard: left arrow = reject, right arrow = approve, up/down = navigate
   useEffect(() => {
@@ -343,7 +365,7 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
           onClick={() => setIndex((i) => Math.max(i - 1, 0))}
           disabled={index === 0}
           aria-label={t('recommendation.previousCardNav')}
-          className="p-1 rounded hover:text-text disabled:opacity-30 transition-colors"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded hover:text-text disabled:opacity-30 transition-colors sm:min-h-8 sm:min-w-8"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -362,14 +384,14 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
         <span className="tabular-nums font-medium">
           {t('cardStack.counter')
             .replace('{0}', String(index + 1))
-            .replace('{1}', String(total))}
+            .replace('{1}', String(Math.max(totalCount ?? total, total)))}
         </span>
         <button
           type="button"
           onClick={() => setIndex((i) => Math.min(i + 1, total - 1))}
           disabled={index >= total - 1}
           aria-label={t('recommendation.nextCardNav')}
-          className="p-1 rounded hover:text-text disabled:opacity-30 transition-colors"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded hover:text-text disabled:opacity-30 transition-colors sm:min-h-8 sm:min-w-8"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
