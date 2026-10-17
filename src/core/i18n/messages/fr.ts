@@ -264,6 +264,7 @@ export const fr = {
     "Rien ici encore. L'activité apparaîtra au fur et à mesure que tu découvriras et approuveras de nouveaux artistes.",
   'dashboard.activityNew': 'nouveau',
   'dashboard.activityRejected': 'Rejeté',
+  'dashboard.activityRepeated': '{0} fois',
   'dashboard.activityScan': 'Analyse',
   'dashboard.addToLidarrFailed': "Échec de l'ajout à Lidarr",
   'dashboard.addedToLidarr': 'Ajouté à Lidarr',
@@ -277,7 +278,6 @@ export const fr = {
   'dashboard.foundLastRun': 'trouvé la dernière fois',
   'dashboard.genreCoverage': 'Données de genre disponibles : {0}/{1}',
   'dashboard.genreCoveragePending': 'Mises à jour des données de genre en attente : {0}',
-  'dashboard.getStarted': 'Commencer',
   'dashboard.listeningEmpty':
     "Aucun historique d'écoute pour cette période. Essaie une autre période.",
   'dashboard.listeningFailed':
@@ -699,6 +699,7 @@ export const fr = {
   'analytics.noDiscoveryBatches':
     "Aucun lot de découverte pour le moment. Lance un scan pour voir l'historique ici.",
   'analytics.batchHistory': 'Historique des lots',
+  'analytics.pageRange': '{start}-{end} sur {total}',
   'analytics.scoreDistribution': 'Distribution des scores',
   'analytics.noScoreData': 'Pas encore de données de score',
   'analytics.approvalRateTrend': "Évolution du taux d'approbation",

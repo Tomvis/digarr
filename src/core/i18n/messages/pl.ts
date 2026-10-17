@@ -264,6 +264,7 @@ export const pl = {
     'Jeszcze nic tu nie ma. Aktywność pojawi się, gdy odkryjesz i zatwierdzisz nowych artystów.',
   'dashboard.activityNew': 'nowy',
   'dashboard.activityRejected': 'Odrzucony',
+  'dashboard.activityRepeated': 'Powtórzeń: {0}',
   'dashboard.activityScan': 'Skanuj',
   'dashboard.addToLidarrFailed': 'Nie udało się dodać do Lidarr',
   'dashboard.addedToLidarr': 'Dodano do Lidarra',
@@ -277,7 +278,6 @@ export const pl = {
   'dashboard.foundLastRun': 'znaleziono podczas ostatniego uruchomienia',
   'dashboard.genreCoverage': 'Dostępne dane o gatunkach: {0}/{1}',
   'dashboard.genreCoveragePending': 'Oczekujące aktualizacje danych o gatunkach: {0}',
-  'dashboard.getStarted': 'Zacznij',
   'dashboard.listeningEmpty': 'Brak historii słuchania w tym okresie. Spróbuj wybrać inny okres.',
   'dashboard.listeningFailed':
     'Nie udało się wczytać historii słuchania. Sprawdź połączenia lub spróbuj ponownie.',
@@ -699,6 +699,7 @@ export const pl = {
   'analytics.noDiscoveryBatches':
     'Nie ma jeszcze partii odkrywczych. Uruchom skanowanie, aby zobaczyć tutaj swoją historię.',
   'analytics.batchHistory': 'Historia partii',
+  'analytics.pageRange': '{start}-{end} z {total}',
   'analytics.scoreDistribution': 'Dystrybucja punktacji',
   'analytics.noScoreData': 'Nie ma jeszcze danych o wynikach',
   'analytics.approvalRateTrend': 'Trend współczynnika akceptacji',

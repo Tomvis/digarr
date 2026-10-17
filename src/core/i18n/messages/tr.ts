@@ -261,6 +261,7 @@ export const tr = {
     'Burada henüz bir şey yok. Yeni sanatçıları keşfedip onayladıkça etkinlik görünecektir.',
   'dashboard.activityNew': 'yeni',
   'dashboard.activityRejected': 'Reddedildi',
+  'dashboard.activityRepeated': '{0} kez',
   'dashboard.activityScan': 'Tara',
   'dashboard.addToLidarrFailed': "Lidarr'a eklenemedi",
   'dashboard.addedToLidarr': "Lidarr'a eklendi",
@@ -274,7 +275,6 @@ export const tr = {
   'dashboard.foundLastRun': 'son çalıştırmada bulundu',
   'dashboard.genreCoverage': 'Mevcut tür verisi: {0}/{1}',
   'dashboard.genreCoveragePending': 'Bekleyen tür verisi güncellemeleri: {0}',
-  'dashboard.getStarted': 'Başla',
   'dashboard.listeningEmpty': 'Bu dönem için dinleme geçmişi yok. Başka bir dönem dene.',
   'dashboard.listeningFailed':
     'Dinleme geçmişi yüklenemedi. Bağlantılarını kontrol et veya yeniden dene.',
@@ -689,6 +689,7 @@ export const tr = {
   'analytics.noDiscoveryBatches':
     'Henüz keşif grubu yok. Geçmişini burada görmek için bir tarama yap.',
   'analytics.batchHistory': 'Grup Geçmişi',
+  'analytics.pageRange': '{total} içinden {start}-{end}',
   'analytics.scoreDistribution': 'Puan Dağılımı',
   'analytics.noScoreData': 'Henüz puan verisi yok',
   'analytics.approvalRateTrend': 'Onay Oranı Trendi',

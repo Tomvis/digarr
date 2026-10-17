@@ -264,6 +264,7 @@ export const es = {
     'Nada aquí todavía. La actividad aparecerá a medida que descubras y apruebes nuevos artistas.',
   'dashboard.activityNew': 'nuevo',
   'dashboard.activityRejected': 'Rechazado',
+  'dashboard.activityRepeated': '{0} veces',
   'dashboard.activityScan': 'Escanear',
   'dashboard.addToLidarrFailed': 'No se pudo agregar a Lidarr',
   'dashboard.addedToLidarr': 'Añadido a Lidarr',
@@ -277,7 +278,6 @@ export const es = {
   'dashboard.foundLastRun': 'encontró la última ejecución',
   'dashboard.genreCoverage': 'Datos de género disponibles: {0}/{1}',
   'dashboard.genreCoveragePending': 'Actualizaciones de datos de género pendientes: {0}',
-  'dashboard.getStarted': 'empezar',
   'dashboard.listeningEmpty': 'No hay historial de escucha para este período. Prueba otro período.',
   'dashboard.listeningFailed':
     'No se pudo cargar el historial de escucha. Revisa tus conexiones o inténtalo de nuevo.',
@@ -701,6 +701,7 @@ export const es = {
   'analytics.noDiscoveryBatches':
     'Aún no hay lotes de descubrimiento. Ejecuta un escaneo para ver tu historial aquí.',
   'analytics.batchHistory': 'Historial de lotes',
+  'analytics.pageRange': '{start}-{end} de {total}',
   'analytics.scoreDistribution': 'Distribución de puntuación',
   'analytics.noScoreData': 'Aún no hay datos de puntuación',
   'analytics.approvalRateTrend': 'Tendencia de la tasa de aprobación',

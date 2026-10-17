@@ -260,6 +260,7 @@ export const en = {
     'Nothing here yet. Activity will show up as you discover and approve new artists.',
   'dashboard.activityNew': 'new',
   'dashboard.activityRejected': 'Rejected',
+  'dashboard.activityRepeated': '{0} times',
   'dashboard.activityScan': 'Scan',
   'dashboard.addToLidarrFailed': 'Failed to add to Lidarr',
   'dashboard.addedToLidarr': 'Added to Lidarr',
@@ -273,7 +274,6 @@ export const en = {
   'dashboard.foundLastRun': 'found last run',
   'dashboard.genreCoverage': 'Genre data available: {0}/{1}',
   'dashboard.genreCoveragePending': 'Pending genre data updates: {0}',
-  'dashboard.getStarted': 'Get started',
   'dashboard.listeningEmpty': 'No listening history for this period. Try another period.',
   'dashboard.listeningFailed':
     'Listening history could not be loaded. Check your connections or try again.',
@@ -685,6 +685,7 @@ export const en = {
   'analytics.recommendationsPerBatch': 'Recommendations per batch (green = approved)',
   'analytics.noDiscoveryBatches': 'No discovery batches yet. Run a scan to see your history here.',
   'analytics.batchHistory': 'Batch History',
+  'analytics.pageRange': '{start}-{end} of {total}',
   'analytics.scoreDistribution': 'Score Distribution',
   'analytics.noScoreData': 'No score data yet',
   'analytics.approvalRateTrend': 'Approval Rate Trend',

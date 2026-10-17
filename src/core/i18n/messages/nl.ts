@@ -264,6 +264,7 @@ export const nl = {
     'Hier nog niets. Er wordt activiteit weergegeven als je nieuwe artiesten ontdekt en goedkeurt.',
   'dashboard.activityNew': 'nieuw',
   'dashboard.activityRejected': 'Afgewezen',
+  'dashboard.activityRepeated': '{0} keer',
   'dashboard.activityScan': 'Scannen',
   'dashboard.addToLidarrFailed': 'Kan niet toevoegen aan Lidarr',
   'dashboard.addedToLidarr': 'Toegevoegd aan Lidarr',
@@ -277,7 +278,6 @@ export const nl = {
   'dashboard.foundLastRun': 'laatste run gevonden',
   'dashboard.genreCoverage': 'Genregegevens beschikbaar: {0}/{1}',
   'dashboard.genreCoveragePending': 'Openstaande updates van genregegevens: {0}',
-  'dashboard.getStarted': 'Aan de slag',
   'dashboard.listeningEmpty':
     'Geen luistergeschiedenis voor deze periode. Probeer een andere periode.',
   'dashboard.listeningFailed':
@@ -699,6 +699,7 @@ export const nl = {
   'analytics.noDiscoveryBatches':
     'Nog geen ontdekkingsbatches. Voer hier een scan uit om je geschiedenis te bekijken.',
   'analytics.batchHistory': 'Batchgeschiedenis',
+  'analytics.pageRange': '{start}-{end} van {total}',
   'analytics.scoreDistribution': 'Scoreverdeling',
   'analytics.noScoreData': 'Nog geen scoregegevens',
   'analytics.approvalRateTrend': 'Trend goedkeuringspercentage',

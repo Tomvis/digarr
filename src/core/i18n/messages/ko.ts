@@ -259,6 +259,7 @@ export const ko = {
     '아직 아무것도 없습니다. 새로운 아티스트를 발견하고 승인하면 활동이 표시됩니다.',
   'dashboard.activityNew': '새로운',
   'dashboard.activityRejected': '거부됨',
+  'dashboard.activityRepeated': '{0}회',
   'dashboard.activityScan': '스캔',
   'dashboard.addToLidarrFailed': 'Lidarr에 추가하지 못했습니다.',
   'dashboard.addedToLidarr': 'Lidarr에 추가됨',
@@ -272,7 +273,6 @@ export const ko = {
   'dashboard.foundLastRun': '마지막 실행에서 찾음',
   'dashboard.genreCoverage': '장르 데이터 있음: {0}/{1}',
   'dashboard.genreCoveragePending': '대기 중인 장르 데이터 업데이트: {0}',
-  'dashboard.getStarted': '시작하기',
   'dashboard.listeningEmpty': '이 기간의 청취 기록이 없습니다. 다른 기간을 선택해 보세요.',
   'dashboard.listeningFailed':
     '청취 기록을 불러오지 못했습니다. 연결을 확인하거나 다시 시도하세요.',
@@ -687,6 +687,7 @@ export const ko = {
   'analytics.noDiscoveryBatches':
     '아직 검색 배치가 없습니다. 여기에서 기록을 보려면 스캔을 실행하세요.',
   'analytics.batchHistory': '배치 기록',
+  'analytics.pageRange': '{total}개 중 {start}-{end}',
   'analytics.scoreDistribution': '점수 분포',
   'analytics.noScoreData': '아직 점수 데이터가 없습니다.',
   'analytics.approvalRateTrend': '승인률 추세',

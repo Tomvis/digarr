@@ -264,6 +264,7 @@ export const it = {
     "Niente qui ancora. L'attività verrà visualizzata man mano che scopri e approvi nuovi artisti.",
   'dashboard.activityNew': 'nuovo',
   'dashboard.activityRejected': 'Rifiutato',
+  'dashboard.activityRepeated': '{0} volte',
   'dashboard.activityScan': 'Scansione',
   'dashboard.addToLidarrFailed': 'Impossibile aggiungere a Lidarr',
   'dashboard.addedToLidarr': 'Aggiunto a Lidarr',
@@ -277,7 +278,6 @@ export const it = {
   'dashboard.foundLastRun': "trovato l'ultima esecuzione",
   'dashboard.genreCoverage': 'Dati sui generi disponibili: {0}/{1}',
   'dashboard.genreCoveragePending': 'Aggiornamenti dei dati sui generi in attesa: {0}',
-  'dashboard.getStarted': 'Inizia',
   'dashboard.listeningEmpty':
     'Nessuna cronologia di ascolto per questo periodo. Prova un altro periodo.',
   'dashboard.listeningFailed':
@@ -703,6 +703,7 @@ export const it = {
   'analytics.noDiscoveryBatches':
     'Nessun batch di rilevamento ancora. Esegui una scansione per vedere la tua cronologia qui.',
   'analytics.batchHistory': 'Cronologia dei lotti',
+  'analytics.pageRange': '{start}-{end} di {total}',
   'analytics.scoreDistribution': 'Distribuzione del punteggio',
   'analytics.noScoreData': 'Nessun dato sul punteggio ancora',
   'analytics.approvalRateTrend': 'Andamento del tasso di approvazione',
