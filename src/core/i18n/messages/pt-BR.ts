@@ -7,6 +7,7 @@ export const ptBR = {
   'app.theme': 'Tema',
   'app.themeSettings': 'Configurações do tema',
   'app.mainNavigation': 'Navegação principal',
+  'app.skipToContent': 'Pular para o conteúdo',
   'app.toggleMenu': 'Alternar menu',
   'app.themeMode': 'Modo',
   'app.themeModeDark': 'Escuro',
@@ -26,6 +27,9 @@ export const ptBR = {
     'O login no navegador com token de acesso foi desativado. Entre com sua conta ou via SSO.',
   'auth.loginDescription': 'Faça login com sua conta.',
   'auth.loginFailed': 'Falha no login',
+  'auth.serverUnavailableTitle': 'Não foi possível acessar o Digarr',
+  'auth.serverUnavailableBody':
+    'O servidor está inacessível ou retornou um erro, então não foi possível verificar sua sessão. Tente novamente em instantes.',
   'auth.or': 'ou',
   'auth.passwordMin': 'Senha (mín. 12 caracteres)',
   'auth.passwordMinError': 'A senha deve ter pelo menos 12 caracteres',
@@ -84,6 +88,8 @@ export const ptBR = {
   'subscriptions.resumeAll': 'Retomar tudo',
   'dashboard.todaysPick': 'Destaque de hoje',
   'dashboard.recentlyApproved': 'Aprovado recentemente',
+  'dashboard.noRecentlyApproved':
+    'Nada aprovado ainda. Os artistas que você aprovar aparecem aqui.',
   'dashboard.viewAll': 'Ver tudo',
   'dashboard.discover': 'Descubra',
   'discover.all': 'Todos',
@@ -124,6 +130,7 @@ export const ptBR = {
   'genreDetail.backToGenres': 'Voltar aos gêneros',
   'genreDetail.createSubscription': 'Criar assinatura',
   'analytics.title': 'Análises',
+  'analytics.loadFailed': 'Não foi possível carregar algumas estatísticas.',
   'dashboard.title': 'Painel',
   'discover.title': 'Descobrir',
   'jobHistory.title': 'Histórico de tarefas',
@@ -288,6 +295,9 @@ export const ptBR = {
     'À medida que você aprova ou rejeita recomendações de artistas, Digarr aprende seu gosto e fica melhor em encontrar músicas que você gosta.',
   'dashboard.yourTaste': 'Seu gosto musical',
   'discover.actionApplied': 'Ação aplicada.',
+  'discover.undoApproved': '{name} aprovado',
+  'discover.undoRejected': '{name} rejeitado',
+  'discover.undoBlocked': '{name} rejeitado e bloqueado',
   'discover.approveAllAbove': 'Aprovar tudo acima',
   'discover.approvedCount': 'Aprovado',
   'discover.approvePartial': 'Adicionado a {0} de {1} destinos. Falhas: {2}',
@@ -404,6 +414,10 @@ export const ptBR = {
   'jobHistory.of': 'de',
   'jobHistory.pipeline': 'Fluxo de descoberta',
   'jobHistory.librarySync': 'Sincronização da biblioteca',
+  'jobHistory.seedArtist': 'Semente: {artist}',
+  'jobHistory.targetAddArtist': 'Adicionar {artist}',
+  'jobHistory.targetAddAlbum': 'Adicionar álbum de {artist}',
+  'jobHistory.failuresOnly': 'Somente falhas',
   'jobHistory.playlists': 'Listas de reprodução',
   'jobHistory.quickDiscover': 'Descoberta rápida',
   'jobHistory.showing': 'Mostrando',
@@ -588,6 +602,7 @@ export const ptBR = {
   'subscriptionForm.scoringPresetDefault': 'Padrão',
   'subscriptionForm.scoringPresetGenre': 'Otimizado para gênero',
   'subscriptions.likedSongs': 'Músicas curtidas',
+  'subscriptions.genreWeeklyName': '{genre} semanal',
   'subscriptions.addToRecommendations': 'Adicionar às recomendações',
   'subscriptions.collapseRunHistory': 'Recolher histórico de execução',
   'subscriptions.expandRunHistory': 'Expandir histórico de execução',
@@ -693,6 +708,9 @@ export const ptBR = {
     'Cada usuário tem suas próprias recomendações, preferências e fontes de escuta. Os administradores podem gerenciar configurações globais.',
   'userManagement.noUsers': 'Nenhum usuário encontrado.',
   'userManagement.adminBadge': 'administrador',
+  'userManagement.authProviderLocal': 'Conta local',
+  'userManagement.authProviderOidc': 'OIDC / SSO',
+  'userManagement.authProviderProxy': 'Proxy reverso',
   'userManagement.cannotRemoveOwnAdmin':
     'Não é possível remover sua própria função de administrador',
   'userManagement.lastAdminCannotRemove': 'Último administrador - não é possível remover',
@@ -712,6 +730,7 @@ export const ptBR = {
   'recommendation.select': 'Selecione',
   'recommendation.startWith': 'Comece com',
   'recommendation.albumBadge': 'Álbum',
+  'recommendation.albumByArtist': '{album} de {artist}',
   'recommendation.metadataCached': 'Metadados armazenados em cache',
   'recommendation.warmingCache': 'Aquecendo cache...',
   'recommendation.match': 'compatibilidade',
@@ -766,6 +785,7 @@ export const ptBR = {
     'Nova verificação automática agendada para verificar os resultados da correção...',
   'libraryHealth.noChecks':
     'Não há exames de saúde disponíveis. Execute uma varredura para inspecionar sua biblioteca.',
+  'libraryHealth.loadFailed': 'Não foi possível carregar as verificações da biblioteca.',
   'libraryHealth.syncNow': 'Sincronizar agora',
   'libraryHealth.snapshotTitle': 'Última captura',
   'libraryHealth.lastSynced': 'Última sincronização',
@@ -1126,6 +1146,7 @@ export const ptBR = {
   'settings.targetTypeJellyfinPlaylist': 'Playlist do Jellyfin',
   'settings.targetTypePlexPlaylist': 'Playlist do Plex',
   'settings.targetTypeNavidromePlaylist': 'Playlist do Navidrome',
+  'settings.targetTypeSpotifyPlaylist': 'Playlist do Spotify',
   'settings.slskdModeHelp':
     'O slskd pode enfileirar lançamentos, mas a automação completa exige um destino Lidarr vinculado.',
   'settings.slskdReleasePolicy':
@@ -1187,6 +1208,22 @@ export const ptBR = {
   'artist.externalLinks.discogs': 'Discogs',
   'artist.externalLinks.musicbrainz': 'MusicBrainz',
   'libraryHealth.artistsMissingWikidata.title': 'Artistas sem enriquecimento do Wikidata',
+  'libraryHealth.check.missingMetadata.name': 'Metadados ausentes',
+  'libraryHealth.check.missingMetadata.description':
+    'Artistas no Lidarr sem gêneros e sem imagem no cache local.',
+  'libraryHealth.check.unmonitored.name': 'Artistas não monitorados',
+  'libraryHealth.check.unmonitored.description': 'Artistas no Lidarr que não estão monitorados.',
+  'libraryHealth.check.missingAlbums.name': 'Arquivos de álbum ausentes',
+  'libraryHealth.check.missingAlbums.description':
+    'Artistas monitorados com álbuns que têm faixas, mas nenhum arquivo baixado.',
+  'libraryHealth.check.duplicateArtists.name': 'Artistas duplicados',
+  'libraryHealth.check.duplicateArtists.description':
+    'Artistas com o mesmo nome sob MBIDs diferentes.',
+  'libraryHealth.check.genreGaps.name': 'Gêneros ausentes',
+  'libraryHealth.check.genreGaps.description':
+    'Artistas sem tags de gênero no Lidarr nem no cache local.',
+  'libraryHealth.check.imageGaps.name': 'Imagens ausentes',
+  'libraryHealth.check.imageGaps.description': 'Artistas no cache local sem URL de imagem.',
   'libraryHealth.artistsMissingWikidata.description':
     'Buscar descrições e links externos para artistas sem dados do Wikidata em cache.',
   'settings.metadataFallbackHelp':
@@ -1406,6 +1443,9 @@ export const ptBR = {
   'jobHistory.targetOperation': 'Operação de destino',
   'jobHistory.playlistGeneration': 'Geração de playlist',
   'jobHistory.stuckLabel': 'travado',
+  'jobHistory.statusCompleted': 'concluído',
+  'jobHistory.statusFailed': 'falhou',
+  'jobHistory.statusRunning': 'em execução',
   'jobHistory.cancelledLabel': 'cancelado',
   'jobHistory.errorLabel': 'Erro:',
   'jobHistory.sourceResultsLabel': 'Resultados da fonte:',
@@ -1455,6 +1495,7 @@ export const ptBR = {
   'admin.purgeExpiredSessionsDesc': 'Excluir sessões de login expiradas.',
   'admin.currentVersion': 'Versão atual',
   'admin.pendingMigrations': 'Migrações pendentes',
+  'admin.pendingCount': '{count} pendentes',
   'admin.upToDate': 'Atualizado',
   'admin.restoreSummary': '{0} linhas restauradas em {1} tabelas',
   'admin.restoreSummaryForce':

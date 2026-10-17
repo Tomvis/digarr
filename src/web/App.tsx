@@ -393,7 +393,8 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
     queryFn: getCurrentUser,
   })
   if (isPending) return null
-  return currentUser?.isAdmin ? children : <Navigate to="/" replace />
+  // A failed lookup must not bounce admins; the server still gates these pages.
+  return currentUser && !currentUser.isAdmin ? <Navigate to="/" replace /> : children
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -515,6 +516,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <div className="min-h-screen bg-bg">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-fg"
+        >
+          {t('app.skipToContent')}
+        </a>
         <nav
           className="border-b border-border px-4 py-2 sm:px-6"
           aria-label={t('app.mainNavigation')}
@@ -648,7 +655,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </nav>
         {/* Clears the fixed bottom nav, home-indicator inset and preview player */}
-        <main className="pb-(--bottom-stack)">{children}</main>
+        <main id="main-content" tabIndex={-1} className="pb-(--bottom-stack) focus:outline-none">
+          {children}
+        </main>
         <BottomNav />
         <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         <PreviewPlayer
@@ -729,9 +738,23 @@ function InnerApp() {
                 <Route path="/playlists" element={<PlaylistsPage />} />
                 <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
                 <Route path="/subscriptions" element={<SubscriptionsPage />} />
-                <Route path="/library/health" element={<LibraryHealthPage />} />
+                <Route
+                  path="/library/health"
+                  element={
+                    <AdminRoute>
+                      <LibraryHealthPage />
+                    </AdminRoute>
+                  }
+                />
                 <Route path="/library/reconciliation" element={<LibraryReconciliationPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route
+                  path="/analytics"
+                  element={
+                    <AdminRoute>
+                      <AnalyticsPage />
+                    </AdminRoute>
+                  }
+                />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route
                   path="/settings/jobs"

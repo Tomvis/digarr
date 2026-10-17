@@ -14,9 +14,14 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import { ConfirmDialog } from '../components/confirm-dialog'
+import { describeCron } from '../components/cron-picker'
 import { Hint } from '../components/hint'
 import { ImportArtists } from '../components/import-artists'
-import { SubscriptionForm, type SubscriptionFormData } from '../components/subscription-form'
+import {
+  buildSubscriptionUpdate,
+  SubscriptionForm,
+  type SubscriptionFormData,
+} from '../components/subscription-form'
 import { SubscriptionPresets } from '../components/subscription-presets'
 import { Skeleton } from '../components/ui/skeleton'
 import {
@@ -34,6 +39,7 @@ import {
   triggerSubscriptionRun,
   updateSubscriptionApi,
 } from '../lib/api'
+import { translateDiscoveryModeLabel } from '../lib/discovery-i18n'
 import { formatDuration } from '../lib/format-time'
 import { useI18n } from '../lib/i18n'
 import { formatShortDateTime } from '../lib/intl'
@@ -147,6 +153,16 @@ function RunHistoryPanel({ subscriptionId }: { subscriptionId: number }) {
   )
 }
 
+// Brand names for the provider ids stored on a subscription.
+const PROVIDER_NAMES: Record<string, string> = {
+  lastfm: 'Last.fm',
+  listenbrainz: 'ListenBrainz',
+  discogs: 'Discogs',
+  spotify: 'Spotify',
+  deezer: 'Deezer',
+  tidal: 'TIDAL',
+}
+
 function SubscriptionCard({
   sub,
   nextRun,
@@ -176,7 +192,10 @@ function SubscriptionCard({
     if (sub.sourceType === 'listenbrainz') return (cfg.feedType as string) ?? null
     if (sub.sourceType === 'spotify-liked-songs') return t('subscriptions.likedSongs')
     if (sub.sourceType === 'spotify-playlist') return (cfg.playlistName as string) ?? null
-    if (sub.sourceType === 'discovery-mode') return (cfg.modeId as string) ?? null
+    if (sub.sourceType === 'discovery-mode') {
+      const modeId = cfg.modeId as string | undefined
+      return modeId ? translateDiscoveryModeLabel(t, { id: modeId, label: modeId }) : null
+    }
     return null
   })()
 
@@ -201,7 +220,7 @@ function SubscriptionCard({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-text truncate">{sub.name}</span>
             {sourceLabel && (
-              <span className="text-xs px-2 py-0.5 bg-accent/15 text-accent rounded-full shrink-0">
+              <span className="text-xs px-2 py-0.5 bg-accent/15 text-accent rounded-full min-w-0 max-w-full break-words">
                 {sourceLabel}
               </span>
             )}
@@ -209,11 +228,13 @@ function SubscriptionCard({
           <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
             <span>
               {Array.isArray((sub.sourceConfig as Record<string, unknown>)?.providers)
-                ? ((sub.sourceConfig as Record<string, unknown>).providers as string[]).join(', ')
-                : sub.sourceProvider}
+                ? ((sub.sourceConfig as Record<string, unknown>).providers as string[])
+                    .map((id) => PROVIDER_NAMES[id] ?? id)
+                    .join(', ')
+                : (PROVIDER_NAMES[sub.sourceProvider] ?? sub.sourceProvider)}
             </span>
             <span>{actionLabel}</span>
-            <span className="font-mono">{sub.cron}</span>
+            <span title={sub.cron}>{describeCron(t, sub.cron)}</span>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
             {nextRun && (
@@ -324,12 +345,12 @@ export default function SubscriptionsPage() {
         mode: 'create',
         initial: {
           sourceConfig: { genre: prefillGenre },
-          name: `${prefillGenre} Weekly`,
+          name: t('subscriptions.genreWeeklyName').replace('{genre}', prefillGenre),
         },
       })
       setSearchParams({}, { replace: true })
     }
-  }, [prefillGenre, setSearchParams])
+  }, [prefillGenre, setSearchParams, t])
 
   // Queries
   const { data: settings } = useQuery({
@@ -428,7 +449,7 @@ export default function SubscriptionsPage() {
   }
 
   const handleEdit = async (subId: number, data: SubscriptionFormData) => {
-    await updateSubscriptionApi(subId, data)
+    await updateSubscriptionApi(subId, buildSubscriptionUpdate(data))
     invalidate()
     setShowForm(null)
     toast.success(t('subscriptions.updated'))

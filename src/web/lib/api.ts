@@ -116,6 +116,12 @@ function getBrowserHeaders(options?: RequestInit): Headers {
   return headers
 }
 
+function handleSessionExpired(): never {
+  clearStoredToken()
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  throw new ApiError(401, { error: 'Session expired' })
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const { headers: _extraHeaders, ...restOptions } = options ?? {}
   const res = await fetch(`${BASE}${path}`, {
@@ -124,11 +130,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
     headers: getBrowserHeaders(options),
   })
   if (!res.ok) {
-    if (res.status === 401) {
-      clearStoredToken()
-      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
-      throw new ApiError(res.status, { error: 'Session expired' })
-    }
+    if (res.status === 401) handleSessionExpired()
     const error = await res.json().catch(() => ({ error: res.statusText }))
     throw new ApiError(res.status, error)
   }
@@ -138,13 +140,15 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-function authedRawFetch(path: string, options?: RequestInit): Promise<Response> {
+async function authedRawFetch(path: string, options?: RequestInit): Promise<Response> {
   const { headers: _extraHeaders, ...restOptions } = options ?? {}
-  return fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${path}`, {
     ...restOptions,
     credentials: 'same-origin',
     headers: getBrowserHeaders(options),
   })
+  if (res.status === 401) handleSessionExpired()
+  return res
 }
 
 // Auth
@@ -492,15 +496,8 @@ export const getApprovalTrend = () => fetchApi<ApprovalTrend[]>('/analytics/tren
 export const getTimeToAct = () => fetchApi<TimeToAct[]>('/analytics/time-to-act')
 
 // Lidarr
-export const getLidarrProfiles = () =>
-  fetchApi<Array<{ id: number; name: string }>>('/lidarr/profiles')
-export const getLidarrMetadataProfiles = () =>
-  fetchApi<Array<{ id: number; name: string }>>('/lidarr/metadataprofiles')
-export const getLidarrRootFolders = () =>
-  fetchApi<Array<{ id: number; path: string; freeSpace?: number }>>('/lidarr/rootfolders')
-// Non-admin-safe picker data for the approve dialog: profile names + root-folder
-// paths only, no freeSpace/structure. The three fns above stay for the admin
-// settings screen, which is allowed to see the full payloads.
+// Non-admin-safe picker data: profile names + root-folder paths only, no
+// freeSpace/structure. Used by the approve dialog and per-user Lidarr defaults.
 export const getLidarrApproveOptions = () =>
   fetchApi<{
     qualityProfiles: Array<{ id: number; name: string }>
@@ -971,7 +968,19 @@ export const createSubscriptionApi = (data: {
     body: JSON.stringify(data),
   })
 
-export const updateSubscriptionApi = (id: number, data: Partial<Subscription>) =>
+// Mirrors the server's strict PATCH schema; source identity is fixed at creation.
+export type SubscriptionUpdate = Partial<
+  Pick<
+    Subscription,
+    'name' | 'enabled' | 'sourceConfig' | 'maxArtistsPerRun' | 'cron' | 'scoringWeightPreset'
+  >
+> & {
+  listenerRange?: { min?: number; max?: number }
+  scoreThreshold?: number
+  scoringWeightOverrides?: Record<string, number>
+}
+
+export const updateSubscriptionApi = (id: number, data: SubscriptionUpdate) =>
   fetchApi<void>(`/subscriptions/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
