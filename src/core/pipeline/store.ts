@@ -39,6 +39,9 @@ export interface StoreDb {
     endYear?: number
   }) => Promise<{ id: number }>
 
+  /** Existing artist row id by MBID; lets track runs reuse rows without overwriting curated data. */
+  getArtistIdByMbid?: (mbid: string) => Promise<number | null>
+
   insertRecommendation: (data: {
     artistId: number
     batchId: number

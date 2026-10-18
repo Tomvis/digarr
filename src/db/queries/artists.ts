@@ -19,6 +19,16 @@ export type ArtistInsert = {
   endYear?: number | null
 }
 
+/** Id of the artist row with this MBID, or null. */
+export async function getArtistIdByMbid(db: DbOrTx, mbid: string): Promise<number | null> {
+  const rows = await db
+    .select({ id: artists.id })
+    .from(artists)
+    .where(eq(artists.mbid, mbid))
+    .limit(1)
+  return rows[0]?.id ?? null
+}
+
 export async function upsertArtist(db: DbOrTx, artist: ArtistInsert): Promise<ArtistRow> {
   const { imageFailed, ...artistData } = artist
 

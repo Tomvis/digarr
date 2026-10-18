@@ -92,16 +92,27 @@ export async function storeTracks(
   let added = 0
   let failed = 0
   const artistIds = new Map<string, number>()
+  const failedArtists = new Map<string, unknown>()
 
   try {
     for (const t of tracks) {
       checkPipelineCancelled(options.signal)
       const artistMbid = t.artistMbid as string
       try {
+        if (failedArtists.has(artistMbid)) throw failedArtists.get(artistMbid)
         let artistId = artistIds.get(artistMbid)
         if (artistId === undefined) {
-          const artistData = await buildArtistData(mb, artistMbid, t.artistName)
-          artistId = (await db.upsertArtist(artistData)).id
+          try {
+            // Existing rows keep their curated genres/streaming data untouched.
+            artistId = (await db.getArtistIdByMbid?.(artistMbid)) ?? undefined
+            if (artistId === undefined) {
+              const artistData = await buildArtistData(mb, artistMbid, t.artistName)
+              artistId = (await db.upsertArtist(artistData)).id
+            }
+          } catch (artistErr) {
+            failedArtists.set(artistMbid, artistErr)
+            throw artistErr
+          }
           artistIds.set(artistMbid, artistId)
         }
         await db.insertRecommendation({

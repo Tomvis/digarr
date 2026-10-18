@@ -138,6 +138,41 @@ describe('storeTracks', () => {
     expect(db.completeBatch).toHaveBeenCalledWith(7, { discovered: 2, added: 2, failed: 0 })
   })
 
+  it('reuses an existing artist row without MB lookup or upsert', async () => {
+    const db = makeDb()
+    ;(db as { getArtistIdByMbid?: unknown }).getArtistIdByMbid = vi.fn().mockResolvedValue(11)
+    const mb = makeMb()
+    await storeTracks([{ ...track(), score: 0.8 }], db, mb)
+    expect(mb.lookupArtist).not.toHaveBeenCalled()
+    expect(db.upsertArtist).not.toHaveBeenCalled()
+    expect(db.insertRecommendation).toHaveBeenCalledWith(expect.objectContaining({ artistId: 11 }))
+  })
+
+  it('inserts a new artist when no row exists', async () => {
+    const db = makeDb()
+    ;(db as { getArtistIdByMbid?: unknown }).getArtistIdByMbid = vi.fn().mockResolvedValue(null)
+    await storeTracks([{ ...track(), score: 0.8 }], db, makeMb())
+    expect(db.upsertArtist).toHaveBeenCalledTimes(1)
+    expect(db.insertRecommendation).toHaveBeenCalledWith(expect.objectContaining({ artistId: 42 }))
+  })
+
+  it('does not re-query a failed artist for its other tracks', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const db = makeDb()
+    const lookup = vi.fn().mockRejectedValue(new Error('mb down'))
+    const res = await storeTracks(
+      [
+        { ...track({ recordingMbid: 'r-1' }), score: 0.8 },
+        { ...track({ recordingMbid: 'r-2' }), score: 0.7 },
+      ],
+      db,
+      makeMb(lookup),
+    )
+    expect(lookup).toHaveBeenCalledTimes(1)
+    expect(res.added).toBe(0)
+    err.mockRestore()
+  })
+
   it('an artist lookup failure skips only that track', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const db = makeDb()

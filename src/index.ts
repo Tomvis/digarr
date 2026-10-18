@@ -120,6 +120,7 @@ import {
   getArtistById,
   getArtistGenreCacheByAliases,
   getArtistGenreCacheByMbids,
+  getArtistIdByMbid,
   upsertArtist,
   upsertArtistGenreAlias,
   upsertArtistGenres,
@@ -362,6 +363,7 @@ const storeDb: StoreDb = {
   failBatch: async (id) => {
     await failBatch(db, id)
   },
+  getArtistIdByMbid: (mbid) => getArtistIdByMbid(db, mbid),
   upsertArtist: async (data) => {
     const row = await upsertArtist(db, data)
     return { id: row.id }
@@ -1116,7 +1118,10 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
       const artistKey = normalizeArtistName(artistName)
       let pending = tracksByArtist.get(artistKey)
       if (!pending) {
-        pending = subsonic.searchTracks(artistName, 100)
+        const search = subsonic.searchTracks(artistName, 100)
+        // Drop failed lookups so a transient error can be retried.
+        search.catch(() => tracksByArtist.delete(artistKey))
+        pending = search
         tracksByArtist.set(artistKey, pending)
       }
       const wanted = normalizeAlbumTitle(title)
