@@ -97,7 +97,7 @@ journal tag; append after idx 61; bump the upgrade-test cutoff to 0903).
   (`"<artist> <title>"`, scoped to the user's `subsonic_music_folder_id`) and
   skip on a normalized artist+title match. No connection or lookup error →
   keep the track (songpick still reports `owned` at approve time). Cache
-  per-artist results within a run.
+  results per normalized artist + title within a run.
 
 ### Approval: songpick target
 
