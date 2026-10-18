@@ -1212,7 +1212,9 @@ describe('SettingsPage', () => {
     const switcher = await screen.findByLabelText('Language')
     fireEvent.change(switcher, { target: { value: 'de' } })
 
-    expect(switcher).toHaveValue('de')
+    await waitFor(() => {
+      expect(switcher).toHaveValue('de')
+    })
     expect(mockUpdatePreferredLocale).not.toHaveBeenCalled()
     expect(client.getQueryData(['currentUser'])).toEqual({
       id: 1,
