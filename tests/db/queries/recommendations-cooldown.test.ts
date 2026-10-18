@@ -7,6 +7,7 @@ import { makeTestDb } from '../../helpers/test-db'
 describe('rejection cooldown ownership on migrated PGlite', () => {
   let fixture: Awaited<ReturnType<typeof makeTestDb>>
   const expected = new Map<number | null, string>()
+  const trackOnly = new Map<number | null, string>()
 
   beforeAll(async () => {
     fixture = await makeTestDb()
@@ -43,6 +44,25 @@ describe('rejection cooldown ownership on migrated PGlite', () => {
           await db.insert(recommendations).values(row)
         }
       }
+      // A rejected song must not put its artist on the rejection cooldown.
+      const mbid = `00000000-0000-0000-0000-${String(++artistNumber).padStart(12, '0')}`
+      const [artist] = await db
+        .insert(artists)
+        .values({ mbid, name: `Owner ${userId} track` })
+        .returning()
+      if (!artist) throw new Error('Missing cooldown track artist fixture')
+      trackOnly.set(userId, mbid)
+      await db.insert(recommendations).values({
+        userId,
+        artistId: artist.id,
+        batchId: batch.id,
+        score: 0.8,
+        status: 'rejected',
+        actedOnAt: recent,
+        kind: 'track',
+        recommendedRecordingMbid: `rec-${artistNumber}`,
+        recommendedTrackTitle: 'Song',
+      })
     }
   }, 30_000)
 
@@ -58,4 +78,10 @@ describe('rejection cooldown ownership on migrated PGlite', () => {
       expect(result).toEqual(new Set([expected.get(userId)]))
     },
   )
+
+  it.each([1, 2, null])('ignores rejected track recs owned by %s', async (userId) => {
+    const result = await getRejectedArtistMbids(fixture.db as unknown as Database, 30, userId)
+
+    expect(result.has(trackOnly.get(userId) as string)).toBe(false)
+  })
 })

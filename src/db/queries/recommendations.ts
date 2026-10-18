@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNull, or, type SQL, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNull, ne, or, type SQL, sql } from 'drizzle-orm'
 import type { GenreFeedback } from '@/core/pipeline/score'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
 import { isValidStatus, parseStatusFilter } from '@/core/recommendations/statuses'
@@ -287,7 +287,8 @@ export async function getGenreFeedbackHistory(
   userId?: number,
 ): Promise<Map<string, GenreFeedback>> {
   // Pushing the per-genre tally into SQL via unnest lets Postgres do the
-  // hash-aggregate work - JS side only walks the reduced result.
+  // hash-aggregate work - JS side only walks the reduced result. Track recs
+  // are excluded: a song approval/rejection says nothing about artist genres.
   const userFilter = userId !== undefined ? sql`AND r.user_id = ${userId}` : sql``
   const result = await db.execute(sql`
     SELECT
@@ -303,6 +304,7 @@ export async function getGenreFeedbackHistory(
     CROSS JOIN LATERAL unnest(a.genres) AS genre
     WHERE r.acted_on_at IS NOT NULL
       AND a.genres IS NOT NULL
+      AND r.kind <> 'track'
       ${userFilter}
     GROUP BY genre
   `)
@@ -350,7 +352,8 @@ export async function filterOwnedIds(
 /**
  * Artists rejected within the cooldown, scoped to the run owner: one user's
  * rejection must not hide an artist from another user's recommendations.
- * `null` reads only unowned rejections.
+ * `null` reads only unowned rejections. A rejected song (track rec) does not
+ * put its artist on the cooldown.
  */
 export async function getRejectedArtistMbids(
   db: Database,
@@ -366,11 +369,34 @@ export async function getRejectedArtistMbids(
     .where(
       and(
         eq(recommendations.status, 'rejected'),
+        ne(recommendations.kind, 'track'),
         gte(recommendations.actedOnAt, cutoff),
         userId === null ? isNull(recommendations.userId) : eq(recommendations.userId, userId),
       ),
     )
 
+  return new Set(rows.map((r) => r.mbid))
+}
+
+/**
+ * Artist MBIDs already recommended to this user (or unowned), for artist
+ * discovery dedupe. Track recs are excluded: an artist with only a song rec
+ * stays discoverable as an artist rec.
+ */
+export async function getExistingRecommendationMbids(
+  db: Database,
+  userId?: number,
+): Promise<Set<string>> {
+  const conditions: SQL[] = [ne(recommendations.kind, 'track')]
+  if (userId !== undefined) {
+    const owned = or(eq(recommendations.userId, userId), isNull(recommendations.userId))
+    if (owned) conditions.push(owned)
+  }
+  const rows = await db
+    .select({ mbid: artists.mbid })
+    .from(recommendations)
+    .innerJoin(artists, eq(recommendations.artistId, artists.id))
+    .where(and(...conditions))
   return new Set(rows.map((r) => r.mbid))
 }
 

@@ -40,6 +40,33 @@ describe('genre feedback counts on migrated PGlite', () => {
           { status: 'rejected', rejectionReason: 'wrong_style', actedOnAt: null },
         ].map((row) => ({ ...row, userId, artistId: artist.id, batchId: batch.id, score: 0.8 })),
       )
+      // Song approvals/rejections must not shift artist genre scoring, whether
+      // the artist also has artist recs or only track recs.
+      const [trackArtist] = await db
+        .insert(artists)
+        .values({
+          mbid: `00000000-0000-0000-0001-${String(userId ?? 3).padStart(12, '0')}`,
+          name: `Track-only owner ${userId}`,
+          genres: ['shared', 'track-only'],
+        })
+        .returning()
+      if (!trackArtist) throw new Error('Missing feedback track artist fixture')
+      await db.insert(recommendations).values(
+        [artist.id, trackArtist.id].flatMap((artistId) =>
+          (['approved', 'rejected'] as const).map((status) => ({
+            status,
+            rejectionReason: status === 'rejected' ? 'wrong_style' : null,
+            actedOnAt,
+            userId,
+            artistId,
+            batchId: batch.id,
+            score: 0.8,
+            kind: 'track',
+            recommendedRecordingMbid: `rec-${artistId}-${status}`,
+            recommendedTrackTitle: 'Song',
+          })),
+        ),
+      )
     }
   }, 30_000)
 

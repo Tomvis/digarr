@@ -164,6 +164,7 @@ import {
   bulkUpdateStatus,
   filterOwnedIds,
   getExistingAlbumReleaseGroupMbids,
+  getExistingRecommendationMbids,
   getGenreFeedbackHistory,
   getRecommendation,
   getRecommendedRecordingMbids,
@@ -232,7 +233,6 @@ import {
   libraryArtists,
   mergePreferences,
   recommendationBatches,
-  recommendations,
 } from './db/schema'
 import { waitForDatabase } from './db/wait'
 import { createApp } from './server'
@@ -334,17 +334,7 @@ const storeDb: StoreDb = {
   getArtistGenreCacheByAliases: (aliases) => getArtistGenreCacheByAliases(db, aliases),
   upsertArtistGenres: (data) => upsertArtistGenres(db, data),
   upsertArtistGenreAlias: (data) => upsertArtistGenreAlias(db, data),
-  getExistingRecommendationMbids: async (userId) => {
-    const base = db
-      .select({ mbid: artists.mbid })
-      .from(recommendations)
-      .innerJoin(artists, eq(recommendations.artistId, artists.id))
-    const rows =
-      userId !== undefined
-        ? await base.where(or(eq(recommendations.userId, userId), isNull(recommendations.userId)))
-        : await base
-    return new Set(rows.map((r) => r.mbid))
-  },
+  getExistingRecommendationMbids: (userId) => getExistingRecommendationMbids(db, userId),
   insertBatch: async (data) => {
     const rows = await db
       .insert(recommendationBatches)
