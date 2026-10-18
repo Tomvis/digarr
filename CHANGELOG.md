@@ -23,6 +23,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Added
 
+- System settings show the last success and last error per integration (Lidarr and other targets, library sync sources, discovery sources including the AI provider, subscriptions, and scrobble write-back) from the past 30 days of recorded jobs, and `GET /api/v1/jobs/health` returns them as `integrations`. Nothing is probed; errors are secret-redacted and capped at 300 characters. Notification channels don't record deliveries yet, so they aren't listed (#1050).
 - Discovery recipes guide: setup to a first playable recommendation for discovery-only and existing-library installs (which credentials each route needs), seasonal and decade tag recipes, and familiar versus adventurous tuning with the existing scoring weights and radio controls (#1044).
 - Optional signing secret on webhook notification channels. When set, requests carry `X-Digarr-Timestamp` and an HMAC-SHA256 `X-Digarr-Signature` so receivers can verify them; off by default. The secret is encrypted at rest, masked in the API, and covered by key rotation. All 15 languages are supported (#1051).
 - `POST /api/v1/recommendations/bulk` accepts an optional `Idempotency-Key` header so a timed-out bulk approve can be retried safely. A repeat with the same key and body replays the stored response for 24 hours, a different body returns 422, and a repeat while the first is still running returns 409. Keys are kept in memory per process and are forgotten on restart. No migration (#1052).
