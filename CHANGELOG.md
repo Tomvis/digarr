@@ -8,6 +8,8 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Fixed
 
+- The release digest-sync and eval workflows now pin Bun 1.4.3 like the other jobs (#1042).
+- A weekly workflow prunes `:nightly-<sha>` images older than 30 days, keeping the newest 20; `:nightly`, `:latest`, `:stable*` and release tags are never touched. Manual runs default to a dry run (#1053).
 - Approve All Above on Discover now asks for confirmation first, stating how many recommendations will be approved and that targets like Lidarr may receive adds; cancelling does nothing (#1036).
 - System Health rows show a text status (OK, Degraded, Error) and a distinct icon per state instead of a color-only dot, in all 15 languages (#1041).
 - Auto-approved deliveries to Lidarr, slskd and playlist targets now record Job History rows like manual approvals, so a failed auto-approved push shows up there (#1039).
