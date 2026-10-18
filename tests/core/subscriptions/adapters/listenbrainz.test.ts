@@ -37,17 +37,17 @@ const createdForFixture = {
     },
     {
       playlist: {
-        title: 'Weekly Jams for testuser, week of 2026-10-05 Mon',
-        date: '2026-10-05T00:04:00+00:00',
-        identifier: `${PL}${MBID_NEW_JAMS}`,
+        title: 'Weekly Jams for testuser, week of 2026-09-28 Mon',
+        date: '2026-09-28T00:04:00+00:00',
+        identifier: `${PL}${MBID_OLD_JAMS}`,
         track: [],
       },
     },
     {
       playlist: {
-        title: 'Weekly Jams for testuser, week of 2026-09-28 Mon',
-        date: '2026-09-28T00:04:00+00:00',
-        identifier: `${PL}${MBID_OLD_JAMS}`,
+        title: 'Weekly Jams for testuser, week of 2026-10-05 Mon',
+        date: '2026-10-05T00:04:00+00:00',
+        identifier: `${PL}${MBID_NEW_JAMS}`,
         track: [],
       },
     },
@@ -198,6 +198,22 @@ describe('createListenBrainzAdapter', () => {
       for (const r of requestLog) {
         expect(r.headers.authorization).toBe('Token testtoken')
         expect(r.headers['user-agent']).toMatch(/Chrome\//)
+      }
+    })
+
+    it('throws when the playlist fetch is non-OK', async () => {
+      const saved = global.fetch
+      global.fetch = (async (input: RequestInfo | URL) =>
+        String(input).includes('/playlists/createdfor')
+          ? new Response(JSON.stringify(createdForFixture), { status: 200 })
+          : new Response('nope', { status: 503, statusText: 'Down' })) as typeof fetch
+      try {
+        const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
+        await expect(adapter.fetch({ feedType: 'weekly-jams' })).rejects.toThrow(
+          'ListenBrainz weekly-jams fetch failed: 503',
+        )
+      } finally {
+        global.fetch = saved
       }
     })
 
