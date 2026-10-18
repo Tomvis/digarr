@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   bulkRecommendationSchema,
+  listRecommendationsQuerySchema,
   monitorOptionSchema,
   rejectStatusSchema,
 } from '@/server/schemas/recommendations'
@@ -107,5 +108,15 @@ describe('bulkRecommendationSchema', () => {
 describe('monitorOptionSchema', () => {
   it('accepts popular album approval mode', () => {
     expect(monitorOptionSchema.safeParse('popular').success).toBe(true)
+  })
+})
+
+describe('listRecommendationsQuerySchema kind', () => {
+  it('accepts kind=track', () => {
+    expect(listRecommendationsQuerySchema.safeParse({ kind: 'track' }).success).toBe(true)
+  })
+
+  it('rejects kind=song', () => {
+    expect(listRecommendationsQuerySchema.safeParse({ kind: 'song' }).success).toBe(false)
   })
 })

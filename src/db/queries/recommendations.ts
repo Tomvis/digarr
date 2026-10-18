@@ -2,6 +2,7 @@ import { and, count, desc, eq, gte, inArray, isNull, or, type SQL, sql } from 'd
 import type { GenreFeedback } from '@/core/pipeline/score'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
 import { isValidStatus, parseStatusFilter } from '@/core/recommendations/statuses'
+import type { RecommendationKind } from '@/core/types'
 import type { Database, DbOrTx } from '@/db'
 import {
   artistBlocks,
@@ -39,7 +40,7 @@ export type ListRecommendationsFilters = {
   batchId?: number
   userId?: number
   decades?: string
-  kind?: 'artist' | 'album'
+  kind?: RecommendationKind
   sort?: 'score_desc' | 'score_asc' | 'created_desc' | 'acted_on_desc' | 'taste'
   tasteTier?: 'primary' | 'secondary'
   primaryGenres?: string[]
@@ -84,7 +85,8 @@ export async function listRecommendations(
   }
   if (batchId !== undefined) conditions.push(eq(recommendations.batchId, batchId))
   if (userId !== undefined) conditions.push(eq(recommendations.userId, userId))
-  if (kind === 'artist' || kind === 'album') conditions.push(eq(recommendations.kind, kind))
+  if (kind === 'artist' || kind === 'album' || kind === 'track')
+    conditions.push(eq(recommendations.kind, kind))
 
   const matchesGenres = (preferred: string[]): SQL =>
     preferred.length === 0
@@ -485,7 +487,11 @@ export type InsertRecommendationData = {
   userId?: number
   recommendedReleaseGroupId?: string
   recommendedReleaseGroupTitle?: string
-  kind?: 'artist' | 'album'
+  kind?: RecommendationKind
+  recommendedRecordingMbid?: string
+  recommendedTrackTitle?: string
+  recommendedTrackAlbum?: string
+  recommendedCoverReleaseMbid?: string
 }
 
 export async function insertRecommendation(
@@ -503,6 +509,10 @@ export async function insertRecommendation(
     recommendedReleaseGroupId: data.recommendedReleaseGroupId,
     recommendedReleaseGroupTitle: data.recommendedReleaseGroupTitle,
     kind: data.kind ?? 'artist',
+    recommendedRecordingMbid: data.recommendedRecordingMbid,
+    recommendedTrackTitle: data.recommendedTrackTitle,
+    recommendedTrackAlbum: data.recommendedTrackAlbum,
+    recommendedCoverReleaseMbid: data.recommendedCoverReleaseMbid,
   })
 }
 

@@ -3,6 +3,7 @@ import { ChevronDown, Music, Pause, Play } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
+import type { RecommendationKind } from '@/core/types'
 import { useClickOutside } from '../hooks/use-click-outside'
 import { getArtistTopTracks } from '../lib/api'
 import { GENRE_COLORS } from '../lib/constants'
@@ -19,7 +20,7 @@ import { Button } from './ui/button'
 
 export type Recommendation = {
   id: number
-  kind: 'artist' | 'album'
+  kind: RecommendationKind
   score: number
   status: string
   aiReasoning: string | null
@@ -28,6 +29,10 @@ export type Recommendation = {
   targetActions?: Record<string, { status?: string; error?: string } | null> | null
   recommendedReleaseGroupId: string | null
   recommendedReleaseGroupTitle: string | null
+  recommendedRecordingMbid?: string | null
+  recommendedTrackTitle?: string | null
+  recommendedTrackAlbum?: string | null
+  recommendedCoverReleaseMbid?: string | null
   artist: {
     id: number
     name: string

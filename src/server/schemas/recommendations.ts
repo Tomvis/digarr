@@ -1,6 +1,7 @@
 import * as z from 'zod'
 import { REJECTION_REASONS, type RejectionReason } from '@/core/recommendations/rejection-reasons'
 import { stripControlChars } from '@/core/text/strip-control-chars'
+import type { RecommendationKind } from '@/core/types'
 import { idParamSchema } from './validator'
 
 // MAX_BULK_IDS caps the bulk write surface so one approve-all payload cannot
@@ -90,13 +91,19 @@ export const rejectStatusSchema = z
     path: ['reasonText'],
   })
 
+const RECOMMENDATION_KINDS = [
+  'artist',
+  'album',
+  'track',
+] as const satisfies readonly RecommendationKind[]
+
 // GET /api/recommendations query: permissive (optional, empty strings tolerated)
 // so existing frontend URLs keep working.
 export const listRecommendationsQuerySchema = z.object({
   batchId: z.coerce.number().int().positive().optional(),
   status: z.string().max(200).optional(),
   decades: z.string().max(100).optional(),
-  kind: z.string().optional(),
+  kind: z.preprocess((v) => (v === '' ? undefined : v), z.enum(RECOMMENDATION_KINDS).optional()),
   sort: sortSchema.optional(),
   tasteTier: z.enum(['primary', 'secondary']).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),

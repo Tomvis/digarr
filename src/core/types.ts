@@ -75,12 +75,14 @@ export type ResolvedArtist = {
   beginYear?: number
   endYear?: number
   /** 'album' when this resolves to a first-class album recommendation. */
-  kind?: 'artist' | 'album'
+  kind?: RecommendationKind
   /** Release-group MBID for album-kind; feeds the filter-stage album dedup/block. */
   releaseGroupMbid?: string
   /** ISO release date for album-kind; feeds the recency signal. */
   releaseDate?: string
 }
+
+export type RecommendationKind = 'artist' | 'album' | 'track'
 
 export type ScoredArtist = ResolvedArtist & {
   score: number

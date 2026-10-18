@@ -1,4 +1,4 @@
-import type { ScoredArtist } from '@/core/types'
+import type { RecommendationKind, ScoredArtist } from '@/core/types'
 import { checkPipelineCancelled, PipelineCancelledError } from './cancel'
 import type { GenreFeedback } from './score'
 
@@ -49,7 +49,11 @@ export interface StoreDb {
     userId?: number
     recommendedReleaseGroupId?: string
     recommendedReleaseGroupTitle?: string
-    kind?: 'artist' | 'album'
+    kind?: RecommendationKind
+    recommendedRecordingMbid?: string
+    recommendedTrackTitle?: string
+    recommendedTrackAlbum?: string
+    recommendedCoverReleaseMbid?: string
   }) => Promise<void>
 
   getRejectedMbids: (cooldownDays: number, userId: number | null) => Promise<Set<string>>

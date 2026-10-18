@@ -49,6 +49,13 @@ describe('listRecommendations kind filter', () => {
     expect(eqCalls).toContain('album')
   })
 
+  it('applies eq(recommendations.kind, "track") condition when kind="track"', async () => {
+    const db = makeChainSelectDb([])
+    await listRecommendations(db, { kind: 'track' })
+    const eqCalls = mockedEq.mock.calls.map((args) => args[1])
+    expect(eqCalls).toContain('track')
+  })
+
   it('applies eq(recommendations.kind, "artist") condition when kind="artist"', async () => {
     const db = makeChainSelectDb([])
     await listRecommendations(db, { kind: 'artist' })

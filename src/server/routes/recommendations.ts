@@ -5,6 +5,7 @@ import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
 import { createSpotifyClient } from '@/core/clients/spotify'
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
 import { resolveProviderToken } from '@/core/provider-auth'
+import type { RecommendationKind } from '@/core/types'
 import { getUserConnections } from '@/db/queries/users'
 import { mergePreferences } from '@/db/schema'
 import type { AppDependencies } from '@/server'
@@ -619,8 +620,8 @@ export function recommendationRoutes(deps: AppDependencies) {
       userId,
       decades: query.decades || undefined,
       kind:
-        query.kind === 'artist' || query.kind === 'album'
-          ? (query.kind as 'artist' | 'album')
+        query.kind === 'artist' || query.kind === 'album' || query.kind === 'track'
+          ? (query.kind as RecommendationKind)
           : undefined,
       sort: query.sort,
       tasteTier: query.tasteTier,

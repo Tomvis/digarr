@@ -386,7 +386,7 @@ v1.19.0 has no `other` field and labels every non-approved acted-on row as `reje
 
 **GET /api/v1/recommendations** query params:
 - `status` - `pending`, `approved`, `rejected`, `added_to_lidarr`, `add_failed`, `duplicate`, `queued` (comma-separated)
-- `kind` - `artist` or `album`; omitted or unrecognized values return both. Backs the Discover kind filter and the Albums tab (`?kind=album`)
+- `kind` - `artist`, `album` or `track`; omitted returns all kinds, other values are rejected (400). Backs the Discover kind filter and the Albums tab (`?kind=album`)
 - `batchId` - filter by batch
 - `sort` - `score_desc` (default), `score_asc`, `created_desc`, `acted_on_desc`, `taste`
 - `tasteTier` - optional `primary` or `secondary`; secondary excludes primary matches
@@ -399,7 +399,7 @@ Taste ordering reads only the authenticated user's optional `primaryGenres` and 
 
 Save either list through `PATCH /api/v1/auth/me/preferences`: `{"primaryGenres":["metal","jazz"],"secondaryGenres":["ambient"]}`. Each list accepts up to 24 nonempty names of at most 64 characters. Names are trimmed, lowercased, and deduplicated. Empty lists clear the preference.
 
-Each item carries a `kind` field (`artist` or `album`). For `kind: "album"`, `recommendedReleaseGroupId` / `recommendedReleaseGroupTitle` identify the album (its `artistId` still points at the album's artist), and the UI renders the album as the primary unit.
+Each item carries a `kind` field (`artist`, `album` or `track`). For `kind: "track"`, `recommendedRecordingMbid`, `recommendedTrackTitle`, `recommendedTrackAlbum` and `recommendedCoverReleaseMbid` identify the track (all nullable on other kinds). For `kind: "album"`, `recommendedReleaseGroupId` / `recommendedReleaseGroupTitle` identify the album (its `artistId` still points at the album's artist), and the UI renders the album as the primary unit.
 
 **PATCH /api/v1/recommendations/:id** body:
 ```json

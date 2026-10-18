@@ -185,8 +185,9 @@ export const openapiDoc = {
           id: { type: 'integer' },
           kind: {
             type: 'string',
-            enum: ['artist', 'album'],
-            description: 'Whether this recommendation is for an artist or a specific album.',
+            enum: ['artist', 'album', 'track'],
+            description:
+              'Whether this recommendation is for an artist, a specific album, or a specific track.',
           },
           status: { type: 'string' },
           score: { type: 'number' },
@@ -697,9 +698,8 @@ export const openapiDoc = {
           {
             name: 'kind',
             in: 'query',
-            schema: { type: 'string' },
-            description:
-              'Filter by artist or album. Omitted or unrecognized values return both kinds.',
+            schema: { type: 'string', enum: ['artist', 'album', 'track'] },
+            description: 'Filter by kind. Omitted returns all kinds; unknown values are rejected.',
           },
           { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
           { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },

@@ -3,7 +3,12 @@ import { extractImages, type ImageEntry } from '@/core/clients/image-utils'
 import type { MBArtist, MBSearchResult } from '@/core/clients/musicbrainz'
 import { parseYear } from '@/core/clients/musicbrainz'
 import type { Translator } from '@/core/i18n/translator'
-import type { DiscoveredArtist, PipelineProgress, ResolvedArtist } from '@/core/types'
+import type {
+  DiscoveredArtist,
+  PipelineProgress,
+  RecommendationKind,
+  ResolvedArtist,
+} from '@/core/types'
 import { PipelineCancelledError } from './cancel'
 
 interface MusicBrainzClient {
@@ -331,7 +336,7 @@ async function buildResolvedArtist(
   // Album-kind: a discovery from release-radar already knows the real
   // release-group id -- use it directly and skip the lossy title match.
   const albumDiscovery = discoveries.find((d) => d.releaseGroupMbid)
-  let kind: 'artist' | 'album' | undefined
+  let kind: RecommendationKind | undefined
   let releaseGroupMbid: string | undefined
   let releaseDate: string | undefined
   let suggestedAlbum:
