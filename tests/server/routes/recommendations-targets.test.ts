@@ -653,3 +653,273 @@ describe('target-aware approval', () => {
     })
   })
 })
+
+describe('track recommendation approval (songpick)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const trackRec = (overrides: Record<string, unknown> = {}) => ({
+    id: 7,
+    userId: 1,
+    kind: 'track',
+    recommendedRecordingMbid: 'rec-mbid-1',
+    recommendedTrackTitle: 'Everything In Its Right Place',
+    recommendedTrackAlbum: 'Kid A',
+    artist: { mbid: 'mbid-1', name: 'Radiohead' },
+    ...overrides,
+  })
+
+  const songpickTarget = (result: Record<string, unknown>) => ({
+    id: 'songpick-1',
+    name: 'songpick',
+    type: 'songpick',
+    capabilities: ['addTrack'],
+    addTrack: vi.fn().mockResolvedValue({ targetType: 'songpick', targetId: 1, ...result }),
+  })
+
+  const lidarrTarget = () => ({
+    id: 'lidarr-1',
+    name: 'Lidarr',
+    type: 'lidarr',
+    capabilities: ['addArtist', 'addAlbum'],
+    addArtist: vi.fn().mockResolvedValue({ success: true, externalId: 42 }),
+    addAlbum: vi.fn().mockResolvedValue({ success: true, externalId: 7 }),
+  })
+
+  const approve = (body: Record<string, unknown> = {}) =>
+    createTestApp().request('/api/v1/recommendations/7', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved', ...body }),
+    })
+
+  it('wants the track via songpick only; Lidarr addArtist is never called', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    const lidarr = lidarrTarget()
+    const songpick = songpickTarget({
+      success: true,
+      songpickStatus: 'wanted',
+      albumName: 'Kid A',
+      edition: 'CD',
+    })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarr, songpick])
+    const warm = vi.fn()
+    mockDeps.skyhookWarmer = { warm } as never
+
+    try {
+      const res = await approve()
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.status).toBe('approved')
+      expect(songpick.addTrack).toHaveBeenCalledExactlyOnceWith(
+        {
+          artistMbid: 'mbid-1',
+          artistName: 'Radiohead',
+          title: 'Everything In Its Right Place',
+          recordingMbid: 'rec-mbid-1',
+        },
+        expect.any(Object),
+      )
+      expect(lidarr.addArtist).not.toHaveBeenCalled()
+      expect(lidarr.addAlbum).not.toHaveBeenCalled()
+      expect(warm).not.toHaveBeenCalled()
+      expect(body.targetActions['songpick-1']).toMatchObject({
+        success: true,
+        songpickStatus: 'wanted',
+        albumName: 'Kid A',
+        edition: 'CD',
+      })
+      expect(body.targetSummary).toMatchObject({ total: 1, succeeded: 1, failed: 0 })
+      expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledExactlyOnceWith(
+        7,
+        'approved',
+        expect.objectContaining({
+          targetActions: { 'songpick-1': expect.objectContaining({ songpickStatus: 'wanted' }) },
+        }),
+      )
+    } finally {
+      mockDeps.skyhookWarmer = null
+    }
+  })
+
+  it('passes only the approve-dialog root folder override to songpick', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    const songpick = songpickTarget({ success: true, songpickStatus: 'already_wanted' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([songpick])
+
+    const res = await approve({ rootFolderId: 3, monitorOption: 'popular' })
+
+    expect((await res.json()).status).toBe('approved')
+    const options = songpick.addTrack.mock.calls[0]?.[1]
+    expect(options).toMatchObject({ rootFolderId: 3 })
+    expect(options).not.toHaveProperty('monitorOption')
+    expect(options).not.toHaveProperty('qualityProfileId')
+  })
+
+  it('maps songpick owned to duplicate', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: true, songpickStatus: 'owned' }),
+    ])
+
+    const body = await (await approve()).json()
+
+    expect(body.status).toBe('duplicate')
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledWith(
+      7,
+      'duplicate',
+      expect.any(Object),
+    )
+  })
+
+  it('maps a songpick error to add_failed and stores the error text in lidarrError', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: false, error: 'No Lidarr root folder configured for this user' }),
+    ])
+
+    const body = await (await approve()).json()
+
+    expect(body.status).toBe('add_failed')
+    expect(body.lidarrError).toBe('No Lidarr root folder configured for this user')
+    expect(body.targetActions['songpick-1']).toMatchObject({
+      success: false,
+      error: 'No Lidarr root folder configured for this user',
+    })
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledWith(
+      7,
+      'add_failed',
+      expect.objectContaining({ lidarrError: 'No Lidarr root folder configured for this user' }),
+    )
+  })
+
+  it('fails with no addTrack target instead of silently adding the artist', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    const lidarr = lidarrTarget()
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarr])
+
+    const body = await (await approve()).json()
+
+    expect(body.status).toBe('add_failed')
+    expect(body.targetActions).toEqual({})
+    expect(body.lidarrError).toEqual(expect.any(String))
+    expect(lidarr.addArtist).not.toHaveBeenCalled()
+  })
+
+  it('combined_lidarr_slskd mode does not hijack a track rec', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    const lidarr = lidarrTarget()
+    const songpick = songpickTarget({ success: true, songpickStatus: 'wanted' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarr, songpick])
+
+    const res = await approve({ approvalMode: 'combined_lidarr_slskd', targetId: 'songpick-1' })
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe('approved')
+    expect(songpick.addTrack).toHaveBeenCalledOnce()
+    expect(lidarr.addArtist).not.toHaveBeenCalled()
+  })
+
+  it('accepts an explicit songpick targetId on a track rec', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    const songpick = songpickTarget({ success: true, songpickStatus: 'wanted' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarrTarget(), songpick])
+
+    const res = await approve({ targetId: 'songpick-1' })
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe('approved')
+    expect(songpick.addTrack).toHaveBeenCalledOnce()
+  })
+
+  it('rejects an explicit Lidarr targetId on a track rec', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec())
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      lidarrTarget(),
+      songpickTarget({ success: true, songpickStatus: 'wanted' }),
+    ])
+
+    const res = await approve({ targetId: 'lidarr-1' })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Target does not support track approval: lidarr-1')
+    expect(mockDeps.updateRecommendationStatus).not.toHaveBeenCalled()
+  })
+
+  it('rejects an explicit songpick targetId on an artist rec', async () => {
+    mockDeps.getRecommendation.mockResolvedValue({
+      id: 7,
+      userId: 1,
+      kind: 'artist',
+      artist: { mbid: 'mbid-1', name: 'Radiohead' },
+    })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      lidarrTarget(),
+      songpickTarget({ success: true, songpickStatus: 'wanted' }),
+    ])
+
+    const res = await approve({ targetId: 'songpick-1' })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Target does not support artist approval: songpick-1')
+  })
+
+  it('bulk approve dispatches a track and an artist rec to their own capability', async () => {
+    mockDeps.getRecommendation.mockImplementation(async (id: number) =>
+      id === 1
+        ? trackRec({ id: 1 })
+        : { id, userId: 1, kind: 'artist', artist: { mbid: 'mbid-2', name: 'Portishead' } },
+    )
+    const lidarr = lidarrTarget()
+    const songpick = songpickTarget({ success: true, songpickStatus: 'wanted' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarr, songpick])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [1, 2], action: 'approve', rootFolderId: 2 }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      results: [
+        { id: 1, status: 'approved' },
+        { id: 2, status: 'added_to_lidarr' },
+      ],
+    })
+    expect(songpick.addTrack).toHaveBeenCalledExactlyOnceWith(
+      {
+        artistMbid: 'mbid-1',
+        artistName: 'Radiohead',
+        title: 'Everything In Its Right Place',
+        recordingMbid: 'rec-mbid-1',
+      },
+      expect.objectContaining({ rootFolderId: 2 }),
+    )
+    expect(lidarr.addArtist).toHaveBeenCalledExactlyOnceWith(
+      { mbid: 'mbid-2', name: 'Portishead' },
+      expect.objectContaining({ recommendationId: 2 }),
+    )
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledWith(
+      1,
+      'approved',
+      expect.objectContaining({
+        targetActions: { 'songpick-1': expect.objectContaining({ songpickStatus: 'wanted' }) },
+      }),
+    )
+  })
+
+  it('bulk approve accepts a songpick-only targetId', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec({ id: 1 }))
+    const songpick = songpickTarget({ success: true, songpickStatus: 'owned' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarrTarget(), songpick])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [1], action: 'approve', targetId: 'songpick-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ results: [{ id: 1, status: 'duplicate' }] })
+  })
+})

@@ -82,3 +82,83 @@ describe('API routes: approve/reject', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('API routes: track recommendations', () => {
+  it('ignores removeLidarrArtist when reverting a track rec', async () => {
+    const removeArtist = vi.fn(async () => {})
+    const hasFiles = vi.fn(async () => false)
+    const updateStatus = vi.fn(async () => {})
+    const rec = makeRecommendation({
+      id: 3,
+      userId: 1,
+      kind: 'track',
+      status: 'approved',
+      recommendedTrackTitle: 'Song',
+      // Defensive: even a stray artist id on a track rec must not be removed.
+      lidarrArtistId: 42,
+    })
+    const { app } = createTestApp({
+      getRecommendation: vi.fn(async () => rec) as never,
+      updateRecommendationStatus: updateStatus,
+      lidarrRemoveArtist: removeArtist,
+      lidarrArtistHasFiles: hasFiles,
+    } as never)
+
+    const res = await app.request('/api/v1/recommendations/3', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
+      body: JSON.stringify({ status: 'pending', removeLidarrArtist: true }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'pending', lidarrArtistRemoved: false })
+    expect(hasFiles).not.toHaveBeenCalled()
+    expect(removeArtist).not.toHaveBeenCalled()
+    expect(updateStatus).toHaveBeenCalledWith(
+      3,
+      'pending',
+      expect.not.objectContaining({ lidarrArtistId: null }),
+    )
+  })
+
+  it('approves a track rec through an explicit songpick targetId', async () => {
+    const rec = makeRecommendation({
+      id: 4,
+      userId: 1,
+      kind: 'track',
+      recommendedTrackTitle: 'Song',
+      recommendedRecordingMbid: 'rec-1',
+    })
+    const addTrack = vi.fn(async () => ({
+      success: true,
+      targetType: 'songpick',
+      targetId: 1,
+      songpickStatus: 'wanted',
+    }))
+    const { app } = createTestApp({
+      getRecommendation: vi.fn(async () => rec) as never,
+      getEnabledTargetsForUser: vi.fn(async () => [
+        {
+          id: 'songpick-1',
+          name: 'songpick',
+          type: 'songpick',
+          capabilities: ['addTrack'],
+          addTrack,
+        },
+      ]) as never,
+    })
+
+    const res = await app.request('/api/v1/recommendations/4', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
+      body: JSON.stringify({ status: 'approved', targetId: 'songpick-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      status: 'approved',
+      targetActions: { 'songpick-1': { success: true, songpickStatus: 'wanted' } },
+    })
+    expect(addTrack).toHaveBeenCalledOnce()
+  })
+})

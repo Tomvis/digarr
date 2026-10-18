@@ -717,4 +717,79 @@ describe('autoApprove()', () => {
       targetActions: { 'lidarr-1': { status: 'failed', error: failure.message } },
     })
   })
+
+  describe('track recommendations', () => {
+    const trackRec = {
+      id: 21,
+      score: 0.95,
+      status: 'pending',
+      kind: 'track',
+      recommendedReleaseGroupId: null,
+      recommendedRecordingMbid: 'rec-mbid-1',
+      recommendedTrackTitle: 'Glory Box',
+      artist: { mbid: 'mbid-1', name: 'Portishead' },
+    }
+    const trackConfig = {
+      threshold: 0.7,
+      monitorOption: 'all' as const,
+      qualityProfileId: 1,
+      metadataProfileId: 1,
+      rootFolderId: 9,
+    }
+
+    it('wants a track rec above threshold via songpick, never addArtist', async () => {
+      const addArtist = vi.fn().mockResolvedValue({ success: true, externalId: 99 })
+      const addTrack = vi.fn().mockResolvedValue({ success: true, songpickStatus: 'wanted' })
+      const deps = makeDeps({
+        userId: 7,
+        getRecommendationsByBatch: vi.fn().mockResolvedValue([trackRec]),
+        getEnabledTargets: vi.fn().mockResolvedValue([
+          { id: 'lidarr-1', type: 'lidarr', capabilities: ['addArtist'], addArtist },
+          { id: 'songpick-1', type: 'songpick', capabilities: ['addTrack'], addTrack },
+        ]),
+      })
+
+      expect(await autoApprove(1, trackConfig, deps)).toEqual({ approved: 1, failed: 0 })
+      expect(addArtist).not.toHaveBeenCalled()
+      expect(deps.warmArtist).not.toHaveBeenCalled()
+      expect(addTrack).toHaveBeenCalledExactlyOnceWith(
+        {
+          artistMbid: 'mbid-1',
+          artistName: 'Portishead',
+          title: 'Glory Box',
+          recordingMbid: 'rec-mbid-1',
+        },
+        expect.objectContaining({ userId: 7, recommendationId: 21 }),
+      )
+      // No override: songpick resolves the user's own root folder itself.
+      expect(addTrack.mock.calls[0]?.[1]).not.toHaveProperty('rootFolderId')
+      expect(deps.updateRecommendationStatus).toHaveBeenCalledExactlyOnceWith(
+        21,
+        'approved',
+        expect.objectContaining({
+          targetActions: { 'songpick-1': expect.objectContaining({ songpickStatus: 'wanted' }) },
+        }),
+      )
+    })
+
+    it('fails a track rec when no songpick target is enabled', async () => {
+      const addArtist = vi.fn()
+      const deps = makeDeps({
+        getRecommendationsByBatch: vi.fn().mockResolvedValue([trackRec]),
+        getEnabledTargets: vi
+          .fn()
+          .mockResolvedValue([
+            { id: 'lidarr-1', type: 'lidarr', capabilities: ['addArtist'], addArtist },
+          ]),
+      })
+
+      expect(await autoApprove(1, trackConfig, deps)).toEqual({ approved: 0, failed: 1 })
+      expect(addArtist).not.toHaveBeenCalled()
+      expect(deps.updateRecommendationStatus).toHaveBeenCalledExactlyOnceWith(
+        21,
+        'add_failed',
+        expect.objectContaining({ targetActions: {}, lidarrError: expect.any(String) }),
+      )
+    })
+  })
 })

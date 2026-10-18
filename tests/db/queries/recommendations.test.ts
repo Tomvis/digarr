@@ -381,6 +381,26 @@ describe('rejectRecommendation', () => {
     expect(callOrder).toEqual(['update', 'insert'])
   })
 
+  it('writes no block on permanent reject of a track-kind rec', async () => {
+    // A rejected song says nothing about the artist (or its album) as a whole.
+    const { db, insertCalls } = makeRejectTxDb({
+      artistId: 60,
+      kind: 'track',
+      releaseGroupMbid: null,
+    })
+
+    const artistId = await rejectRecommendation(db, {
+      recommendationId: 6,
+      userId: 5,
+      reason: 'not_interested',
+      reasonText: null,
+      permanent: true,
+    })
+
+    expect(artistId).toBe(60)
+    expect(insertCalls).toHaveLength(0)
+  })
+
   it('writes neither block table on a non-permanent album reject', async () => {
     const { db, insertCalls } = makeRejectTxDb({
       artistId: 40,

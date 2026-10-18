@@ -5,6 +5,7 @@ import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
 import { createSpotifyClient } from '@/core/clients/spotify'
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
 import { resolveProviderToken } from '@/core/provider-auth'
+import { approveTrackRecommendation } from '@/core/targets/approve-track'
 import type { RecommendationKind } from '@/core/types'
 import { getUserConnections } from '@/db/queries/users'
 import { mergePreferences } from '@/db/schema'
@@ -705,6 +706,39 @@ export function recommendationRoutes(deps: AppDependencies) {
 
         const targets = userId ? await deps.getEnabledTargetsForUser(userId) : []
         const effectiveTargets = targetId ? targets.filter((t) => t.id === targetId) : targets
+
+        // Track recs only ever go to addTrack (songpick) targets: no approval
+        // mode, SkyHook pre-warm or album/monitor resolution - songpick owns
+        // all of that and only takes an approve-dialog root folder override.
+        if (rec.kind === 'track') {
+          if (targetId && effectiveTargets.length === 0) {
+            return c.json({ error: `Unknown targetId: ${targetId}` }, 400)
+          }
+          if (targetId && !effectiveTargets.some((t) => t.capabilities?.includes('addTrack'))) {
+            return c.json({ error: `Target does not support track approval: ${targetId}` }, 400)
+          }
+          const result = await approveTrackRecommendation(
+            rec,
+            effectiveTargets,
+            rfOverride != null ? { rootFolderId: rfOverride } : {},
+            deps.jobRecorder,
+            userId,
+          )
+          const priorActions = (rec.targetActions as Record<string, unknown> | null) ?? {}
+          const mergedActions = { ...priorActions, ...result.targetActions }
+          await deps.updateRecommendationStatus(id, result.status, {
+            targetActions: mergedActions,
+            lidarrError: result.lidarrError ?? null,
+          })
+          const targetsById = new Map(targets.map((target) => [target.id, target]))
+          return c.json({
+            status: result.status,
+            targetActions: mergedActions,
+            targetSummary: summarizeTargetActions(result.targetActions, targetsById),
+            ...(result.lidarrError ? { lidarrError: result.lidarrError } : {}),
+          })
+        }
+
         const lidarrTargets = targets.filter(
           (target) => target.type === 'lidarr' && target.capabilities?.includes('addArtist'),
         )
@@ -860,7 +894,11 @@ export function recommendationRoutes(deps: AppDependencies) {
 
       if (status === 'pending') {
         return c.json(
-          await revertRecommendationToPending(deps, id, rec, { removeLidarrArtist, userId }),
+          await revertRecommendationToPending(deps, id, rec, {
+            // songpick's Lidarr changes are not undone for track recs.
+            removeLidarrArtist: rec.kind === 'track' ? false : removeLidarrArtist,
+            userId,
+          }),
         )
       }
 
@@ -939,7 +977,10 @@ export function recommendationRoutes(deps: AppDependencies) {
     if (
       targetId &&
       !effectiveTargets.some(
-        (t) => t.capabilities?.includes('addArtist') || t.capabilities?.includes('addAlbum'),
+        (t) =>
+          t.capabilities?.includes('addArtist') ||
+          t.capabilities?.includes('addAlbum') ||
+          t.capabilities?.includes('addTrack'),
       )
     ) {
       return c.json({ error: `Target does not support recommendation approval: ${targetId}` }, 400)
@@ -964,30 +1005,39 @@ export function recommendationRoutes(deps: AppDependencies) {
         continue
       }
 
+      // Sequential on purpose: a songpick want can block for minutes.
       const result: ApproveResult =
-        rec.kind === 'album'
-          ? rec.recommendedReleaseGroupId
-            ? await approveAlbumToTargets(
-                {
-                  artistMbid: rec.artist.mbid,
-                  artistName: rec.artist.name,
-                  releaseGroupMbid: rec.recommendedReleaseGroupId,
-                },
+        rec.kind === 'track'
+          ? await approveTrackRecommendation(
+              rec,
+              effectiveTargets,
+              rfOverride != null ? { rootFolderId: rfOverride } : {},
+              deps.jobRecorder,
+              userId,
+            )
+          : rec.kind === 'album'
+            ? rec.recommendedReleaseGroupId
+              ? await approveAlbumToTargets(
+                  {
+                    artistMbid: rec.artist.mbid,
+                    artistName: rec.artist.name,
+                    releaseGroupMbid: rec.recommendedReleaseGroupId,
+                  },
+                  effectiveTargets,
+                  addOptions,
+                  deps.jobRecorder,
+                  userId,
+                  id,
+                )
+              : { status: 'add_failed', targetActions: {} }
+            : await approveToTargets(
+                { mbid: rec.artist.mbid, name: rec.artist.name },
                 effectiveTargets,
                 addOptions,
                 deps.jobRecorder,
                 userId,
                 id,
               )
-            : { status: 'add_failed', targetActions: {} }
-          : await approveToTargets(
-              { mbid: rec.artist.mbid, name: rec.artist.name },
-              effectiveTargets,
-              addOptions,
-              deps.jobRecorder,
-              userId,
-              id,
-            )
 
       const extra: Record<string, unknown> = { targetActions: result.targetActions }
       if (result.lidarrArtistId) extra.lidarrArtistId = result.lidarrArtistId

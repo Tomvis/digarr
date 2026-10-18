@@ -742,6 +742,8 @@ async function buildDiscoveryModePipelineDeps(userId: number) {
         status: recommendation.status,
         kind: recommendation.kind,
         recommendedReleaseGroupId: recommendation.recommendedReleaseGroupId,
+        recommendedRecordingMbid: recommendation.recommendedRecordingMbid,
+        recommendedTrackTitle: recommendation.recommendedTrackTitle,
         artist: {
           mbid: recommendation.artist.mbid,
           name: recommendation.artist.name,

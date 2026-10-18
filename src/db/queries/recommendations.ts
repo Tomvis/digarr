@@ -207,7 +207,8 @@ export type RejectRecommendationParams = {
  * Transactional reject: marks the recommendation rejected with a structured
  * reason, and (when permanent=true) blocks the rejected recommendation's
  * kind forever: album_blocks for an album-kind rec with a release group,
- * artist_blocks otherwise.
+ * artist_blocks otherwise. A track-kind rec blocks nothing: one rejected song
+ * says nothing about the artist as a whole.
  *
  * Returns the artistId of the rejected recommendation, or null if no row matched.
  */
@@ -236,7 +237,7 @@ export async function rejectRecommendation(
       })
     if (!rec) return null
 
-    if (params.permanent && params.userId !== undefined) {
+    if (params.permanent && params.userId !== undefined && rec.kind !== 'track') {
       // Album recs without a release group (e.g. legacy rows) can't be
       // album-blocked, so fall back to the artist block rather than silently
       // dropping the permanent-reject intent.

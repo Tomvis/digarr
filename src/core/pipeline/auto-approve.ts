@@ -1,4 +1,5 @@
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
+import { approveTrackRecommendation } from '@/core/targets/approve-track'
 import type { DestinationTarget, TargetAddOptions } from '@/core/targets/types'
 import type { StatusUpdateExtra } from '@/db/queries/recommendations'
 import { checkPipelineCancelled } from './cancel'
@@ -11,6 +12,8 @@ export type AutoApproveDeps = {
       status: string
       kind: string
       recommendedReleaseGroupId: string | null
+      recommendedRecordingMbid?: string | null
+      recommendedTrackTitle?: string | null
       artist: { mbid: string; name: string }
     }>
   >
@@ -69,6 +72,23 @@ export async function autoApprove(
 
   for (const rec of eligible) {
     checkPipelineCancelled(signal)
+    if (rec.kind === 'track') {
+      // Tracks go to songpick only; no override, so it uses the user's root folder.
+      const result = await approveTrackRecommendation(
+        rec,
+        targets,
+        {},
+        deps.jobRecorder,
+        deps.userId,
+      )
+      const extra: StatusUpdateExtra = { targetActions: result.targetActions }
+      if (result.lidarrError) extra.lidarrError = result.lidarrError
+      await deps.updateRecommendationStatus(rec.id, result.status, extra)
+      if (result.status === 'approved') approved++
+      else if (result.status === 'add_failed') failed++
+      checkPipelineCancelled(signal)
+      continue
+    }
     const isAlbum = rec.kind === 'album'
     const recTargets = isAlbum ? albumTargets : addTargets
     if (
