@@ -23,6 +23,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Added
 
+- The Discover pending view now says how many pending artists had no playable track in your latest Audition playlist runs, split into no track source, no match, and lookup failure, plus how many are not checked yet. It reads saved playlist outcomes only, sends no extra provider requests, and leaves approve and reject unchanged. Backed by `GET /api/v1/recommendations/playability`; no migration (#1045).
 - System settings show the last success and last error per integration (Lidarr and other targets, library sync sources, discovery sources including the AI provider, subscriptions, and scrobble write-back) from the past 30 days of recorded jobs, and `GET /api/v1/jobs/health` returns them as `integrations`. Nothing is probed; errors are secret-redacted and capped at 300 characters. Notification channels don't record deliveries yet, so they aren't listed (#1050).
 - Discovery recipes guide: setup to a first playable recommendation for discovery-only and existing-library installs (which credentials each route needs), seasonal and decade tag recipes, and familiar versus adventurous tuning with the existing scoring weights and radio controls (#1044).
 - Optional signing secret on webhook notification channels. When set, requests carry `X-Digarr-Timestamp` and an HMAC-SHA256 `X-Digarr-Signature` so receivers can verify them; off by default. The secret is encrypted at rest, masked in the API, and covered by key rotation. All 15 languages are supported (#1051).

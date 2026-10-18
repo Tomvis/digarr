@@ -21,6 +21,7 @@ import {
 import { Hint } from '../components/hint'
 import { MonitoringOptions, type MonitorOption } from '../components/monitoring-options'
 import { MoodPromptBar } from '../components/mood-prompt-bar'
+import { PendingPlayabilitySummary } from '../components/pending-playability-summary'
 import {
   type Recommendation,
   RecommendationCard,
@@ -1186,6 +1187,7 @@ export function DiscoverPage() {
           </ul>
         </section>
       )}
+      {filter === 'pending' && <PendingPlayabilitySummary />}
       {/* Pull-to-refresh indicator */}
       {pullY > 0 && (
         <div
