@@ -4,7 +4,7 @@ import type { DiscoveryModeRegistry } from '@/core/discovery-modes/registry'
 import type { runDiscoveryMode } from '@/core/discovery-modes/run'
 import type { PipelineDeps, PipelineOrchestrator } from '@/core/pipeline/orchestrator'
 import type { StoreDb } from '@/core/pipeline/store'
-import type { DiscoveredArtist } from '@/core/types'
+import type { DiscoveredArtist, DiscoveredTrack } from '@/core/types'
 
 export type DiscoveryModeSubscriptionConfig = {
   modeId: string
@@ -16,6 +16,7 @@ export type DiscoveryModeSubscriptionConfig = {
 
 export type AdapterResult = {
   artists: DiscoveredArtist[]
+  tracks?: DiscoveredTrack[]
 }
 
 export type AdapterConfigField = {

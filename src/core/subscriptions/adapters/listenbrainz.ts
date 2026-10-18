@@ -8,6 +8,7 @@ import type {
   AdapterResult,
   SubscriptionAdapter,
 } from '@/core/subscriptions/types'
+import type { DiscoveredTrack } from '@/core/types'
 
 const CONFIG_FIELDS: AdapterConfigField[] = [
   {
@@ -18,6 +19,7 @@ const CONFIG_FIELDS: AdapterConfigField[] = [
     options: [
       { value: 'fresh-releases', label: 'Fresh Releases' },
       { value: 'weekly-jams', label: 'Weekly Jams' },
+      { value: 'weekly-exploration', label: 'Weekly Exploration' },
       { value: 'artist-radio', label: 'Artist Radio' },
 
       { value: 'similar-users', label: 'Similar Users' },
@@ -38,13 +40,28 @@ type FreshReleasesPayload = {
   }
 }
 
+const JSPF_TRACK_EXT = 'https://musicbrainz.org/doc/jspf#track'
+const RECORDING_URL = /musicbrainz\.org\/recording\/([0-9a-f-]{36})/i
+const CHROME_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+
 type JspfTrack = {
   creator?: string
   title?: string
+  album?: string
+  identifier?: string[]
+  extension?: Record<
+    string,
+    {
+      additional_metadata?: { artists?: Array<{ artist_mbid?: string }>; caa_release_mbid?: string }
+    }
+  >
 }
 
 type JspfPlaylist = {
   title?: string
+  date?: string
+  identifier?: string
   track?: JspfTrack[]
 }
 
@@ -78,7 +95,21 @@ export function createListenBrainzAdapter(deps: {
       }
 
       if (feedType === 'weekly-jams') {
-        return fetchWeeklyJams(deps.username, deps.token)
+        return fetchLbCreatedForPlaylist(
+          deps.username,
+          deps.token,
+          'Weekly Jams for',
+          'listenbrainz:weekly-jams',
+        )
+      }
+
+      if (feedType === 'weekly-exploration') {
+        return fetchLbCreatedForPlaylist(
+          deps.username,
+          deps.token,
+          'Weekly Exploration for',
+          'listenbrainz:weekly-exploration',
+        )
       }
 
       if (feedType === 'artist-radio') {
@@ -234,40 +265,69 @@ async function fetchTagRadio(
   }
 }
 
-async function fetchWeeklyJams(username: string, token: string): Promise<AdapterResult> {
-  const url = `${LB_BASE}/user/${encodeURIComponent(username)}/playlists`
+async function lbGetJson<T>(url: string, token: string, label: string): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   let res: Response
   try {
     res = await fetch(url, {
-      headers: { Authorization: `Token ${token}` },
+      headers: { Authorization: `Token ${token}`, 'User-Agent': CHROME_USER_AGENT },
       signal: controller.signal,
     })
   } finally {
     clearTimeout(timer)
   }
-
   if (!res.ok) {
-    throw new Error(`ListenBrainz weekly-jams fetch failed: ${res.status} ${res.statusText}`)
+    throw new Error(`ListenBrainz ${label} fetch failed: ${res.status} ${res.statusText}`)
   }
+  return (await res.json()) as T
+}
 
-  const data = (await res.json()) as UserPlaylistsResponse
-  const playlists = data.playlists ?? []
+const MBID_TAIL = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i
 
-  const jamsEntry = playlists.find((p) => p.playlist?.title?.toLowerCase().includes('weekly jams'))
-
-  if (!jamsEntry?.playlist) return { artists: [] }
-
-  const tracks = (jamsEntry.playlist.track ?? []).flatMap((t) =>
-    t.creator ? [{ name: t.creator }] : [],
+export async function fetchLbCreatedForPlaylist(
+  username: string,
+  token: string,
+  titlePrefix: 'Weekly Jams for' | 'Weekly Exploration for',
+  source: string,
+): Promise<AdapterResult> {
+  const label = source.replace('listenbrainz:', '')
+  const list = await lbGetJson<UserPlaylistsResponse>(
+    `${LB_BASE}/user/${encodeURIComponent(username)}/playlists/createdfor`,
+    token,
+    label,
   )
 
-  const artists = deduplicateByName(tracks, (t) => ({
-    name: t.name,
-    similarityScore: 0.6,
-    source: 'listenbrainz:weekly-jams',
-  }))
+  const prefix = titlePrefix.toLowerCase()
+  let newest: JspfPlaylist | undefined
+  for (const entry of list.playlists ?? []) {
+    const pl = entry.playlist
+    if (!pl?.title?.toLowerCase().startsWith(prefix)) continue
+    // `>=` keeps the later list entry on equal/missing dates (list order fallback).
+    if (!newest || (pl.date ?? '') >= (newest.date ?? '')) newest = pl
+  }
 
-  return { artists }
+  const mbid = newest?.identifier ? MBID_TAIL.exec(newest.identifier)?.[1] : undefined
+  if (!mbid) return { artists: [], tracks: [] }
+
+  const full = await lbGetJson<JspfResponse>(`${LB_BASE}/playlist/${mbid}`, token, label)
+  const jspfTracks = (full.playlist?.track ?? []).filter((t) => t.creator && t.title)
+
+  const tracks: DiscoveredTrack[] = jspfTracks.map((t, position) => {
+    const meta = t.extension?.[JSPF_TRACK_EXT]?.additional_metadata
+    const recordingMbid = t.identifier?.map((i) => RECORDING_URL.exec(i)?.[1]).find(Boolean)
+    return {
+      artistName: t.creator as string,
+      ...(meta?.artists?.[0]?.artist_mbid ? { artistMbid: meta.artists[0].artist_mbid } : {}),
+      title: t.title as string,
+      ...(recordingMbid ? { recordingMbid } : {}),
+      ...(t.album ? { album: t.album } : {}),
+      ...(meta?.caa_release_mbid ? { coverReleaseMbid: meta.caa_release_mbid } : {}),
+      position,
+      total: jspfTracks.length,
+      source,
+    }
+  })
+
+  return { artists: [], tracks }
 }

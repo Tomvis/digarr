@@ -45,6 +45,20 @@ export type AiRecommendation = {
   suggestedAlbum?: string
 }
 
+export type DiscoveredTrack = {
+  artistName: string
+  artistMbid?: string
+  title: string
+  recordingMbid?: string
+  album?: string
+  coverReleaseMbid?: string
+  /** 0-based index within the source playlist. */
+  position: number
+  /** Playlist length. */
+  total: number
+  source: string
+}
+
 export type DiscoveredArtist = {
   name: string
   mbid?: string
