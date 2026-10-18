@@ -1,4 +1,19 @@
 export const ja = {
+  'audiomuse.seedSummary': '{queried} 件の起点アーティストを検索、{results} 件で結果あり',
+  'audiomuse.invalid_url': 'AudioMuse-AI の URL が無効です。',
+  'audiomuse.token_unreadable': 'AudioMuse-AI のトークンを読み取れません - 入力し直してください。',
+  'settings.picker.audiomuse': 'インデックス済みライブラリの音響的な類似性。',
+  'settings.audiomuseDescription': 'AudioMuse-AIの音声解析で似たアーティストを探します。',
+  'settings.audiomuseToken': 'APIトークン（任意）',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI v3.6.4以降が必要です。基準となるアーティスト名をサーバーに送信します。自己署名証明書のTLS検証をスキップする場合は、信頼できるサーバーでのみ有効にしてください。',
+  'audiomuse.unreachable': 'AudioMuse-AIに接続できません。',
+  'audiomuse.not_indexed': 'AudioMuse-AIのアーティストインデックスが準備できていません。',
+  'audiomuse.artist_unknown': 'アーティストが不明か、インデックスに似たアーティストがありません。',
+  'audiomuse.authentication_required': 'AudioMuse-AIには有効なAPIトークンが必要です。',
+  'audiomuse.invalid_response': 'AudioMuse-AIから予期しない応答がありました。',
+  'audiomuse.request_failed': 'AudioMuse-AIがリクエストを拒否しました。',
+
   'discoveryModes.yourModes': '自分のモード',
   'discoveryModes.runMode': 'モードを実行',
   'discoveryModes.searchModes': 'モードを検索',
@@ -1132,7 +1147,7 @@ export const ja = {
   'settings.noConnectionsFound': '一致する接続はありません。',
   'settings.showExperimentalIntegrations': '実験的な連携を表示',
   'settings.experimentalIntegrationsHelp':
-    '接続、検索、ディスカバリーの選択肢に TIDAL と Bandcamp を表示します。非表示にしても既存の接続は動作します。',
+    '接続、検索、ディスカバリーの選択肢に AudioMuse-AI, TIDAL と Bandcamp を表示します。非表示にしても既存の接続は動作します。',
   'settings.picker.listening': '再生履歴',
   'settings.picker.streaming': 'ストリーミングアカウント',
   'settings.picker.servers': 'メディアサーバー',

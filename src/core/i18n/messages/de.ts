@@ -1,4 +1,19 @@
 export const de = {
+  'audiomuse.seedSummary': '{queried} Ausgangskünstler abgefragt, {results} mit Ergebnissen',
+  'audiomuse.invalid_url': 'Ungültige AudioMuse-AI-URL.',
+  'audiomuse.token_unreadable': 'AudioMuse-AI-Token nicht lesbar - gib es erneut ein.',
+  'settings.picker.audiomuse': 'Audioähnlichkeit aus deiner indexierten Mediathek.',
+  'settings.audiomuseDescription': 'Finde ähnliche Künstler mit der Audioanalyse von AudioMuse-AI.',
+  'settings.audiomuseToken': 'API-Token (optional)',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI ab v3.6.4. Sendet die Namen der Ausgangskünstler an deinen Server. Überspringe die TLS-Prüfung bei selbst signierten Zertifikaten nur für Server, denen du vertraust.',
+  'audiomuse.unreachable': 'AudioMuse-AI ist nicht erreichbar.',
+  'audiomuse.not_indexed': 'Der Künstlerindex von AudioMuse-AI ist noch nicht bereit.',
+  'audiomuse.artist_unknown': 'Künstler unbekannt oder keine ähnlichen Künstler im Index.',
+  'audiomuse.authentication_required': 'AudioMuse-AI benötigt ein gültiges API-Token.',
+  'audiomuse.invalid_response': 'Unerwartete Antwort von AudioMuse-AI.',
+  'audiomuse.request_failed': 'AudioMuse-AI hat die Anfrage abgelehnt.',
+
   'discoveryModes.yourModes': 'Deine Modi',
   'discoveryModes.runMode': 'Modus starten',
   'discoveryModes.searchModes': 'Modi suchen',
@@ -1156,7 +1171,7 @@ export const de = {
   'settings.noConnectionsFound': 'Keine passenden Verbindungen.',
   'settings.showExperimentalIntegrations': 'Experimentelle Integrationen anzeigen',
   'settings.experimentalIntegrationsHelp':
-    'Zeige TIDAL und Bandcamp in der Verbindungs-, Such- und Entdeckungsauswahl. Bestehende Verbindungen funktionieren auch ausgeblendet weiter.',
+    'Zeige AudioMuse-AI, TIDAL und Bandcamp in der Verbindungs-, Such- und Entdeckungsauswahl. Bestehende Verbindungen funktionieren auch ausgeblendet weiter.',
   'settings.picker.listening': 'Hörverlauf',
   'settings.picker.streaming': 'Streaming-Konten',
   'settings.picker.servers': 'Medienserver',

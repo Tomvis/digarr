@@ -1,4 +1,20 @@
 export const pl = {
+  'audiomuse.seedSummary': 'Sprawdzono {queried} artystów początkowych, {results} z wynikami',
+  'audiomuse.invalid_url': 'Nieprawidłowy adres URL AudioMuse-AI.',
+  'audiomuse.token_unreadable': 'Nie można odczytać tokenu AudioMuse-AI - wpisz go ponownie.',
+  'settings.picker.audiomuse': 'Podobieństwo dźwięku z twojej zindeksowanej biblioteki.',
+  'settings.audiomuseDescription':
+    'Znajdź podobnych wykonawców dzięki analizie dźwięku AudioMuse-AI.',
+  'settings.audiomuseToken': 'Token API (opcjonalny)',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI v3.6.4 lub nowszy. Wysyła nazwy wykonawców początkowych do twojego serwera. Pomijaj weryfikację TLS dla certyfikatów z podpisem własnym tylko na zaufanych serwerach.',
+  'audiomuse.unreachable': 'Nie można połączyć się z AudioMuse-AI.',
+  'audiomuse.not_indexed': 'Indeks wykonawców AudioMuse-AI nie jest gotowy.',
+  'audiomuse.artist_unknown': 'Nieznany wykonawca lub brak podobnych wykonawców w indeksie.',
+  'audiomuse.authentication_required': 'AudioMuse-AI wymaga poprawnego tokenu API.',
+  'audiomuse.invalid_response': 'Nieoczekiwana odpowiedź AudioMuse-AI.',
+  'audiomuse.request_failed': 'AudioMuse-AI odrzucił żądanie.',
+
   'discoveryModes.yourModes': 'Twoje tryby',
   'discoveryModes.runMode': 'Uruchom tryb',
   'discoveryModes.searchModes': 'Szukaj trybów',
@@ -1142,7 +1158,7 @@ export const pl = {
   'settings.noConnectionsFound': 'Brak pasujących połączeń.',
   'settings.showExperimentalIntegrations': 'Pokaż eksperymentalne integracje',
   'settings.experimentalIntegrationsHelp':
-    'Pokaż TIDAL i Bandcamp w wyborze połączeń, wyszukiwania i odkrywania. Istniejące połączenia działają także po ukryciu.',
+    'Pokaż AudioMuse-AI, TIDAL i Bandcamp w wyborze połączeń, wyszukiwania i odkrywania. Istniejące połączenia działają także po ukryciu.',
   'settings.picker.listening': 'Historia słuchania',
   'settings.picker.streaming': 'Konta streamingowe',
   'settings.picker.servers': 'Serwery multimediów',

@@ -1,4 +1,19 @@
 export const en = {
+  'audiomuse.seedSummary': '{queried} seeds queried, {results} with results',
+  'audiomuse.invalid_url': 'Invalid AudioMuse-AI URL.',
+  'audiomuse.token_unreadable': 'AudioMuse-AI token unreadable - re-enter it.',
+  'settings.picker.audiomuse': 'Audio similarity from your indexed library.',
+  'settings.audiomuseDescription': 'Find similar artists using AudioMuse-AI audio analysis.',
+  'settings.audiomuseToken': 'API token (optional)',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI v3.6.4 or newer. Sends seed artist names to your server. For a self-signed certificate, enable Skip TLS verification only for a server you trust.',
+  'audiomuse.unreachable': 'Cannot reach AudioMuse-AI.',
+  'audiomuse.not_indexed': 'AudioMuse-AI has no artist index ready.',
+  'audiomuse.artist_unknown': 'Artist unknown or no similar artists in the index.',
+  'audiomuse.authentication_required': 'AudioMuse-AI requires a valid API token.',
+  'audiomuse.invalid_response': 'Unexpected AudioMuse-AI response.',
+  'audiomuse.request_failed': 'AudioMuse-AI rejected the request.',
+
   'discoveryModes.yourModes': 'Your modes',
   'discoveryModes.runMode': 'Run a mode',
   'discoveryModes.searchModes': 'Search modes',
@@ -1137,7 +1152,7 @@ export const en = {
   'settings.noConnectionsFound': 'No matching connections.',
   'settings.showExperimentalIntegrations': 'Show experimental integrations',
   'settings.experimentalIntegrationsHelp':
-    'Show TIDAL and Bandcamp in connection, search and discovery pickers. Existing connections keep working when hidden.',
+    'Show AudioMuse-AI, TIDAL and Bandcamp in connection, search and discovery pickers. Existing connections keep working when hidden.',
   'settings.picker.listening': 'Listening history',
   'settings.picker.streaming': 'Streaming accounts',
   'settings.picker.servers': 'Media servers',

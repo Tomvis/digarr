@@ -1,4 +1,19 @@
 export const ro = {
+  'audiomuse.seedSummary': '{queried} artiști de pornire căutați, {results} cu rezultate',
+  'audiomuse.invalid_url': 'URL AudioMuse-AI nevalid.',
+  'audiomuse.token_unreadable': 'Tokenul AudioMuse-AI nu poate fi citit - introdu-l din nou.',
+  'settings.picker.audiomuse': 'Similaritate audio din biblioteca ta indexată.',
+  'settings.audiomuseDescription': 'Găsește artiști similari prin analiza audio AudioMuse-AI.',
+  'settings.audiomuseToken': 'Token API (opțional)',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI v3.6.4 sau mai nou. Trimite numele artiștilor de referință către serverul tău. Omite verificarea TLS pentru certificate autosemnate doar pe servere în care ai încredere.',
+  'audiomuse.unreachable': 'AudioMuse-AI nu poate fi accesat.',
+  'audiomuse.not_indexed': 'Indexul de artiști AudioMuse-AI nu este pregătit.',
+  'audiomuse.artist_unknown': 'Artist necunoscut sau fără artiști similari în index.',
+  'audiomuse.authentication_required': 'AudioMuse-AI necesită un token API valid.',
+  'audiomuse.invalid_response': 'Răspuns neașteptat de la AudioMuse-AI.',
+  'audiomuse.request_failed': 'AudioMuse-AI a respins cererea.',
+
   'discoveryModes.yourModes': 'Modurile tale',
   'discoveryModes.runMode': 'Rulează un mod',
   'discoveryModes.searchModes': 'Caută moduri',
@@ -1147,7 +1162,7 @@ export const ro = {
   'settings.noConnectionsFound': 'Nicio conexiune potrivită.',
   'settings.showExperimentalIntegrations': 'Arată integrările experimentale',
   'settings.experimentalIntegrationsHelp':
-    'Arată TIDAL și Bandcamp în selectoarele de conexiuni, căutare și descoperire. Conexiunile existente funcționează și când sunt ascunse.',
+    'Arată AudioMuse-AI, TIDAL și Bandcamp în selectoarele de conexiuni, căutare și descoperire. Conexiunile existente funcționează și când sunt ascunse.',
   'settings.picker.listening': 'Istoric de ascultare',
   'settings.picker.streaming': 'Conturi de streaming',
   'settings.picker.servers': 'Servere media',

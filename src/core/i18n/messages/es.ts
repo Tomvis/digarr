@@ -1,4 +1,21 @@
 export const es = {
+  'audiomuse.seedSummary': '{queried} artistas iniciales consultados, {results} con resultados',
+  'audiomuse.invalid_url': 'URL de AudioMuse-AI no válida.',
+  'audiomuse.token_unreadable':
+    'No se puede leer el token de AudioMuse-AI - vuelve a introducirlo.',
+  'settings.picker.audiomuse': 'Similitud de audio de tu biblioteca indexada.',
+  'settings.audiomuseDescription':
+    'Encuentra artistas similares con el análisis de audio de AudioMuse-AI.',
+  'settings.audiomuseToken': 'Token de API (opcional)',
+  'settings.audiomuseHelp':
+    'AudioMuse-AI v3.6.4 o posterior. Envía nombres de artistas de referencia a tu servidor. Omite la verificación TLS con certificados autofirmados solo en servidores de confianza.',
+  'audiomuse.unreachable': 'No se puede conectar con AudioMuse-AI.',
+  'audiomuse.not_indexed': 'El índice de artistas de AudioMuse-AI no está listo.',
+  'audiomuse.artist_unknown': 'Artista desconocido o sin artistas similares en el índice.',
+  'audiomuse.authentication_required': 'AudioMuse-AI necesita un token de API válido.',
+  'audiomuse.invalid_response': 'Respuesta inesperada de AudioMuse-AI.',
+  'audiomuse.request_failed': 'AudioMuse-AI ha rechazado la solicitud.',
+
   'discoveryModes.yourModes': 'Tus modos',
   'discoveryModes.runMode': 'Ejecutar un modo',
   'discoveryModes.searchModes': 'Buscar modos',
@@ -1150,7 +1167,7 @@ export const es = {
   'settings.noConnectionsFound': 'No hay conexiones que coincidan.',
   'settings.showExperimentalIntegrations': 'Mostrar integraciones experimentales',
   'settings.experimentalIntegrationsHelp':
-    'Muestra TIDAL y Bandcamp en los selectores de conexiones, búsqueda y descubrimiento. Las conexiones existentes siguen funcionando aunque estén ocultas.',
+    'Muestra AudioMuse-AI, TIDAL y Bandcamp en los selectores de conexiones, búsqueda y descubrimiento. Las conexiones existentes siguen funcionando aunque estén ocultas.',
   'settings.picker.listening': 'Historial de escucha',
   'settings.picker.streaming': 'Cuentas de streaming',
   'settings.picker.servers': 'Servidores multimedia',
