@@ -425,9 +425,13 @@ export async function getGenreArtists(
   limit = 20,
   userId?: number,
 ): Promise<GenreArtistResult[]> {
-  const genreCondition = sql`EXISTS (
-    SELECT 1 FROM unnest(${artists.genres}) g WHERE lower(g) = lower(${genreName})
-  )`
+  // Song recs are not artist recommendations, so they stay out of every view.
+  const genreCondition = and(
+    sql`EXISTS (
+      SELECT 1 FROM unnest(${artists.genres}) g WHERE lower(g) = lower(${genreName})
+    )`,
+    ne(recommendations.kind, 'track'),
+  )
 
   if (view === 'recommended') {
     const userCondition = userId ? eq(recommendations.userId, userId) : sql`TRUE`

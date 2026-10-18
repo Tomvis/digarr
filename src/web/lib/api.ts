@@ -1051,6 +1051,7 @@ export type ActivityEntry = {
   timestamp: string
   data: {
     artistName?: string
+    trackTitle?: string
     subscriptionName?: string
     artistsFound?: number
     artistsNew?: number

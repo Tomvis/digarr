@@ -121,6 +121,7 @@ export async function getTopGenres(db: Database): Promise<GenreStat[]> {
     FROM recommendations r
     JOIN artists a ON a.id = r.artist_id
     WHERE a.genres IS NOT NULL
+      AND r.kind <> 'track'
     GROUP BY genre
     ORDER BY count DESC
     LIMIT 20

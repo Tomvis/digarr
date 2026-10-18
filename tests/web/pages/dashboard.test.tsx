@@ -345,6 +345,22 @@ describe('Dashboard', () => {
     })
   })
 
+  it('names the song in a track rec activity entry', async () => {
+    setupMocks()
+    mockGetDashboardActivity.mockResolvedValue([
+      {
+        type: 'approved',
+        timestamp: new Date().toISOString(),
+        data: { artistName: 'Mogwai', trackTitle: 'Auto Rock' },
+      },
+    ])
+    renderWithQuery(<Dashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Approved Mogwai - Auto Rock/)).toBeInTheDocument()
+    })
+  })
+
   it('renders subscription pulse', async () => {
     setupMocks()
     renderWithQuery(<Dashboard />)

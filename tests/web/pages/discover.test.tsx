@@ -120,6 +120,8 @@ const makeRec = (
     aiReasoning: string | null
     sources: Record<string, number> | null
     lidarrError: string | null
+    kind: 'artist' | 'album' | 'track'
+    recommendedTrackTitle: string | null
   }> = {},
 ) => ({
   id: 1,

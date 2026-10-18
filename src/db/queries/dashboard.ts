@@ -33,6 +33,7 @@ export async function getTopGenresForUser(
       JOIN artists a ON a.id = r.artist_id
       WHERE r.status IN ('approved', 'added_to_lidarr', 'add_failed')
         AND a.genres IS NOT NULL
+        AND r.kind <> 'track'
         ${userClause}
     )
     SELECT
@@ -100,6 +101,7 @@ export type ActivityEntry = {
   timestamp: string
   data: {
     artistName?: string
+    trackTitle?: string
     subscriptionName?: string
     artistsFound?: number
     artistsNew?: number
@@ -128,6 +130,8 @@ export async function getRecentActivity(
       status: recommendations.status,
       actedOnAt: recommendations.actedOnAt,
       artistName: artists.name,
+      kind: recommendations.kind,
+      trackTitle: recommendations.recommendedTrackTitle,
       userId: recommendations.userId,
     })
     .from(recommendations)
@@ -155,6 +159,7 @@ export async function getRecentActivity(
       timestamp: rec.actedOnAt?.toISOString() ?? '',
       data: {
         artistName: rec.artistName,
+        ...(rec.kind === 'track' && rec.trackTitle ? { trackTitle: rec.trackTitle } : {}),
         username: isAdmin && rec.userId ? userMap.get(rec.userId) : undefined,
       },
     })

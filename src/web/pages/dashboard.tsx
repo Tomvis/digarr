@@ -387,6 +387,10 @@ function TasteProfile({
   )
 }
 
+function activitySubject(data: { artistName?: string; trackTitle?: string }): string {
+  return data.trackTitle ? `${data.artistName} - ${data.trackTitle}` : (data.artistName ?? '')
+}
+
 function ActivityFeed({
   entries,
   loading,
@@ -411,7 +415,7 @@ function ActivityFeed({
           <div className="divide-y divide-border">
             {entries.map((entry) => (
               <div
-                key={`${entry.type}-${entry.timestamp}-${entry.data.artistName ?? entry.data.subscriptionName ?? ''}`}
+                key={`${entry.type}-${entry.timestamp}-${entry.data.artistName ?? entry.data.subscriptionName ?? ''}-${entry.data.trackTitle ?? ''}`}
                 className="flex items-center gap-3 px-4 py-2.5"
               >
                 <span className="text-xs shrink-0">
@@ -429,9 +433,9 @@ function ActivityFeed({
                       <span className="text-muted">{entry.data.username}: </span>
                     )}
                     {entry.type === 'approved' &&
-                      `${t('dashboard.activityApproved')} ${entry.data.artistName}`}
+                      `${t('dashboard.activityApproved')} ${activitySubject(entry.data)}`}
                     {entry.type === 'rejected' &&
-                      `${t('dashboard.activityRejected')} ${entry.data.artistName}`}
+                      `${t('dashboard.activityRejected')} ${activitySubject(entry.data)}`}
                     {entry.type === 'subscription_run' &&
                       `${entry.data.subscriptionName}: ${entry.data.artistsNew} ${t('dashboard.activityNew')}`}
                     {entry.type === 'scan_completed' &&
