@@ -8,6 +8,8 @@ export type ScoredTrack = DiscoveredTrack & { score: number }
 
 type SelectOptions = {
   known: Set<string>
+  /** Permanently blocked artist MBIDs: their tracks are never recommended. */
+  blocked?: Set<string>
   isOwned?: (artistName: string, title: string) => Promise<boolean>
   threshold: number
   cap?: number
@@ -19,7 +21,7 @@ function trackScore(position: number, total: number): number {
 }
 
 /**
- * Dedupe, score, threshold and owned-filter discovered tracks. Owned checks run
+ * Dedupe, block-filter, score, threshold and owned-filter discovered tracks. Owned checks run
  * best-first and stop once `cap` tracks are kept, so they are not wasted on
  * tracks that would be cut anyway.
  */
@@ -31,6 +33,7 @@ export async function selectTracks(
   const candidates: ScoredTrack[] = []
   for (const t of tracks) {
     if (!t.recordingMbid || !t.artistMbid) continue
+    if (opts.blocked?.has(t.artistMbid)) continue
     if (seen.has(t.recordingMbid) || opts.known.has(t.recordingMbid)) continue
     seen.add(t.recordingMbid)
     const score = trackScore(t.position, t.total)

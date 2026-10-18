@@ -238,6 +238,7 @@ export async function runSubscription(
         : new Set<string>()
       const selected = await selectTracks(tracks, {
         known,
+        blocked: deps.blockedMbids,
         isOwned: deps.isTrackOwned,
         threshold: subscription.scoreThreshold ?? deps.defaultScoreThreshold,
         cap: subscription.maxArtistsPerRun ?? undefined,

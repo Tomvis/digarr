@@ -83,6 +83,19 @@ describe('selectTracks', () => {
     })
     expect(out.map((t) => t.title)).toEqual(['t1'])
   })
+
+  it('skips tracks by blocked artists before owned checks', async () => {
+    const isOwned = vi.fn(async () => false)
+    const out = await selectTracks(
+      [
+        track({ artistMbid: 'blocked', recordingMbid: 'r-1', title: 'gone' }),
+        track({ artistMbid: 'a-2', recordingMbid: 'r-2', title: 'kept' }),
+      ],
+      { ...base, blocked: new Set(['blocked']), isOwned },
+    )
+    expect(out.map((t) => t.title)).toEqual(['kept'])
+    expect(isOwned).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('storeTracks', () => {

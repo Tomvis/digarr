@@ -168,6 +168,39 @@ describe('runSubscription', () => {
     expect(result.batchId).toBe(99)
   })
 
+  it("skips tracks by the user's blocked artists", async () => {
+    const deps = makeDeps({
+      blockedMbids: new Set(['a-blocked']),
+      mbClient: {
+        lookupArtist: vi.fn().mockResolvedValue({ name: 'Artist' }),
+        searchArtist: vi.fn(),
+        extractStreamingUrls: vi.fn().mockReturnValue({}),
+      },
+    })
+    const mk = (n: string, artistMbid: string, position: number) => ({
+      artistName: artistMbid,
+      artistMbid,
+      title: n,
+      recordingMbid: n,
+      position,
+      total: 10,
+      source: 'weekly-jams',
+    })
+    const adapter = makeAdapter({
+      fetch: vi.fn().mockResolvedValue({
+        artists: [],
+        tracks: [mk('r-1', 'a-blocked', 0), mk('r-2', 'a-ok', 1)],
+      }),
+    })
+
+    await runSubscription(makeSubscription({ userId: 4 }), adapter, deps)
+
+    expect(deps.db.insertRecommendation).toHaveBeenCalledTimes(1)
+    expect(deps.db.insertRecommendation).toHaveBeenCalledWith(
+      expect.objectContaining({ recommendedRecordingMbid: 'r-2' }),
+    )
+  })
+
   it('completes empty when adapter returns no artists', async () => {
     const subscription = makeSubscription()
     const deps = makeDeps()
