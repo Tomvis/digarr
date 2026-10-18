@@ -125,6 +125,7 @@ export const it = {
   'discover.kind.all': 'Tutto',
   'discover.kind.artists': 'Artisti',
   'discover.kind.albums': 'Album',
+  'discover.kind.track': 'Brani',
   'discover.pending': 'In sospeso',
   'discover.approved': 'Approvato',
   'discover.rejected': 'Rifiutato',
@@ -143,6 +144,9 @@ export const it = {
   'discover.emptyAlbums': 'Nessun consiglio di album in questa vista.',
   'discover.emptyAlbumsHelp':
     'Una scansione normale trova artisti. Usa una delle opzioni seguenti per generare consigli di album.',
+  'discover.emptyTracks': 'Nessun brano consigliato in questa vista.',
+  'discover.emptyTracksHelp':
+    'I brani consigliati derivano dalla tua cronologia ListenBrainz quando la sorgente dei brani è attiva.',
   'discover.emptyPending': 'Nessuna raccomandazione in sospeso. Sei in pari.',
   'discover.emptyRejected': 'Nessuna raccomandazione rifiutata.',
   'genres.title': 'Generi musicali',
@@ -758,6 +762,7 @@ export const it = {
   'recommendation.select': 'Seleziona',
   'recommendation.startWith': 'Inizia con',
   'recommendation.albumBadge': 'Album',
+  'recommendation.trackBadge': 'Brano',
   'recommendation.metadataCached': 'Metadati memorizzati nella cache',
   'recommendation.warmingCache': 'Riscaldamento della cache...',
   'recommendation.clickHint':
@@ -1689,6 +1694,7 @@ export const it = {
   'target.action.addToSpotifyPlaylist': 'Aggiungi alla playlist Spotify',
   'target.action.sendTo': 'Invia a {0}',
   'target.action.addToLidarr': 'Aggiungi a Lidarr',
+  'target.action.wantedInLidarr': 'Desiderato in Lidarr',
   'pipeline.message.loadingLibrary': 'Caricamento della libreria...',
   'pipeline.message.firstSyncBackground':
     'La prima sincronizzazione della libreria è in esecuzione in background -- proseguiamo senza di essa',

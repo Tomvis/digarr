@@ -122,6 +122,60 @@ describe('RecommendationCard', () => {
     expect(screen.getByText('82%')).toBeInTheDocument()
   })
 
+  describe('kind=track', () => {
+    const trackRec = (overrides: Partial<Recommendation> = {}) =>
+      makeRec({
+        kind: 'track',
+        recommendedRecordingMbid: 'rec-1',
+        recommendedTrackTitle: 'Cockroach King',
+        recommendedTrackAlbum: 'Fauna',
+        recommendedCoverReleaseMbid: 'd7fae1b8-0000-0000-0000-000000000000',
+        recommendedReleaseGroupTitle: null,
+        artist: { ...makeRec().artist, name: 'Haken', imageUrl: 'https://img.example/haken.jpg' },
+        ...overrides,
+      })
+
+    it('renders the Song badge, track title, artist - album subtitle and no Start with line', () => {
+      const { container } = withPreview(
+        <RecommendationCard
+          recommendation={trackRec()}
+          onApprove={onApprove}
+          onReject={onReject}
+        />,
+      )
+      expect(container.querySelector('[data-testid="rec-kind-track"]')).toHaveTextContent('Song')
+      expect(screen.getByRole('heading', { name: 'Cockroach King' })).toBeInTheDocument()
+      expect(screen.getByText('Haken · Fauna')).toBeInTheDocument()
+      expect(screen.queryByText(/Start with/)).not.toBeInTheDocument()
+    })
+
+    it('uses the Cover Art Archive release cover', () => {
+      const { container } = withPreview(
+        <RecommendationCard
+          recommendation={trackRec()}
+          onApprove={onApprove}
+          onReject={onReject}
+        />,
+      )
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        'https://coverartarchive.org/release/d7fae1b8-0000-0000-0000-000000000000/front-250',
+      )
+    })
+
+    it('falls back to the artist image when there is no cover release', () => {
+      const { container } = withPreview(
+        <RecommendationCard
+          recommendation={trackRec({ recommendedCoverReleaseMbid: null })}
+          onApprove={onApprove}
+          onReject={onReject}
+        />,
+      )
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        'https://img.example/haken.jpg',
+      )
+    })
+  })
+
   it('renders the album as the primary unit for kind=album', () => {
     const { container } = withPreview(
       <RecommendationCard

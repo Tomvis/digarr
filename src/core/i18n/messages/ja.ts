@@ -125,6 +125,7 @@ export const ja = {
   'discover.kind.all': 'すべて',
   'discover.kind.artists': 'アーティスト',
   'discover.kind.albums': 'アルバム',
+  'discover.kind.track': '楽曲',
   'discover.pending': '保留中',
   'discover.approved': '承認済み',
   'discover.rejected': '拒否されました',
@@ -143,6 +144,9 @@ export const ja = {
   'discover.emptyAlbums': 'この表示にはアルバムのおすすめがありません。',
   'discover.emptyAlbumsHelp':
     '通常のスキャンではアーティストを探します。以下のいずれかの方法でアルバムのおすすめを生成できます。',
+  'discover.emptyTracks': 'このビューに楽曲のおすすめはありません。',
+  'discover.emptyTracksHelp':
+    '楽曲ソースを有効にすると、ListenBrainz の再生履歴からおすすめ楽曲が表示されます。',
   'discover.emptyPending': '保留中のおすすめはありません。すべて確認済みです。',
   'discover.emptyRejected': '拒否された推奨事項はありません。',
   'genres.title': '音楽ジャンル',
@@ -749,6 +753,7 @@ export const ja = {
   'recommendation.select': '選択',
   'recommendation.startWith': 'から始める',
   'recommendation.albumBadge': 'アルバム',
+  'recommendation.trackBadge': '楽曲',
   'recommendation.metadataCached': 'キャッシュされたメタデータ',
   'recommendation.warmingCache': 'キャッシュを温めています...',
   'recommendation.clickHint':
@@ -1665,6 +1670,7 @@ export const ja = {
   'target.action.addToSpotifyPlaylist': 'Spotifyプレイリストに追加',
   'target.action.sendTo': '{0}に送信',
   'target.action.addToLidarr': 'Lidarrに追加',
+  'target.action.wantedInLidarr': 'Lidarr でウォント済み',
   'pipeline.message.loadingLibrary': 'ライブラリを読み込み中...',
   'pipeline.message.firstSyncBackground':
     '初回のライブラリ同期がバックグラウンドで実行中です -- 同期を待たずに進めます',

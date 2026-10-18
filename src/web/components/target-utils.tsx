@@ -70,6 +70,8 @@ export function targetActionLabel(
     case 'navidrome':
     case 'jellyfin':
       return t('target.action.favoriteIn').replace('{0}', name)
+    case 'songpick':
+      return t('target.action.wantedInLidarr')
     case 'spotify-playlist':
       return t('target.action.addToSpotifyPlaylist')
     default:

@@ -124,6 +124,7 @@ export const ru = {
   'discover.kind.all': 'Все',
   'discover.kind.artists': 'Исполнители',
   'discover.kind.albums': 'Альбомы',
+  'discover.kind.track': 'Треки',
   'discover.pending': 'Ожидается',
   'discover.approved': 'Утверждено',
   'discover.rejected': 'Отклонено',
@@ -142,6 +143,9 @@ export const ru = {
   'discover.emptyAlbums': 'В этом представлении нет рекомендаций альбомов.',
   'discover.emptyAlbumsHelp':
     'Обычное сканирование ищет исполнителей. Используйте один из вариантов ниже, чтобы создать рекомендации альбомов.',
+  'discover.emptyTracks': 'В этом представлении нет рекомендаций треков.',
+  'discover.emptyTracksHelp':
+    'Рекомендации треков берутся из истории прослушиваний ListenBrainz после включения источника треков.',
   'discover.emptyPending': 'Нет ожидающих рекомендаций. Вы уже всё просмотрели.',
   'discover.emptyRejected': 'Нет отклоненных рекомендаций.',
   'genres.title': 'Музыкальные жанры',
@@ -756,6 +760,7 @@ export const ru = {
   'recommendation.select': 'Выбрать',
   'recommendation.startWith': 'Начните с',
   'recommendation.albumBadge': 'Альбом',
+  'recommendation.trackBadge': 'Трек',
   'recommendation.metadataCached': 'Метаданные кэшируются',
   'recommendation.warmingCache': 'Потепление кэша...',
   'recommendation.clickHint':
@@ -1689,6 +1694,7 @@ export const ru = {
   'target.action.addToSpotifyPlaylist': 'Добавить в плейлист Spotify',
   'target.action.sendTo': 'Отправить в {0}',
   'target.action.addToLidarr': 'Добавить в Lidarr',
+  'target.action.wantedInLidarr': 'Желаемый в Lidarr',
   'pipeline.message.loadingLibrary': 'Загрузка вашей библиотеки...',
   'pipeline.message.firstSyncBackground':
     'Первая синхронизация библиотеки работает в фоне -- продолжаем без неё',

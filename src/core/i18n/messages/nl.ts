@@ -125,6 +125,7 @@ export const nl = {
   'discover.kind.all': 'Allemaal',
   'discover.kind.artists': 'Artiesten',
   'discover.kind.albums': 'Albums',
+  'discover.kind.track': 'Nummers',
   'discover.pending': 'In behandeling',
   'discover.approved': 'Goedgekeurd',
   'discover.rejected': 'Afgewezen',
@@ -143,6 +144,9 @@ export const nl = {
   'discover.emptyAlbums': 'Geen albumaanbevelingen in deze weergave.',
   'discover.emptyAlbumsHelp':
     'Een normale scan zoekt artiesten. Gebruik een van de onderstaande opties om albumaanbevelingen te maken.',
+  'discover.emptyTracks': 'Geen nummeraanbevelingen in deze weergave.',
+  'discover.emptyTracksHelp':
+    'Nummertips komen uit je ListenBrainz-luistergeschiedenis zodra de nummerbron is ingeschakeld.',
   'discover.emptyPending': 'Geen openstaande aanbevelingen. U bent helemaal bij.',
   'discover.emptyRejected': 'Geen afgewezen aanbevelingen.',
   'genres.title': 'Muziekgenres',
@@ -755,6 +759,7 @@ export const nl = {
   'recommendation.select': 'Selecteer',
   'recommendation.startWith': 'Begin met',
   'recommendation.albumBadge': 'Album',
+  'recommendation.trackBadge': 'Nummer',
   'recommendation.metadataCached': 'Metagegevens in cache',
   'recommendation.warmingCache': 'Opwarmende cache...',
   'recommendation.clickHint':
@@ -1682,6 +1687,7 @@ export const nl = {
   'target.action.addToSpotifyPlaylist': 'Toevoegen aan Spotify-afspeellijst',
   'target.action.sendTo': 'Verzenden naar {0}',
   'target.action.addToLidarr': 'Toevoegen aan Lidarr',
+  'target.action.wantedInLidarr': 'Gewenst in Lidarr',
   'pipeline.message.loadingLibrary': 'Je bibliotheek wordt geladen...',
   'pipeline.message.firstSyncBackground':
     'Eerste bibliotheeksynchronisatie loopt op de achtergrond -- we gaan zonder verder',

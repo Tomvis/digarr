@@ -125,6 +125,7 @@ export const ro = {
   'discover.kind.all': 'Toate',
   'discover.kind.artists': 'Artiști',
   'discover.kind.albums': 'Albume',
+  'discover.kind.track': 'Piese',
   'discover.pending': 'În așteptare',
   'discover.approved': 'Aprobat',
   'discover.rejected': 'Respins',
@@ -143,6 +144,9 @@ export const ro = {
   'discover.emptyAlbums': 'Nu există recomandări de albume în această vizualizare.',
   'discover.emptyAlbumsHelp':
     'O scanare normală caută artiști. Folosiți una dintre opțiunile de mai jos pentru a genera recomandări de albume.',
+  'discover.emptyTracks': 'Nicio recomandare de piese în această vizualizare.',
+  'discover.emptyTracksHelp':
+    'Recomandările de piese vin din istoricul tău ListenBrainz după activarea sursei de piese.',
   'discover.emptyPending': 'Nicio recomandare în așteptare. Sunteți la zi.',
   'discover.emptyRejected': 'Nicio recomandare respinsă.',
   'genres.title': 'Genuri',
@@ -755,6 +759,7 @@ export const ro = {
   'recommendation.select': 'Selectați',
   'recommendation.startWith': 'Începeți cu',
   'recommendation.albumBadge': 'Album',
+  'recommendation.trackBadge': 'Piesă',
   'recommendation.metadataCached': 'Metadatele stocate în cache',
   'recommendation.warmingCache': 'Se încălzește memoria cache...',
   'recommendation.clickHint':
@@ -1686,6 +1691,7 @@ export const ro = {
   'target.action.addToSpotifyPlaylist': 'Adaugă la lista Spotify',
   'target.action.sendTo': 'Trimite la {0}',
   'target.action.addToLidarr': 'Adaugă la Lidarr',
+  'target.action.wantedInLidarr': 'Dorită în Lidarr',
   'pipeline.message.loadingLibrary': 'Se încarcă biblioteca ta...',
   'pipeline.message.firstSyncBackground':
     'Prima sincronizare a bibliotecii rulează în fundal -- continuăm fără ea',

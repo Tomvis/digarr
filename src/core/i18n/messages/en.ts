@@ -124,6 +124,7 @@ export const en = {
   'discover.kind.all': 'All',
   'discover.kind.artists': 'Artists',
   'discover.kind.albums': 'Albums',
+  'discover.kind.track': 'Songs',
   'discover.pending': 'Pending',
   'discover.approved': 'Approved',
   'discover.rejected': 'Rejected',
@@ -142,6 +143,9 @@ export const en = {
   'discover.emptyAlbums': 'No album recommendations in this view.',
   'discover.emptyAlbumsHelp':
     'A normal scan finds artists. Use one of the options below to generate album recommendations.',
+  'discover.emptyTracks': 'No song recommendations in this view.',
+  'discover.emptyTracksHelp':
+    'Song picks come from your ListenBrainz listening history once the song source is enabled.',
   'discover.emptyPending': "No pending recommendations. You're all caught up.",
   'discover.emptyRejected': 'No rejected recommendations.',
   'genres.title': 'Genres',
@@ -740,6 +744,7 @@ export const en = {
   'recommendation.select': 'Select',
   'recommendation.startWith': 'Start with',
   'recommendation.albumBadge': 'Album',
+  'recommendation.trackBadge': 'Song',
   'recommendation.metadataCached': 'Metadata cached',
   'recommendation.warmingCache': 'Warming cache...',
   'recommendation.clickHint':
@@ -1726,6 +1731,7 @@ export const en = {
   'target.action.addToSpotifyPlaylist': 'Add to Spotify playlist',
   'target.action.sendTo': 'Send to {0}',
   'target.action.addToLidarr': 'Add to Lidarr',
+  'target.action.wantedInLidarr': 'Wanted in Lidarr',
 
   // Pipeline progress messages (emitted via SSE, shown in the UI)
   'pipeline.message.loadingLibrary': 'Loading your library...',

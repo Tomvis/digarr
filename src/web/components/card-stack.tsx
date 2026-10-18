@@ -85,7 +85,11 @@ function StackCard({
       <div className="relative h-48 sm:h-56 bg-bg overflow-hidden shrink-0">
         <ArtistThumb
           name={rec.artist.name}
-          imageUrl={rec.artist.imageUrl}
+          imageUrl={
+            rec.kind === 'track' && rec.recommendedCoverReleaseMbid
+              ? `https://coverartarchive.org/release/${rec.recommendedCoverReleaseMbid}/front-250`
+              : rec.artist.imageUrl
+          }
           fill
           className="text-4xl"
         />
@@ -101,7 +105,18 @@ function StackCard({
       <div className="flex flex-col flex-1 p-4 gap-3">
         {/* Artist name + disambiguation */}
         <div>
-          <h2 className="text-xl font-bold text-text leading-tight">{rec.artist.name}</h2>
+          <h2 className="text-xl font-bold text-text leading-tight">
+            {rec.kind === 'track'
+              ? (rec.recommendedTrackTitle ?? rec.artist.name)
+              : rec.artist.name}
+          </h2>
+          {rec.kind === 'track' && (
+            <p className="text-xs text-muted mt-0.5">
+              {rec.recommendedTrackAlbum
+                ? `${rec.artist.name} · ${rec.recommendedTrackAlbum}`
+                : rec.artist.name}
+            </p>
+          )}
           {rec.artist.disambiguation && (
             <p className="text-xs text-muted mt-0.5">{rec.artist.disambiguation}</p>
           )}

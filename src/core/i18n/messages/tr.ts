@@ -124,6 +124,7 @@ export const tr = {
   'discover.kind.all': 'Hepsi',
   'discover.kind.artists': 'Sanatçılar',
   'discover.kind.albums': 'Albümler',
+  'discover.kind.track': 'Şarkılar',
   'discover.pending': 'Beklemede',
   'discover.approved': 'Onaylandı',
   'discover.rejected': 'Reddedildi',
@@ -142,6 +143,9 @@ export const tr = {
   'discover.emptyAlbums': 'Bu görünümde albüm önerisi yok.',
   'discover.emptyAlbumsHelp':
     'Normal tarama sanatçıları bulur. Albüm önerileri oluşturmak için aşağıdaki seçeneklerden birini kullanın.',
+  'discover.emptyTracks': 'Bu görünümde şarkı önerisi yok.',
+  'discover.emptyTracksHelp':
+    'Şarkı önerileri, şarkı kaynağı etkinleştirildiğinde ListenBrainz dinleme geçmişinizden gelir.',
   'discover.emptyPending': 'Bekleyen öneri yok. Her şey güncel.',
   'discover.emptyRejected': 'Reddedilen öneri yok.',
   'genres.title': 'Müzik türleri',
@@ -744,6 +748,7 @@ export const tr = {
   'recommendation.select': 'Seç',
   'recommendation.startWith': 'Şununla başla:',
   'recommendation.albumBadge': 'Albüm',
+  'recommendation.trackBadge': 'Şarkı',
   'recommendation.metadataCached': 'Meta veriler önbelleğe alındı',
   'recommendation.warmingCache': 'Önbellek ısınıyor...',
   'recommendation.clickHint':
@@ -1670,6 +1675,7 @@ export const tr = {
   'target.action.addToSpotifyPlaylist': 'Spotify çalma listesine ekle',
   'target.action.sendTo': "{0}'a gönder",
   'target.action.addToLidarr': "Lidarr'a ekle",
+  'target.action.wantedInLidarr': "Lidarr'da istenen",
   'pipeline.message.loadingLibrary': 'Kitaplığın yükleniyor...',
   'pipeline.message.firstSyncBackground':
     'İlk kitaplık eşitlemesi arka planda çalışıyor -- bunu beklemeden devam ediliyor',

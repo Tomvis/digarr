@@ -124,6 +124,7 @@ export const ko = {
   'discover.kind.all': '모두',
   'discover.kind.artists': '아티스트',
   'discover.kind.albums': '앨범',
+  'discover.kind.track': '곡',
   'discover.pending': '보류 중',
   'discover.approved': '승인됨',
   'discover.rejected': '거부됨',
@@ -142,6 +143,9 @@ export const ko = {
   'discover.emptyAlbums': '이 보기에는 앨범 추천이 없습니다.',
   'discover.emptyAlbumsHelp':
     '일반 스캔은 아티스트를 찾습니다. 아래 옵션 중 하나를 사용해 앨범 추천을 생성하세요.',
+  'discover.emptyTracks': '이 보기에는 곡 추천이 없습니다.',
+  'discover.emptyTracksHelp':
+    '곡 소스를 활성화하면 ListenBrainz 청취 기록에서 곡 추천이 만들어집니다.',
   'discover.emptyPending': '대기 중인 추천이 없습니다. 모두 확인한 상태입니다.',
   'discover.emptyRejected': '거부된 추천이 없습니다.',
   'genres.title': '음악 장르',
@@ -742,6 +746,7 @@ export const ko = {
   'recommendation.select': '선택',
   'recommendation.startWith': '다음으로 시작',
   'recommendation.albumBadge': '앨범',
+  'recommendation.trackBadge': '곡',
   'recommendation.metadataCached': '캐시된 메타데이터',
   'recommendation.warmingCache': '캐시를 따뜻하게 하는 중...',
   'recommendation.clickHint':
@@ -1641,6 +1646,7 @@ export const ko = {
   'target.action.addToSpotifyPlaylist': 'Spotify 재생목록에 추가',
   'target.action.sendTo': '{0}(으)로 전송',
   'target.action.addToLidarr': 'Lidarr에 추가',
+  'target.action.wantedInLidarr': 'Lidarr에서 원함',
   'pipeline.message.loadingLibrary': '라이브러리를 불러오는 중...',
   'pipeline.message.firstSyncBackground':
     '첫 라이브러리 동기화가 백그라운드에서 실행 중입니다 -- 동기화 없이 진행합니다',

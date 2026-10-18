@@ -14,10 +14,13 @@ import { Skeleton } from './ui/skeleton'
 
 export type Recommendation = {
   id: number
+  kind?: 'artist' | 'album' | 'track'
   score: number
   status: string
   aiReasoning?: string | null
   recommendedReleaseGroupId?: string | null
+  recommendedTrackTitle?: string | null
+  recommendedTrackAlbum?: string | null
   artist: {
     id: number
     name: string
@@ -61,9 +64,11 @@ export function TodaysPick({
   const [coverError, setCoverError] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const actionableTargets = (targets ?? []).filter((target) =>
-    canApproveArtistToTarget(target.type),
-  )
+  // Song picks always use the plain approve (songpick); no per-target choice.
+  const isTrack = rec?.kind === 'track'
+  const actionableTargets = isTrack
+    ? []
+    : (targets ?? []).filter((target) => canApproveArtistToTarget(target.type))
   const standaloneApproveTarget = actionableTargets.length === 1 ? actionableTargets[0] : undefined
 
   useClickOutside(dropdownRef, () => setDropdownOpen(false), dropdownOpen)
@@ -205,6 +210,15 @@ export function TodaysPick({
       <div className="flex flex-col flex-1 min-w-0">
         {/* Content */}
         <div className="p-4 md:p-5 overflow-y-auto min-h-0 flex-1 space-y-3">
+          {isTrack && rec.recommendedTrackTitle && (
+            <p className="text-sm font-medium text-text">
+              {rec.recommendedTrackTitle}
+              {rec.recommendedTrackAlbum && (
+                <span className="text-muted font-normal"> · {rec.recommendedTrackAlbum}</span>
+              )}
+            </p>
+          )}
+
           {artist.genres && artist.genres.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {artist.genres.slice(0, 6).map((genre) => (
@@ -300,6 +314,7 @@ export function TodaysPick({
           ) : (
             <div className="flex-1">
               {standaloneApproveTarget?.type === 'slskd' ||
+              isTrack ||
               !onApproveWithOption ||
               !onOpenAlbumPicker ? (
                 <button

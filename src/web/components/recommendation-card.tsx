@@ -355,9 +355,12 @@ function ActionButtons({
 }) {
   const { t } = useI18n()
   if (bulkMode) return null
-  const actionableTargets = (targets ?? []).filter((target) =>
-    canApproveArtistToTarget(target.type),
-  )
+  // Song recs always go to songpick via the plain approve; per-target and
+  // monitoring choices don't apply to them.
+  const actionableTargets =
+    rec.kind === 'track'
+      ? []
+      : (targets ?? []).filter((target) => canApproveArtistToTarget(target.type))
   const standaloneApproveTarget = actionableTargets.length === 1 ? actionableTargets[0] : undefined
   const isStandaloneSlskdTarget = standaloneApproveTarget?.type === 'slskd'
 
@@ -379,7 +382,7 @@ function ActionButtons({
         >
           {t('recommendation.reject')}
         </Button>
-        {approveNode ??
+        {(rec.kind === 'track' ? undefined : approveNode) ??
           (actionableTargets.length > 1 ? (
             <ApproveDropdown
               recId={rec.id}
@@ -732,11 +735,34 @@ export function RecommendationCard({
           <div className="flex items-start gap-3">
             <ArtistThumb
               name={rec.artist.name}
-              imageUrl={rec.artist.imageUrl}
+              imageUrl={
+                rec.kind === 'track' && rec.recommendedCoverReleaseMbid
+                  ? `https://coverartarchive.org/release/${rec.recommendedCoverReleaseMbid}/front-250`
+                  : rec.artist.imageUrl
+              }
               size={expanded ? 14 : 10}
             />
             <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
-              {rec.kind === 'album' ? (
+              {rec.kind === 'track' ? (
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      data-testid="rec-kind-track"
+                      className="bg-accent/15 text-accent text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                    >
+                      {t('recommendation.trackBadge')}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-text leading-tight mt-0.5">
+                    {rec.recommendedTrackTitle ?? rec.artist.name}
+                  </h3>
+                  <p className="text-xs text-muted mt-0.5">
+                    {rec.recommendedTrackAlbum
+                      ? `${rec.artist.name} · ${rec.recommendedTrackAlbum}`
+                      : rec.artist.name}
+                  </p>
+                </div>
+              ) : rec.kind === 'album' ? (
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span

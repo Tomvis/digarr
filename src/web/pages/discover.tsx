@@ -44,7 +44,7 @@ import { useI18n } from '../lib/i18n'
 import { usePreviewContext } from '../lib/preview-context'
 
 type FilterTab = 'all' | 'pending' | 'approved' | 'rejected'
-type KindFilter = 'all' | 'artist' | 'album'
+type KindFilter = 'all' | 'artist' | 'album' | 'track'
 type ViewMode = 'grid' | 'list' | 'stack'
 type TasteOrdering = 'priority' | 'primary' | 'secondary' | 'score'
 type Decade = '60s' | '70s' | '80s' | '90s' | '00s' | '10s' | '20s+'
@@ -85,12 +85,13 @@ const KIND_PARAM: Record<KindFilter, string | undefined> = {
   all: undefined,
   artist: 'artist',
   album: 'album',
+  track: 'track',
 }
 
-const KIND_FILTERS: KindFilter[] = ['all', 'artist', 'album']
+const KIND_FILTERS: KindFilter[] = ['all', 'artist', 'album', 'track']
 
 function initialKindFromParam(value: string | null): KindFilter {
-  return value === 'artist' || value === 'album' ? value : 'all'
+  return value === 'artist' || value === 'album' || value === 'track' ? value : 'all'
 }
 
 const APPROVE_THRESHOLD_OPTIONS = [50, 60, 70, 80, 90]
@@ -164,6 +165,15 @@ function EmptyState({ filter, kind }: { filter: FilterTab; kind: KindFilter }) {
             {t('settings.netNewAlbumDiscovery')}
           </Link>
         </div>
+      </div>
+    )
+  }
+
+  if (kind === 'track') {
+    return (
+      <div className="py-16 text-center space-y-1">
+        <p className="text-text text-sm font-medium">{t('discover.emptyTracks')}</p>
+        <p className="text-muted text-sm max-w-xl mx-auto">{t('discover.emptyTracksHelp')}</p>
       </div>
     )
   }
@@ -648,6 +658,7 @@ export function DiscoverPage() {
     all: t('discover.kind.all'),
     artist: t('discover.kind.artists'),
     album: t('discover.kind.albums'),
+    track: t('discover.kind.track'),
   }
 
   // Warm status
@@ -827,7 +838,11 @@ export function DiscoverPage() {
       const newStatus = filter === 'rejected' ? 'pending' : 'approved'
       try {
         let res: Awaited<ReturnType<typeof approveToTarget>>
-        if (newStatus === 'approved' && standaloneSlskdTarget) {
+        if (
+          newStatus === 'approved' &&
+          standaloneSlskdTarget &&
+          items.find((r) => r.id === id)?.kind !== 'track'
+        ) {
           const targetId = `${standaloneSlskdTarget.type}-${standaloneSlskdTarget.id}`
           const targetOptions = resolveApprovalTargetOptions(targets, targetId)
           res = await approveToTarget(id, targetId, targetOptions)
@@ -852,7 +867,7 @@ export function DiscoverPage() {
         })
       }
     },
-    [filter, refetch, showUndo, standaloneSlskdTarget, t, targets],
+    [filter, items, refetch, showUndo, standaloneSlskdTarget, t, targets],
   )
 
   const handleReject = useCallback(
@@ -1537,6 +1552,7 @@ export function DiscoverPage() {
                         approveNode={
                           !isActing &&
                           !bulkMode &&
+                          rec.kind !== 'track' &&
                           !hasMultipleTargets &&
                           !hasStandaloneSlskdTarget ? (
                             <MonitoringOptions
@@ -1600,6 +1616,7 @@ export function DiscoverPage() {
                       approveNode={
                         !isActing &&
                         !bulkMode &&
+                        rec.kind !== 'track' &&
                         !hasMultipleTargets &&
                         !hasStandaloneSlskdTarget ? (
                           <MonitoringOptions

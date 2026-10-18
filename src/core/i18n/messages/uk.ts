@@ -124,6 +124,7 @@ export const uk = {
   'discover.kind.all': 'всі',
   'discover.kind.artists': 'Виконавці',
   'discover.kind.albums': 'Альбоми',
+  'discover.kind.track': 'Треки',
   'discover.pending': 'В очікуванні',
   'discover.approved': 'Затверджено',
   'discover.rejected': 'Відхилено',
@@ -142,6 +143,9 @@ export const uk = {
   'discover.emptyAlbums': 'У цьому поданні немає рекомендацій альбомів.',
   'discover.emptyAlbumsHelp':
     'Звичайне сканування шукає виконавців. Скористайтеся одним із варіантів нижче, щоб створити рекомендації альбомів.',
+  'discover.emptyTracks': 'У цьому поданні немає рекомендацій треків.',
+  'discover.emptyTracksHelp':
+    'Рекомендації треків беруться з історії прослуховувань ListenBrainz після вмикання джерела треків.',
   'discover.emptyPending': 'Немає незавершених рекомендацій. Усе переглянуто.',
   'discover.emptyRejected': 'Немає відхилених рекомендацій.',
   'genres.title': 'Музичні жанри',
@@ -752,6 +756,7 @@ export const uk = {
   'recommendation.select': 'Виберіть',
   'recommendation.startWith': 'Почніть з',
   'recommendation.albumBadge': 'Альбом',
+  'recommendation.trackBadge': 'Трек',
   'recommendation.metadataCached': 'Метадані кешовані',
   'recommendation.warmingCache': 'Розігрів кешу...',
   'recommendation.clickHint':
@@ -1681,6 +1686,7 @@ export const uk = {
   'target.action.addToSpotifyPlaylist': 'Додати до плейлиста Spotify',
   'target.action.sendTo': 'Надіслати до {0}',
   'target.action.addToLidarr': 'Додати до Lidarr',
+  'target.action.wantedInLidarr': 'Бажаний у Lidarr',
   'pipeline.message.loadingLibrary': 'Завантаження вашої бібліотеки...',
   'pipeline.message.firstSyncBackground':
     'Перша синхронізація бібліотеки працює у фоні -- продовжуємо без неї',
