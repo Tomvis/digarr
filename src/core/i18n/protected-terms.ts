@@ -30,6 +30,7 @@ export const PROTECTED_I18N_TERMS = [
   'Plex',
   'ntfy',
   'slskd',
+  'songpick',
   'JSON',
   'CSV',
   'M3U',

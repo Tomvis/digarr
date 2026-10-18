@@ -1188,6 +1188,7 @@ export const ptBR = {
   'settings.name': 'Nome',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Playlist do Emby',
   'settings.targetTypeJellyfinPlaylist': 'Playlist do Jellyfin',
   'settings.targetTypePlexPlaylist': 'Playlist do Plex',

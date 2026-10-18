@@ -1095,6 +1095,7 @@ export const zhCN = {
   'settings.name': '名称',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Emby 播放列表',
   'settings.targetTypeJellyfinPlaylist': 'Jellyfin 播放列表',
   'settings.targetTypePlexPlaylist': 'Plex 播放列表',

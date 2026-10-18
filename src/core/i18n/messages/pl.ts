@@ -1180,6 +1180,7 @@ export const pl = {
   'settings.name': 'Nazwa',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Playlista Emby',
   'settings.targetTypeJellyfinPlaylist': 'Playlista Jellyfin',
   'settings.targetTypePlexPlaylist': 'Playlista Plex',

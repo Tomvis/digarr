@@ -1176,6 +1176,7 @@ export const ja = {
   'settings.name': '名前',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Emby プレイリスト',
   'settings.targetTypeJellyfinPlaylist': 'Jellyfin プレイリスト',
   'settings.targetTypePlexPlaylist': 'Plex プレイリスト',

@@ -2735,6 +2735,18 @@ function getTargetTypes(
       ],
     },
     {
+      value: 'songpick',
+      label: t('settings.targetTypeSongpick'),
+      fields: [
+        {
+          key: 'url',
+          label: t('settings.fieldUrl'),
+          placeholder: 'http://songpick:9394',
+          type: 'url',
+        },
+      ],
+    },
+    {
       value: 'emby-playlist',
       label: t('settings.targetTypeEmbyPlaylist'),
       fields: [

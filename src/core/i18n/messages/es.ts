@@ -1189,6 +1189,7 @@ export const es = {
   'settings.name': 'Nombre',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Lista de Emby',
   'settings.targetTypeJellyfinPlaylist': 'Lista de Jellyfin',
   'settings.targetTypePlexPlaylist': 'Lista de Plex',

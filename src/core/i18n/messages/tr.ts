@@ -1174,6 +1174,7 @@ export const tr = {
   'settings.name': 'Ad',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Emby oynatma listesi',
   'settings.targetTypeJellyfinPlaylist': 'Jellyfin oynatma listesi',
   'settings.targetTypePlexPlaylist': 'Plex oynatma listesi',

@@ -97,6 +97,7 @@ import { createLidarrTarget } from './core/targets/lidarr'
 import { createNavidromePlaylistTarget } from './core/targets/navidrome-playlist'
 import { createPlexPlaylistTarget } from './core/targets/plex-playlist'
 import { createSlskdTarget } from './core/targets/slskd'
+import { createSongpickTarget } from './core/targets/songpick'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
 import { testTargetConnection } from './core/targets/test-connection'
 import type { DestinationTarget } from './core/targets/types'
@@ -847,6 +848,39 @@ async function getEnabledTargetsForResolvedUser(
           testConnection: () => client.testConnection(),
           queueArtist: (input) => runner.queueArtist(input),
           queueAlbum: (input) => runner.queueAlbum(input),
+        }),
+      )
+    }
+
+    if (row.type === 'songpick') {
+      targets.push(
+        createSongpickTarget(row.id, {
+          name: row.name,
+          url: row.config.url as string,
+          resolveRootFolderPath: async (rootFolderId) => {
+            const lidarrRow = rows.find(
+              (r) =>
+                r.type === 'lidarr' &&
+                r.enabled &&
+                typeof r.config?.url === 'string' &&
+                typeof r.config?.apiKey === 'string',
+            )
+            if (!lidarrRow) return undefined
+            const userPrefs = await resolveUserPreferences(
+              db,
+              settings?.preferences ?? null,
+              userId,
+            )
+            const wanted = rootFolderId ?? userPrefs?.rootFolderId
+            const folders = await createLidarrClient(
+              lidarrRow.config.url as string,
+              lidarrRow.config.apiKey as string,
+              (lidarrRow.config.skipTlsVerify as boolean) ?? false,
+            ).getRootFolders()
+            const folder =
+              wanted != null ? folders.find((f) => f.id === Number(wanted)) : folders[0]
+            return folder?.path
+          },
         }),
       )
     }

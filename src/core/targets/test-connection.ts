@@ -1,5 +1,6 @@
 import { createJellyfinClient } from '@/core/clients/jellyfin'
 import { createSlskdClient } from '@/core/clients/slskd'
+import { createSongpickClient } from '@/core/clients/songpick'
 import type { ServiceTestResult } from '@/core/types'
 import { errMsg, redactSecrets } from '@/core/validation'
 import { createEmbyPlaylistTarget } from './emby-playlist'
@@ -83,6 +84,10 @@ export async function testTargetConnection(
         config.apiKey as string,
         skipTlsVerify(config),
       ).testConnection()
+    }
+
+    if (type === 'songpick') {
+      return createSongpickClient(config.url as string).health()
     }
 
     return { success: false, message: `Unknown target type: ${type}` }

@@ -680,7 +680,9 @@ Example create body: `{"type":"lidarr","name":"Music","userId":2,"config":{"url"
 
 The target test uses the saved provider configuration for `plex-playlist`, `jellyfin-playlist`, `navidrome-playlist`, and `emby-playlist`. Plex playlist export fails before creation when no local tracks resolve or the server identity is missing.
 
-**Target types**: `lidarr`, `slskd`, `spotify-playlist`, `navidrome-playlist`, `jellyfin-playlist`, `emby-playlist`, `plex-playlist`, `export`
+A `songpick` target (`config.url`, e.g. `http://songpick:9394`) has the `addTrack` capability: it asks the songpick service to want a single track via the approving user's Lidarr root folder. The target test calls `GET /health`.
+
+**Target types**: `lidarr`, `slskd`, `songpick`, `spotify-playlist`, `navidrome-playlist`, `jellyfin-playlist`, `emby-playlist`, `plex-playlist`, `export`
 
 ## slskd
 

@@ -1193,6 +1193,7 @@ export const ru = {
   'settings.name': 'Название',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Плейлист Emby',
   'settings.targetTypeJellyfinPlaylist': 'Плейлист Jellyfin',
   'settings.targetTypePlexPlaylist': 'Плейлист Plex',

@@ -1184,6 +1184,7 @@ export const nl = {
   'settings.name': 'Naam',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Emby-afspeellijst',
   'settings.targetTypeJellyfinPlaylist': 'Jellyfin-afspeellijst',
   'settings.targetTypePlexPlaylist': 'Plex-afspeellijst',

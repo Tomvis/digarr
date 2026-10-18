@@ -1191,6 +1191,7 @@ export const ro = {
   'settings.name': 'Nume',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Playlist Emby',
   'settings.targetTypeJellyfinPlaylist': 'Playlist Jellyfin',
   'settings.targetTypePlexPlaylist': 'Playlist Plex',

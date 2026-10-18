@@ -2,6 +2,7 @@ import type { RadioMode, TagRadioInput } from '@/core/clients/listenbrainz'
 import { createListenBrainzClient } from '@/core/clients/listenbrainz'
 import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
 import { resolveTagRadioRecordings } from '@/core/clients/tag-radio-resolver'
+import { CHROME_USER_AGENT } from '@/core/clients/user-agent'
 import { deduplicateByName } from '@/core/subscriptions/dedup'
 import type {
   AdapterConfigField,
@@ -42,8 +43,6 @@ type FreshReleasesPayload = {
 
 const JSPF_TRACK_EXT = 'https://musicbrainz.org/doc/jspf#track'
 const RECORDING_URL = /musicbrainz\.org\/recording\/([0-9a-f-]{36})/i
-const CHROME_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
 
 type JspfTrack = {
   creator?: string

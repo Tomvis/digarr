@@ -122,4 +122,14 @@ describe('testTargetConnection', () => {
       await expect(testTargetConnection(type, {})).resolves.toMatchObject({ success: false })
     },
   )
+
+  it('tests songpick via /health', async () => {
+    fetchMock.mockResolvedValueOnce(json({ status: 'ok' }))
+    await expect(
+      testTargetConnection('songpick', { url: 'http://sp:9394' }),
+    ).resolves.toMatchObject({
+      success: true,
+    })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://sp:9394/health')
+  })
 })

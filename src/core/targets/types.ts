@@ -1,10 +1,11 @@
 import type { ServiceTestResult } from '@/core/types'
 
-export type TargetCapability = 'addArtist' | 'addAlbum' | 'createPlaylist'
+export type TargetCapability = 'addArtist' | 'addAlbum' | 'addTrack' | 'createPlaylist'
 
 export const TARGET_TYPES = [
   'lidarr',
   'slskd',
+  'songpick',
   'spotify-playlist',
   'navidrome-playlist',
   'jellyfin-playlist',
@@ -33,6 +34,12 @@ export type TargetResult = {
   error?: string
   /** Non-fatal partial-failure note (e.g. artist added but album monitoring did not complete). */
   warning?: string
+}
+
+export type TrackTargetResult = TargetResult & {
+  songpickStatus?: 'owned' | 'already_wanted' | 'wanted'
+  albumName?: string
+  edition?: string
 }
 
 export type PlaylistItem = {
@@ -79,6 +86,11 @@ export interface DestinationTarget {
     album: { artistMbid: string; artistName: string; releaseGroupMbid: string },
     options?: TargetAddOptions,
   ): Promise<TargetResult>
+
+  addTrack?(
+    track: { artistMbid: string; artistName: string; title: string; recordingMbid?: string },
+    options?: TargetAddOptions,
+  ): Promise<TrackTargetResult>
 
   createPlaylist?(
     name: string,

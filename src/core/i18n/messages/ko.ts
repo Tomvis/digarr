@@ -1159,6 +1159,7 @@ export const ko = {
   'settings.name': '이름',
   'settings.targetTypeLidarr': 'Lidarr',
   'settings.targetTypeSlskd': 'slskd',
+  'settings.targetTypeSongpick': 'songpick',
   'settings.targetTypeEmbyPlaylist': 'Emby 플레이리스트',
   'settings.targetTypeJellyfinPlaylist': 'Jellyfin 플레이리스트',
   'settings.targetTypePlexPlaylist': 'Plex 플레이리스트',
