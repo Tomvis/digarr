@@ -1892,6 +1892,7 @@ export const uk = {
   'settings.channels.allowPrivateWarning':
     'Дозволяє доставку на приватні/LAN-адреси. Хмарні метадані та link-local діапазони залишаються заблокованими.',
   'settings.channels.webhookUrl': 'URL вебхука',
+  'settings.channels.webhookSigningSecret': "Секрет підпису (необов'язково)",
   'settings.channels.ntfyServer': 'Сервер',
   'settings.channels.ntfyTopic': 'Тема',
   'settings.channels.ntfyPriority': 'Пріоритет',

@@ -1912,6 +1912,7 @@ export const es = {
   'settings.channels.allowPrivateWarning':
     'Permite la entrega a direcciones privadas/LAN. Los metadatos de la nube y los rangos link-local permanecen bloqueados.',
   'settings.channels.webhookUrl': 'URL del webhook',
+  'settings.channels.webhookSigningSecret': 'Secreto de firma (opcional)',
   'settings.channels.ntfyServer': 'Servidor',
   'settings.channels.ntfyTopic': 'Tema',
   'settings.channels.ntfyPriority': 'Prioridad',

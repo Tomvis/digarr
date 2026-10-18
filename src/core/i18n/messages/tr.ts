@@ -1879,6 +1879,7 @@ export const tr = {
   'settings.channels.allowPrivateWarning':
     'Özel/LAN adreslerine teslimata izin verir. Bulut meta verileri ve link-local aralıkları engelli kalır.',
   'settings.channels.webhookUrl': "Webhook URL'si",
+  'settings.channels.webhookSigningSecret': 'İmza sırrı (isteğe bağlı)',
   'settings.channels.ntfyServer': 'Sunucu',
   'settings.channels.ntfyTopic': 'Konu',
   'settings.channels.ntfyPriority': 'Öncelik',
