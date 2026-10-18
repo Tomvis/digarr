@@ -1065,7 +1065,11 @@ export function recommendationRoutes(deps: AppDependencies) {
           targetActions: final.targetActions,
           lidarrError: final.lidarrError,
         })
-        results.push({ id, status: final.status })
+        results.push({
+          id,
+          status: final.status,
+          ...(final.lidarrError ? { error: final.lidarrError } : {}),
+        })
         continue
       }
 
@@ -1098,7 +1102,13 @@ export function recommendationRoutes(deps: AppDependencies) {
       if (result.lidarrArtistId) extra.lidarrArtistId = result.lidarrArtistId
       if (result.lidarrError) extra.lidarrError = result.lidarrError
       await deps.updateRecommendationStatus(id, result.status, extra)
-      results.push({ id, status: result.status })
+      results.push({
+        id,
+        status: result.status,
+        ...(result.status === 'add_failed' && result.lidarrError
+          ? { error: result.lidarrError }
+          : {}),
+      })
     }
 
     return c.json({ results })

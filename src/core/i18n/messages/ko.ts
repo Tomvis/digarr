@@ -328,6 +328,7 @@ export const ko = {
   'discover.trackAlreadyOwned': '이미 라이브러리에 있습니다',
   'discover.retrySucceeded': '실패한 대상을 추가했습니다',
   'discover.bulkApproveFailed': '일괄 승인 실패',
+  'discover.bulkApprovePartial': '{1}개 중 {0}개 승인됨. 실패: {2}',
   'discover.bulkRejectFailed': '일괄 거부 실패',
   'discover.clearAll': '모두 지우기',
   'discover.clearFailed': '추천을 삭제하지 못했습니다.',
@@ -394,6 +395,7 @@ export const ko = {
   'discover.undo': '실행 취소',
   'discover.undoFailed': '실행취소 실패',
   'discover.undone': '실행 취소됨',
+  'discover.undoneTrackStillWanted': '실행 취소됨. Lidarr는 여전히 이 곡을 찾고 있습니다.',
   'discover.undoneLidarrRemoved': '실행 취소되었습니다. Lidarr에서 아티스트를 제거했습니다.',
   'discover.undoneLidarrNotAdded': '실행 취소되었습니다. 제거할 Lidarr 아티스트가 없습니다.',
   'discover.undoneLidarrHasFiles':

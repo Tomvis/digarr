@@ -331,6 +331,7 @@ export const tr = {
   'discover.trackAlreadyOwned': 'Zaten kitaplığınızda',
   'discover.retrySucceeded': 'Başarısız hedefler başarıyla eklendi',
   'discover.bulkApproveFailed': 'Toplu onay başarısız oldu',
+  'discover.bulkApprovePartial': '{1} öğeden {0} tanesi onaylandı. Başarısız: {2}',
   'discover.bulkRejectFailed': 'Toplu reddetme başarısız oldu',
   'discover.clearAll': 'Tümünü Temizle',
   'discover.clearFailed': 'Öneriler temizlenemedi',
@@ -395,6 +396,7 @@ export const tr = {
   'discover.undo': 'Geri al',
   'discover.undoFailed': 'Geri alma başarısız oldu',
   'discover.undone': 'Geri alındı',
+  'discover.undoneTrackStillWanted': 'Geri alındı. Lidarr şarkıyı hâlâ arıyor.',
   'discover.undoneLidarrRemoved': "Geri alındı. Sanatçı Lidarr'dan kaldırıldı.",
   'discover.undoneLidarrNotAdded': 'Geri alındı. Kaldırılacak bir Lidarr sanatçısı yoktu.',
   'discover.undoneLidarrHasFiles':

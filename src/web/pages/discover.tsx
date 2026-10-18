@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
+import type { RecommendationKind } from '@/core/types'
 import { errMsg } from '@/core/validation'
 import { AlbumPicker } from '../components/album-picker'
 import { ApproveDialog } from '../components/approve-dialog'
@@ -27,6 +28,7 @@ import {
   ApiError,
   approveRecommendation,
   approveToTarget,
+  type BulkApprovalResponse,
   bulkAction,
   exportRecommendations,
   getAuthStatus,
@@ -39,7 +41,7 @@ import {
   triggerPipeline,
   updateRecommendation,
 } from '../lib/api'
-import { reportApprovalOutcome, undoOutcomeMessage } from '../lib/approval'
+import { reportApprovalOutcome, reportBulkApproval, undoOutcomeMessage } from '../lib/approval'
 import { useI18n } from '../lib/i18n'
 import { usePreviewContext } from '../lib/preview-context'
 
@@ -741,7 +743,12 @@ export function DiscoverPage() {
   // They are not interchangeable: rejecting a pending recommendation also has
   // prevStatus 'pending', so only `action` can tell an unapprove apart from
   // undoing a rejection.
-  type UndoEntry = { id: number; prevStatus: string; action: 'approve' | 'reject' }
+  type UndoEntry = {
+    id: number
+    prevStatus: string
+    action: 'approve' | 'reject'
+    kind?: RecommendationKind
+  }
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -769,7 +776,7 @@ export function DiscoverPage() {
         status: entry.prevStatus,
         ...(isUnapprove ? { removeLidarrArtist: true } : {}),
       })
-      toast.success(t(undoOutcomeMessage(res)))
+      toast.success(t(undoOutcomeMessage(res, isUnapprove ? entry.kind : undefined)))
       refetch()
     } catch {
       toast.error(t('discover.undoFailed'))
@@ -851,7 +858,8 @@ export function DiscoverPage() {
           res = await updateRecommendation(id, { status: newStatus })
         }
         if (filter !== 'rejected') {
-          if (reportApprovalOutcome(res, t, kind)) showUndo({ id, prevStatus, action: 'approve' })
+          if (reportApprovalOutcome(res, t, kind))
+            showUndo({ id, prevStatus, action: 'approve', kind })
         } else {
           toast.success(t('discover.restoredToPending'))
         }
@@ -956,6 +964,14 @@ export function DiscoverPage() {
     }
   }
 
+  function bulkRowName(id: number): string {
+    const rec = items.find((r) => r.id === id)
+    if (!rec) return `#${id}`
+    return rec.kind === 'track' && rec.recommendedTrackTitle
+      ? `${rec.artist.name} - ${rec.recommendedTrackTitle}`
+      : rec.artist.name
+  }
+
   async function handleApproveAbove() {
     const eligible = items.filter(
       (r) => r.score * 100 >= approveThreshold && r.status === 'pending',
@@ -965,11 +981,11 @@ export function DiscoverPage() {
       return
     }
     try {
-      await bulkAction(
+      const res = (await bulkAction(
         eligible.map((r) => r.id),
         'approve',
-      )
-      toast.success(`${t('discover.approvedCount')} ${eligible.length}`)
+      )) as BulkApprovalResponse
+      reportBulkApproval(res, bulkRowName, t)
       refetch()
     } catch {
       toast.error(t('discover.bulkApproveFailed'))
@@ -1061,8 +1077,8 @@ export function DiscoverPage() {
     if (checkedIds.size === 0) return
     setBulkActing(true)
     try {
-      await bulkAction([...checkedIds], 'approve')
-      toast.success(`${t('discover.approvedCount')} ${checkedIds.size}`)
+      const res = (await bulkAction([...checkedIds], 'approve')) as BulkApprovalResponse
+      reportBulkApproval(res, bulkRowName, t)
       setCheckedIds(new Set())
       refetch()
     } catch {

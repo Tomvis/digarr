@@ -334,6 +334,7 @@ export const nl = {
   'discover.trackAlreadyOwned': 'Staat al in je bibliotheek',
   'discover.retrySucceeded': 'Mislukte bestemmingen succesvol toegevoegd',
   'discover.bulkApproveFailed': 'Bulkgoedkeuring mislukt',
+  'discover.bulkApprovePartial': '{0} van {1} goedgekeurd. Mislukt: {2}',
   'discover.bulkRejectFailed': 'Bulkafwijzing mislukt',
   'discover.clearAll': 'Alles wissen',
   'discover.clearFailed': 'Kan aanbevelingen niet wissen',
@@ -398,6 +399,7 @@ export const nl = {
   'discover.undo': 'Ongedaan maken',
   'discover.undoFailed': 'Ongedaan maken is mislukt',
   'discover.undone': 'Ongedaan gemaakt',
+  'discover.undoneTrackStillWanted': 'Ongedaan gemaakt. Lidarr zoekt het nummer nog steeds.',
   'discover.undoneLidarrRemoved': 'Ongedaan gemaakt. De artiest is uit Lidarr verwijderd.',
   'discover.undoneLidarrNotAdded':
     'Ongedaan gemaakt. Er was geen artiest in Lidarr om te verwijderen.',

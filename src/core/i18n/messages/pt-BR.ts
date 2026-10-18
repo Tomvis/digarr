@@ -333,6 +333,7 @@ export const ptBR = {
   'discover.trackAlreadyOwned': 'Já está na sua biblioteca',
   'discover.retrySucceeded': 'Destinos com falha adicionados com sucesso',
   'discover.bulkApproveFailed': 'Falha na aprovação em massa',
+  'discover.bulkApprovePartial': '{0} de {1} aprovadas. Falharam: {2}',
   'discover.bulkRejectFailed': 'Falha na rejeição em massa',
   'discover.clearAll': 'Limpar tudo',
   'discover.clearFailed': 'Falha ao limpar recomendações',
@@ -399,6 +400,7 @@ export const ptBR = {
   'discover.undo': 'Desfazer',
   'discover.undoFailed': 'Falha ao desfazer',
   'discover.undone': 'Desfeito',
+  'discover.undoneTrackStillWanted': 'Desfeito. O Lidarr ainda procura a música.',
   'discover.undoneLidarrRemoved': 'Desfeito. O artista foi removido do Lidarr.',
   'discover.undoneLidarrNotAdded': 'Desfeito. Não havia nenhum artista do Lidarr para remover.',
   'discover.undoneLidarrHasFiles':

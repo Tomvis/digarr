@@ -354,6 +354,9 @@ export const approveRecommendation = (
     rootFolderId?: number
   },
 ) => updateRecommendation(id, { status: 'approved', ...options })
+export type BulkApprovalResponse = {
+  results: Array<{ id: number; status: string; error?: string }>
+}
 export const bulkAction = (
   ids: number[],
   action: string,

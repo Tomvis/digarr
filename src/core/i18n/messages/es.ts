@@ -333,6 +333,7 @@ export const es = {
   'discover.trackAlreadyOwned': 'Ya está en tu biblioteca',
   'discover.retrySucceeded': 'Destinos fallidos añadidos correctamente',
   'discover.bulkApproveFailed': 'Error en la aprobación masiva',
+  'discover.bulkApprovePartial': 'Aprobadas {0} de {1}. Fallidas: {2}',
   'discover.bulkRejectFailed': 'Error en el rechazo masivo',
   'discover.clearAll': 'Borrar todo',
   'discover.clearFailed': 'No se han podido borrar las recomendaciones',
@@ -399,6 +400,7 @@ export const es = {
   'discover.undo': 'Deshacer',
   'discover.undoFailed': 'Error al deshacer',
   'discover.undone': 'Deshecho',
+  'discover.undoneTrackStillWanted': 'Deshecho. Lidarr sigue buscando la canción.',
   'discover.undoneLidarrRemoved': 'Deshecho. El artista se eliminó de Lidarr.',
   'discover.undoneLidarrNotAdded': 'Deshecho. No había ningún artista de Lidarr que eliminar.',
   'discover.undoneLidarrHasFiles':

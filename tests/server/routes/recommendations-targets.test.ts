@@ -380,7 +380,13 @@ describe('target-aware approval', () => {
       })
 
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ results: [{ id: 1, status }] })
+      expect(await res.json()).toEqual({
+        results: [
+          lidarr === false && !slskd
+            ? { id: 1, status, error: 'album not found in Lidarr' }
+            : { id: 1, status },
+        ],
+      })
       for (const target of targets) {
         expect(target.addAlbum).toHaveBeenCalledExactlyOnceWith(
           { artistMbid: 'mbid-1', artistName: 'Radiohead', releaseGroupMbid: 'rg-1' },
@@ -1029,6 +1035,25 @@ describe('track recommendation approval (songpick)', () => {
       'approved',
       expect.objectContaining({ targetActions: { 'songpick-1': prior }, lidarrError: null }),
     )
+  })
+
+  it('a failed bulk track approval returns the songpick error per row', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec({ id: 1 }))
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: false, error: 'too many matches' }),
+    ])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [1], action: 'approve' }),
+    })
+
+    expect(await res.json()).toEqual({
+      results: [
+        { id: 1, status: 'add_failed', error: expect.stringContaining('too many matches') },
+      ],
+    })
   })
 
   it('a retry with only an owned prior outcome stays duplicate', async () => {

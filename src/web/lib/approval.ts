@@ -1,7 +1,7 @@
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import type { RecommendationKind } from '@/core/types'
-import type { ApprovalResponse, LidarrRemovalSkipReason } from './api'
+import type { ApprovalResponse, BulkApprovalResponse, LidarrRemovalSkipReason } from './api'
 
 type Translate = (key: MessageKey) => string
 
@@ -16,8 +16,10 @@ const REMOVAL_SKIPPED_MESSAGE: Record<LidarrRemovalSkipReason, MessageKey> = {
  * "Undone" alone would imply a clean reversal even when the artist is still
  * there because it already has downloaded files or because Lidarr errored.
  */
-export function undoOutcomeMessage(res: ApprovalResponse): MessageKey {
+export function undoOutcomeMessage(res: ApprovalResponse, kind?: RecommendationKind): MessageKey {
   if (res.lidarrArtistRemoved) return 'discover.undoneLidarrRemoved'
+  // Undo never reverses songpick's want: the song stays wanted in Lidarr.
+  if (kind === 'track') return 'discover.undoneTrackStillWanted'
   const reason = res.lidarrRemovalSkippedReason
   // hasOwn, not `in`: an unknown reason string must not resolve to an
   // inherited Object.prototype member and be handed to `t()` as a key.
@@ -75,4 +77,36 @@ export function reportApprovalOutcome(
     toast.warning(summary.warnings.join('; '))
   }
   return true
+}
+
+/**
+ * Toast a bulk approve from its per-row results: a plain count when every row
+ * succeeded, otherwise each failed row's name and error. Missing rows are
+ * left out of both counts.
+ */
+export function reportBulkApproval(
+  res: BulkApprovalResponse,
+  nameOf: (id: number) => string,
+  t: Translate,
+): void {
+  const rows = res.results.filter((r) => r.status !== 'not_found')
+  const failed = rows.filter((r) => r.status === 'add_failed')
+  const succeeded = rows.length - failed.length
+  if (failed.length === 0) {
+    toast.success(`${t('discover.approvedCount')} ${succeeded}`)
+    return
+  }
+  const names = failed
+    .map((r) => (r.error ? `${nameOf(r.id)} (${r.error})` : nameOf(r.id)))
+    .join(', ')
+  if (succeeded > 0) {
+    toast.warning(
+      t('discover.bulkApprovePartial')
+        .replace('{0}', String(succeeded))
+        .replace('{1}', String(rows.length))
+        .replace('{2}', names),
+    )
+  } else {
+    toast.error(t('discover.approveAllFailed').replace('{0}', names))
+  }
 }

@@ -333,6 +333,7 @@ export const pl = {
   'discover.trackAlreadyOwned': 'Już jest w Twojej bibliotece',
   'discover.retrySucceeded': 'Nieudane cele dodane pomyślnie',
   'discover.bulkApproveFailed': 'Zatwierdzenie zbiorcze nie powiodło się',
+  'discover.bulkApprovePartial': 'Zatwierdzono {0} z {1}. Nieudane: {2}',
   'discover.bulkRejectFailed': 'Odrzucenie zbiorcze nie powiodło się',
   'discover.clearAll': 'Wyczyść wszystko',
   'discover.clearFailed': 'Nie udało się wyczyścić rekomendacji',
@@ -399,6 +400,7 @@ export const pl = {
   'discover.undo': 'Cofnij',
   'discover.undoFailed': 'Cofnięcie nie powiodło się',
   'discover.undone': 'Cofnięto',
+  'discover.undoneTrackStillWanted': 'Cofnięto. Lidarr nadal szuka utworu.',
   'discover.undoneLidarrRemoved': 'Cofnięto. Wykonawca został usunięty z Lidarr.',
   'discover.undoneLidarrNotAdded': 'Cofnięto. W Lidarr nie było wykonawcy do usunięcia.',
   'discover.undoneLidarrHasFiles':

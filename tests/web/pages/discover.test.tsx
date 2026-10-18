@@ -574,7 +574,7 @@ describe('DiscoverPage', () => {
   })
 
   it('bulk approve above threshold calls bulkAction', async () => {
-    mockBulkAction.mockResolvedValue(undefined as unknown as never)
+    mockBulkAction.mockResolvedValue({ results: [{ id: 1, status: 'added_to_lidarr' }] } as never)
     // Two recs: one above 70%, one below
     setupMockApi([makeRec({ id: 1, score: 0.85 }), makeRec({ id: 2, score: 0.5 })])
 
@@ -589,6 +589,52 @@ describe('DiscoverPage', () => {
     await waitFor(() => {
       // Only rec id=1 qualifies (85% >= 70%)
       expect(mockBulkAction).toHaveBeenCalledWith([1], 'approve')
+    })
+  })
+
+  it('bulk approve names each failed row with its error', async () => {
+    mockBulkAction.mockResolvedValue({
+      results: [
+        { id: 1, status: 'approved' },
+        { id: 2, status: 'add_failed', error: 'too many matches' },
+      ],
+    } as never)
+    const warning = vi.spyOn(toast, 'warning')
+    setupMockApi([
+      makeRec({ id: 1, score: 0.9 }),
+      makeRec({ id: 2, score: 0.8, kind: 'track', recommendedTrackTitle: 'Song' }),
+    ])
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('Test Artist').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(screen.getByRole('button', { name: /approve all above/i }))
+
+    await waitFor(() => {
+      expect(warning).toHaveBeenCalledWith(
+        'Approved 1 of 2. Failed: Test Artist - Song (too many matches)',
+      )
+    })
+  })
+
+  it('undoing a song approval says Lidarr still wants it', async () => {
+    setupMockApi([makeRec({ kind: 'track', recommendedTrackTitle: 'Song' })])
+    mockUpdateRecommendation
+      .mockResolvedValueOnce({ status: 'approved' } as never)
+      .mockResolvedValueOnce({ status: 'pending', lidarrArtistRemoved: false } as never)
+    const success = vi.spyOn(toast, 'success')
+
+    renderWithQuery(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('Song').length).toBeGreaterThan(0)
+    })
+    // biome-ignore lint/style/noNonNullAssertion: at least one approve button exists
+    fireEvent.click(screen.getAllByText('Approve')[0]!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledWith('Undone. Lidarr still wants the song.')
     })
   })
 

@@ -334,6 +334,7 @@ export const ro = {
   'discover.trackAlreadyOwned': 'Deja în biblioteca ta',
   'discover.retrySucceeded': 'Țintele eșuate au fost adăugate cu succes',
   'discover.bulkApproveFailed': 'Aprobarea în bloc a eșuat',
+  'discover.bulkApprovePartial': 'Aprobate {0} din {1}. Eșuate: {2}',
   'discover.bulkRejectFailed': 'Respingerea în bloc a eșuat',
   'discover.clearAll': 'Ștergeți tot',
   'discover.clearFailed': 'Recomandările nu s-au șters',
@@ -400,6 +401,7 @@ export const ro = {
   'discover.undo': 'Anulați',
   'discover.undoFailed': 'Anularea a eșuat',
   'discover.undone': 'Anulat',
+  'discover.undoneTrackStillWanted': 'Anulat. Lidarr încă caută piesa.',
   'discover.undoneLidarrRemoved': 'Anulat. Artistul a fost eliminat din Lidarr.',
   'discover.undoneLidarrNotAdded': 'Anulat. Nu a existat niciun artist Lidarr de eliminat.',
   'discover.undoneLidarrHasFiles':

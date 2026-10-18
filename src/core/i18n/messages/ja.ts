@@ -332,6 +332,7 @@ export const ja = {
   'discover.trackAlreadyOwned': 'すでにライブラリにあります',
   'discover.retrySucceeded': '失敗したターゲットを追加しました',
   'discover.bulkApproveFailed': '一括承認に失敗しました',
+  'discover.bulkApprovePartial': '{1} 件中 {0} 件を承認しました。失敗: {2}',
   'discover.bulkRejectFailed': '一括拒否に失敗しました',
   'discover.clearAll': 'すべてクリア',
   'discover.clearFailed': '推奨事項をクリアできませんでした',
@@ -398,6 +399,7 @@ export const ja = {
   'discover.undo': '元に戻す',
   'discover.undoFailed': '元に戻すことができませんでした',
   'discover.undone': '元に戻す',
+  'discover.undoneTrackStillWanted': '元に戻しました。Lidarr は引き続きこの曲を探しています。',
   'discover.undoneLidarrRemoved': '元に戻しました。アーティストを Lidarr から削除しました。',
   'discover.undoneLidarrNotAdded':
     '元に戻しました。削除する Lidarr のアーティストはありませんでした。',

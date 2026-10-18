@@ -332,6 +332,7 @@ export const ru = {
   'discover.trackAlreadyOwned': 'Уже есть в вашей библиотеке',
   'discover.retrySucceeded': 'Неудачные цели успешно добавлены',
   'discover.bulkApproveFailed': 'Массовое одобрение не удалось',
+  'discover.bulkApprovePartial': 'Одобрено {0} из {1}. Ошибки: {2}',
   'discover.bulkRejectFailed': 'Массовое отклонение не удалось',
   'discover.clearAll': 'Очистить все',
   'discover.clearFailed': 'Не удалось удалить рекомендации.',
@@ -398,6 +399,7 @@ export const ru = {
   'discover.undo': 'Отменить',
   'discover.undoFailed': 'Отменить не удалось',
   'discover.undone': 'Отменено',
+  'discover.undoneTrackStillWanted': 'Отменено. Lidarr всё ещё ищет песню.',
   'discover.undoneLidarrRemoved': 'Отменено. Исполнитель удалён из Lidarr.',
   'discover.undoneLidarrNotAdded': 'Отменено. В Lidarr не было исполнителя для удаления.',
   'discover.undoneLidarrHasFiles':

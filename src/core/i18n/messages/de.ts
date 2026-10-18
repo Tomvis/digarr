@@ -333,6 +333,7 @@ export const de = {
   'discover.trackAlreadyOwned': 'Bereits in deiner Bibliothek',
   'discover.retrySucceeded': 'Fehlgeschlagene Ziele erfolgreich hinzugefügt',
   'discover.bulkApproveFailed': 'Die Massengenehmigung ist fehlgeschlagen',
+  'discover.bulkApprovePartial': '{0} von {1} genehmigt. Fehlgeschlagen: {2}',
   'discover.bulkRejectFailed': 'Die Massenablehnung ist fehlgeschlagen',
   'discover.clearAll': 'Alles löschen',
   'discover.clearFailed': 'Empfehlungen konnten nicht gelöscht werden',
@@ -399,6 +400,7 @@ export const de = {
   'discover.undo': 'Rückgängig machen',
   'discover.undoFailed': 'Rückgängig machen fehlgeschlagen',
   'discover.undone': 'Rückgängig gemacht',
+  'discover.undoneTrackStillWanted': 'Rückgängig gemacht. Lidarr sucht den Song weiterhin.',
   'discover.undoneLidarrRemoved': 'Rückgängig gemacht. Der Künstler wurde aus Lidarr entfernt.',
   'discover.undoneLidarrNotAdded':
     'Rückgängig gemacht. Es gab keinen Künstler in Lidarr zu entfernen.',

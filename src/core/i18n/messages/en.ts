@@ -330,6 +330,7 @@ export const en = {
   'discover.trackAlreadyOwned': 'Already in your library',
   'discover.retrySucceeded': 'Failed targets added successfully',
   'discover.bulkApproveFailed': 'Bulk approve failed',
+  'discover.bulkApprovePartial': 'Approved {0} of {1}. Failed: {2}',
   'discover.bulkRejectFailed': 'Bulk reject failed',
   'discover.clearAll': 'Clear All',
   'discover.clearFailed': 'Failed to clear recommendations',
@@ -393,6 +394,7 @@ export const en = {
   'discover.undo': 'Undo',
   'discover.undoFailed': 'Undo failed',
   'discover.undone': 'Undone',
+  'discover.undoneTrackStillWanted': 'Undone. Lidarr still wants the song.',
   'discover.undoneLidarrRemoved': 'Undone. The artist was removed from Lidarr.',
   'discover.undoneLidarrNotAdded': 'Undone. There was no Lidarr artist to remove.',
   'discover.undoneLidarrHasFiles':

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reportApprovalOutcome, undoOutcomeMessage } from '@/web/lib/approval'
+import { reportApprovalOutcome, reportBulkApproval, undoOutcomeMessage } from '@/web/lib/approval'
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -11,6 +11,8 @@ const { toast } = await import('sonner')
 const t = ((key: string) => {
   if (key === 'discover.approvePartial') return 'Added to {0} of {1}. Failed: {2}'
   if (key === 'discover.approveAllFailed') return 'All failed: {0}'
+  if (key === 'discover.bulkApprovePartial') return 'Approved {0} of {1}. Failed: {2}'
+  if (key === 'discover.approvedCount') return 'Approved'
   return key
 }) as never
 
@@ -199,5 +201,56 @@ describe('undoOutcomeMessage', () => {
     expect(undoOutcomeMessage({ status: 'pending', lidarrArtistRemoved: false })).toBe(
       'discover.undone',
     )
+  })
+})
+
+describe('undoOutcomeMessage for a song', () => {
+  it('says Lidarr still wants the song after undoing a track approve', () => {
+    expect(undoOutcomeMessage({ status: 'pending', lidarrArtistRemoved: false }, 'track')).toBe(
+      'discover.undoneTrackStillWanted',
+    )
+  })
+})
+
+describe('reportBulkApproval', () => {
+  beforeEach(() => vi.clearAllMocks())
+  const name = (id: number) => `Song ${id}`
+
+  it('shows the success count when every row succeeded', () => {
+    reportBulkApproval(
+      {
+        results: [
+          { id: 1, status: 'approved' },
+          { id: 2, status: 'added_to_lidarr' },
+        ],
+      },
+      name,
+      t,
+    )
+    expect(toast.success).toHaveBeenCalledExactlyOnceWith('Approved 2')
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('warns with each failed row and its error', () => {
+    reportBulkApproval(
+      {
+        results: [
+          { id: 1, status: 'approved' },
+          { id: 2, status: 'add_failed', error: 'too many matches' },
+          { id: 3, status: 'add_failed' },
+        ],
+      },
+      name,
+      t,
+    )
+    expect(toast.warning).toHaveBeenCalledExactlyOnceWith(
+      'Approved 1 of 3. Failed: Song 2 (too many matches), Song 3',
+    )
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('errors when every row failed', () => {
+    reportBulkApproval({ results: [{ id: 2, status: 'add_failed', error: 'boom' }] }, name, t)
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('All failed: Song 2 (boom)')
   })
 })

@@ -333,6 +333,7 @@ export const uk = {
   'discover.trackAlreadyOwned': 'Уже є у вашій бібліотеці',
   'discover.retrySucceeded': 'Невдалі цілі успішно додано',
   'discover.bulkApproveFailed': 'Помилка масового схвалення',
+  'discover.bulkApprovePartial': 'Схвалено {0} з {1}. Помилки: {2}',
   'discover.bulkRejectFailed': 'Не вдалося масово відхилити',
   'discover.clearAll': 'Очистити все',
   'discover.clearFailed': 'Не вдалося очистити рекомендації',
@@ -398,6 +399,7 @@ export const uk = {
   'discover.undo': 'Скасувати',
   'discover.undoFailed': 'Не вдалося скасувати',
   'discover.undone': 'Скасовано',
+  'discover.undoneTrackStillWanted': 'Скасовано. Lidarr досі шукає пісню.',
   'discover.undoneLidarrRemoved': 'Скасовано. Виконавця видалено з Lidarr.',
   'discover.undoneLidarrNotAdded': 'Скасовано. У Lidarr не було виконавця для видалення.',
   'discover.undoneLidarrHasFiles':

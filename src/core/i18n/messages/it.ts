@@ -334,6 +334,7 @@ export const it = {
   'discover.trackAlreadyOwned': 'Già nella tua libreria',
   'discover.retrySucceeded': 'Destinazioni fallite aggiunte correttamente',
   'discover.bulkApproveFailed': 'Approvazione collettiva non riuscita',
+  'discover.bulkApprovePartial': 'Approvati {0} su {1}. Non riusciti: {2}',
   'discover.bulkRejectFailed': 'Il rifiuto collettivo non è riuscito',
   'discover.clearAll': 'Cancella tutto',
   'discover.clearFailed': 'Impossibile cancellare i consigli',
@@ -400,6 +401,7 @@ export const it = {
   'discover.undo': 'Annulla',
   'discover.undoFailed': 'Annullamento non riuscito',
   'discover.undone': 'Annullato',
+  'discover.undoneTrackStillWanted': 'Annullato. Lidarr cerca ancora il brano.',
   'discover.undoneLidarrRemoved': "Annullato. L'artista è stato rimosso da Lidarr.",
   'discover.undoneLidarrNotAdded': "Annullato. Non c'era alcun artista Lidarr da rimuovere.",
   'discover.undoneLidarrHasFiles':
