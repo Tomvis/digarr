@@ -465,6 +465,26 @@ function isOwned(rec: { userId?: number | null }, callerId?: number): boolean {
   return rec.userId === callerId
 }
 
+/**
+ * Merge a track approve result over the rec's stored target actions. A retry
+ * (single or bulk) never regresses a track whose earlier songpick want
+ * succeeded; lidarrError is set only while the merged status is add_failed.
+ */
+function finalizeTrackApproval(
+  rec: { targetActions?: unknown },
+  result: Awaited<ReturnType<typeof approveTrackRecommendation>>,
+): { status: string; targetActions: Record<string, unknown>; lidarrError: string | null } {
+  const priorActions = (rec.targetActions as Record<string, unknown> | null) ?? {}
+  const targetActions = mergeTrackActions(priorActions, result.targetActions)
+  const status =
+    Object.keys(priorActions).length > 0 ? deriveTrackStatus(targetActions) : result.status
+  return {
+    status,
+    targetActions,
+    lidarrError: status === 'add_failed' ? (result.lidarrError ?? null) : null,
+  }
+}
+
 /** Build Lidarr add options from per-user preferences (with global fallback). */
 async function buildAddOptions(
   deps: AppDependencies,
@@ -728,19 +748,15 @@ export function recommendationRoutes(deps: AppDependencies) {
             deps.jobRecorder,
             userId,
           )
-          const priorActions = (rec.targetActions as Record<string, unknown> | null) ?? {}
-          const mergedActions = mergeTrackActions(priorActions, result.targetActions)
-          // A retry never regresses a track whose earlier songpick want succeeded.
-          const finalStatus =
-            Object.keys(priorActions).length > 0 ? deriveTrackStatus(mergedActions) : result.status
-          await deps.updateRecommendationStatus(id, finalStatus, {
-            targetActions: mergedActions,
-            lidarrError: finalStatus === 'add_failed' ? (result.lidarrError ?? null) : null,
+          const final = finalizeTrackApproval(rec, result)
+          await deps.updateRecommendationStatus(id, final.status, {
+            targetActions: final.targetActions,
+            lidarrError: final.lidarrError,
           })
           const targetsById = new Map(targets.map((target) => [target.id, target]))
           return c.json({
-            status: finalStatus,
-            targetActions: mergedActions,
+            status: final.status,
+            targetActions: final.targetActions,
             targetSummary: summarizeTargetActions(result.targetActions, targetsById),
             ...(result.lidarrError ? { lidarrError: result.lidarrError } : {}),
           })
@@ -1034,43 +1050,53 @@ export function recommendationRoutes(deps: AppDependencies) {
       }
 
       // Sequential on purpose: a songpick want can block for minutes.
+      if (rec.kind === 'track') {
+        const final = finalizeTrackApproval(
+          rec,
+          await approveTrackRecommendation(
+            rec,
+            effectiveTargets,
+            rfOverride != null ? { rootFolderId: rfOverride } : {},
+            deps.jobRecorder,
+            userId,
+          ),
+        )
+        await deps.updateRecommendationStatus(id, final.status, {
+          targetActions: final.targetActions,
+          lidarrError: final.lidarrError,
+        })
+        results.push({ id, status: final.status })
+        continue
+      }
+
       const result: ApproveResult =
-        rec.kind === 'track'
-          ? await approveTrackRecommendation(
-              rec,
-              effectiveTargets,
-              rfOverride != null ? { rootFolderId: rfOverride } : {},
-              deps.jobRecorder,
-              userId,
-            )
-          : rec.kind === 'album'
-            ? rec.recommendedReleaseGroupId
-              ? await approveAlbumToTargets(
-                  {
-                    artistMbid: rec.artist.mbid,
-                    artistName: rec.artist.name,
-                    releaseGroupMbid: rec.recommendedReleaseGroupId,
-                  },
-                  effectiveTargets,
-                  addOptions,
-                  deps.jobRecorder,
-                  userId,
-                  id,
-                )
-              : { status: 'add_failed', targetActions: {} }
-            : await approveToTargets(
-                { mbid: rec.artist.mbid, name: rec.artist.name },
+        rec.kind === 'album'
+          ? rec.recommendedReleaseGroupId
+            ? await approveAlbumToTargets(
+                {
+                  artistMbid: rec.artist.mbid,
+                  artistName: rec.artist.name,
+                  releaseGroupMbid: rec.recommendedReleaseGroupId,
+                },
                 effectiveTargets,
                 addOptions,
                 deps.jobRecorder,
                 userId,
                 id,
               )
+            : { status: 'add_failed', targetActions: {} }
+          : await approveToTargets(
+              { mbid: rec.artist.mbid, name: rec.artist.name },
+              effectiveTargets,
+              addOptions,
+              deps.jobRecorder,
+              userId,
+              id,
+            )
 
       const extra: Record<string, unknown> = { targetActions: result.targetActions }
       if (result.lidarrArtistId) extra.lidarrArtistId = result.lidarrArtistId
       if (result.lidarrError) extra.lidarrError = result.lidarrError
-      else if (rec.kind === 'track') extra.lidarrError = null
       await deps.updateRecommendationStatus(id, result.status, extra)
       results.push({ id, status: result.status })
     }

@@ -1008,6 +1008,29 @@ describe('track recommendation approval (songpick)', () => {
     )
   })
 
+  it('a failed bulk retry keeps a track approved and its earlier songpick success', async () => {
+    const prior = { status: 'added', success: true, songpickStatus: 'wanted' }
+    mockDeps.getRecommendation.mockResolvedValue(
+      trackRec({ id: 1, targetActions: { 'songpick-1': prior } }),
+    )
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: false, error: 'songpick timed out' }),
+    ])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [1], action: 'approve' }),
+    })
+
+    expect(await res.json()).toEqual({ results: [{ id: 1, status: 'approved' }] })
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledExactlyOnceWith(
+      1,
+      'approved',
+      expect.objectContaining({ targetActions: { 'songpick-1': prior }, lidarrError: null }),
+    )
+  })
+
   it('a retry with only an owned prior outcome stays duplicate', async () => {
     mockDeps.getRecommendation.mockResolvedValue(
       trackRec({
