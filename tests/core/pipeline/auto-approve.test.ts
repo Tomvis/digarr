@@ -768,6 +768,7 @@ describe('autoApprove()', () => {
         'approved',
         expect.objectContaining({
           targetActions: { 'songpick-1': expect.objectContaining({ songpickStatus: 'wanted' }) },
+          lidarrError: null,
         }),
       )
     })

@@ -29,6 +29,38 @@ export type TrackApproveResult = {
 const NO_TRACK_TARGET_ERROR = 'No enabled songpick target to want this track'
 const MISSING_TRACK_TITLE_ERROR = 'Track recommendation has no track title'
 
+/**
+ * Rec status from a (possibly merged) targetActions map: any wanted /
+ * already_wanted success → approved; else any owned → duplicate; else add_failed.
+ */
+export function deriveTrackStatus(actions: Record<string, unknown>): TrackApproveResult['status'] {
+  const successes = Object.values(actions).filter(
+    (a): a is Partial<TrackTargetAction> =>
+      typeof a === 'object' && a !== null && (a as TrackTargetAction).success === true,
+  )
+  if (successes.some((a) => a.songpickStatus !== 'owned')) return 'approved'
+  if (successes.length > 0) return 'duplicate'
+  return 'add_failed'
+}
+
+/**
+ * Merge a retry's actions over the stored ones. A failed retry never replaces
+ * an earlier success on the same target: songpick's want already happened in
+ * Lidarr and a later failure does not undo it.
+ */
+export function mergeTrackActions(
+  prior: Record<string, unknown>,
+  next: Record<string, TrackTargetAction>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...prior }
+  for (const [id, action] of Object.entries(next)) {
+    const before = prior[id] as Partial<TrackTargetAction> | null | undefined
+    if (!action.success && before?.success === true) continue
+    merged[id] = action
+  }
+  return merged
+}
+
 function toAction(result: TrackTargetResult): TrackTargetAction {
   return {
     status: result.success ? 'added' : 'failed',
@@ -62,8 +94,6 @@ export async function approveTrackToTargets(
   }
 
   const targetActions: Record<string, TrackTargetAction> = {}
-  let wanted = false
-  let owned = false
   let firstError: string | undefined
 
   for (const target of actionable) {
@@ -90,12 +120,7 @@ export async function approveTrackToTargets(
     }
 
     targetActions[target.id] = toAction(result)
-    if (result.success) {
-      if (result.songpickStatus === 'owned') owned = true
-      else wanted = true
-    } else {
-      firstError ??= result.error ?? 'Target returned failure'
-    }
+    if (!result.success) firstError ??= result.error ?? 'Target returned failure'
 
     if (jobId != null && jobRecorder) {
       if (result.success) {
@@ -108,9 +133,10 @@ export async function approveTrackToTargets(
     }
   }
 
-  if (wanted) return { status: 'approved', targetActions }
-  if (owned) return { status: 'duplicate', targetActions }
-  return { status: 'add_failed', targetActions, lidarrError: firstError }
+  const status = deriveTrackStatus(targetActions)
+  return status === 'add_failed'
+    ? { status, targetActions, lidarrError: firstError }
+    : { status, targetActions }
 }
 
 export type TrackRecommendation = {

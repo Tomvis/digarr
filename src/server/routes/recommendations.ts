@@ -5,7 +5,11 @@ import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
 import { createSpotifyClient } from '@/core/clients/spotify'
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
 import { resolveProviderToken } from '@/core/provider-auth'
-import { approveTrackRecommendation } from '@/core/targets/approve-track'
+import {
+  approveTrackRecommendation,
+  deriveTrackStatus,
+  mergeTrackActions,
+} from '@/core/targets/approve-track'
 import type { RecommendationKind } from '@/core/types'
 import { getUserConnections } from '@/db/queries/users'
 import { mergePreferences } from '@/db/schema'
@@ -725,14 +729,17 @@ export function recommendationRoutes(deps: AppDependencies) {
             userId,
           )
           const priorActions = (rec.targetActions as Record<string, unknown> | null) ?? {}
-          const mergedActions = { ...priorActions, ...result.targetActions }
-          await deps.updateRecommendationStatus(id, result.status, {
+          const mergedActions = mergeTrackActions(priorActions, result.targetActions)
+          // A retry never regresses a track whose earlier songpick want succeeded.
+          const finalStatus =
+            Object.keys(priorActions).length > 0 ? deriveTrackStatus(mergedActions) : result.status
+          await deps.updateRecommendationStatus(id, finalStatus, {
             targetActions: mergedActions,
-            lidarrError: result.lidarrError ?? null,
+            lidarrError: finalStatus === 'add_failed' ? (result.lidarrError ?? null) : null,
           })
           const targetsById = new Map(targets.map((target) => [target.id, target]))
           return c.json({
-            status: result.status,
+            status: finalStatus,
             targetActions: mergedActions,
             targetSummary: summarizeTargetActions(result.targetActions, targetsById),
             ...(result.lidarrError ? { lidarrError: result.lidarrError } : {}),
@@ -986,6 +993,31 @@ export function recommendationRoutes(deps: AppDependencies) {
       return c.json({ error: `Target does not support recommendation approval: ${targetId}` }, 400)
     }
 
+    // Load every row up front so an explicit target that cannot take some row
+    // (a songpick target for an artist rec, or a non-songpick target for a
+    // track rec) fails the whole request before anything is approved,
+    // mirroring the single PATCH. Album rows keep their per-row add_failed.
+    const recsById = new Map<number, Awaited<ReturnType<typeof deps.getRecommendation>>>()
+    for (const id of ids) {
+      const rec = await deps.getRecommendation(id)
+      recsById.set(id, rec && isOwned(rec, userId) ? rec : null)
+    }
+    if (targetId) {
+      for (const rec of recsById.values()) {
+        if (!rec || rec.kind === 'album') continue
+        const isTrack = rec.kind === 'track'
+        const needed = isTrack ? 'addTrack' : 'addArtist'
+        if (!effectiveTargets.some((t) => t.capabilities?.includes(needed))) {
+          return c.json(
+            {
+              error: `Target does not support ${isTrack ? 'track' : 'artist'} approval: ${targetId}`,
+            },
+            400,
+          )
+        }
+      }
+    }
+
     const addOptions = await buildAddOptions(deps, userId, undefined, {
       qualityProfileId: qpOverride,
       metadataProfileId: mpOverride,
@@ -995,12 +1027,8 @@ export function recommendationRoutes(deps: AppDependencies) {
     const results: Array<{ id: number; status: string; error?: string }> = []
 
     for (const id of ids) {
-      const rec = await deps.getRecommendation(id)
+      const rec = recsById.get(id)
       if (!rec) {
-        results.push({ id, status: 'not_found' })
-        continue
-      }
-      if (!isOwned(rec, userId)) {
         results.push({ id, status: 'not_found' })
         continue
       }
@@ -1042,6 +1070,7 @@ export function recommendationRoutes(deps: AppDependencies) {
       const extra: Record<string, unknown> = { targetActions: result.targetActions }
       if (result.lidarrArtistId) extra.lidarrArtistId = result.lidarrArtistId
       if (result.lidarrError) extra.lidarrError = result.lidarrError
+      else if (rec.kind === 'track') extra.lidarrError = null
       await deps.updateRecommendationStatus(id, result.status, extra)
       results.push({ id, status: result.status })
     }

@@ -922,4 +922,104 @@ describe('track recommendation approval (songpick)', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ results: [{ id: 1, status: 'duplicate' }] })
   })
+
+  it('bulk approve rejects a songpick-only targetId when the batch has an artist rec', async () => {
+    mockDeps.getRecommendation.mockResolvedValue({
+      id: 2,
+      userId: 1,
+      kind: 'artist',
+      artist: { mbid: 'mbid-2', name: 'Portishead' },
+    })
+    const songpick = songpickTarget({ success: true, songpickStatus: 'wanted' })
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarrTarget(), songpick])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [2], action: 'approve', targetId: 'songpick-1' }),
+    })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Target does not support artist approval: songpick-1')
+    expect(mockDeps.updateRecommendationStatus).not.toHaveBeenCalled()
+    expect(songpick.addTrack).not.toHaveBeenCalled()
+  })
+
+  it('bulk approve rejects a Lidarr targetId when the batch has a track rec', async () => {
+    mockDeps.getRecommendation.mockImplementation(async (id: number) =>
+      id === 1
+        ? trackRec({ id: 1 })
+        : { id, userId: 1, kind: 'artist', artist: { mbid: 'mbid-2', name: 'Portishead' } },
+    )
+    const lidarr = lidarrTarget()
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([lidarr])
+
+    const res = await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [2, 1], action: 'approve', targetId: 'lidarr-1' }),
+    })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Target does not support track approval: lidarr-1')
+    expect(lidarr.addArtist).not.toHaveBeenCalled()
+    expect(mockDeps.updateRecommendationStatus).not.toHaveBeenCalled()
+  })
+
+  it('bulk approve clears a stale lidarrError on track success', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(trackRec({ id: 1, lidarrError: 'old' }))
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: true, songpickStatus: 'wanted' }),
+    ])
+
+    await createTestApp().request('/api/v1/recommendations/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [1], action: 'approve' }),
+    })
+
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledWith(
+      1,
+      'approved',
+      expect.objectContaining({ lidarrError: null }),
+    )
+  })
+
+  it('a failed retry keeps a track approved when an earlier songpick want succeeded', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(
+      trackRec({
+        targetActions: {
+          'songpick-1': { status: 'added', success: true, songpickStatus: 'wanted' },
+        },
+      }),
+    )
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: false, error: 'songpick timed out' }),
+    ])
+
+    const body = await (await approve({ targetId: 'songpick-1' })).json()
+
+    expect(body.status).toBe('approved')
+    expect(body.targetSummary).toMatchObject({ total: 1, succeeded: 0, failed: 1 })
+    expect(mockDeps.updateRecommendationStatus).toHaveBeenCalledWith(
+      7,
+      'approved',
+      expect.objectContaining({ lidarrError: null }),
+    )
+  })
+
+  it('a retry with only an owned prior outcome stays duplicate', async () => {
+    mockDeps.getRecommendation.mockResolvedValue(
+      trackRec({
+        targetActions: {
+          'songpick-1': { status: 'added', success: true, songpickStatus: 'owned' },
+        },
+      }),
+    )
+    mockDeps.getEnabledTargetsForUser.mockResolvedValue([
+      songpickTarget({ success: false, error: 'boom' }),
+    ])
+
+    expect((await (await approve()).json()).status).toBe('duplicate')
+  })
 })

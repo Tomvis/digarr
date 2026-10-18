@@ -81,9 +81,10 @@ export async function autoApprove(
         deps.jobRecorder,
         deps.userId,
       )
-      const extra: StatusUpdateExtra = { targetActions: result.targetActions }
-      if (result.lidarrError) extra.lidarrError = result.lidarrError
-      await deps.updateRecommendationStatus(rec.id, result.status, extra)
+      await deps.updateRecommendationStatus(rec.id, result.status, {
+        targetActions: result.targetActions,
+        lidarrError: result.lidarrError ?? null,
+      })
       if (result.status === 'approved') approved++
       else if (result.status === 'add_failed') failed++
       checkPipelineCancelled(signal)
