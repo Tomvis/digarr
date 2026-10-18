@@ -536,3 +536,20 @@ export async function getExistingAlbumReleaseGroupMbids(
     .where(and(...conditions))
   return new Set(rows.map((r) => r.rg).filter((rg): rg is string => Boolean(rg)))
 }
+
+/** Recording MBIDs of existing track recommendations (all statuses) for one user; null = global rows. */
+export async function getRecommendedRecordingMbids(
+  db: Database,
+  userId: number | null,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ mbid: recommendations.recommendedRecordingMbid })
+    .from(recommendations)
+    .where(
+      and(
+        eq(recommendations.kind, 'track'),
+        userId === null ? isNull(recommendations.userId) : eq(recommendations.userId, userId),
+      ),
+    )
+  return new Set(rows.map((r) => r.mbid).filter((m): m is string => Boolean(m)))
+}

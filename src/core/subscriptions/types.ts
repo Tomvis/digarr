@@ -91,6 +91,10 @@ export type SubscriptionRunDeps = {
   defaultScoreThreshold: number
   /** Lowercase names of the user's top listened artists - excluded from results. */
   topArtistNames?: Set<string>
+  /** Recording MBIDs already recommended to this user (any status), for track dedupe. */
+  getRecommendedRecordingMbids?: (userId: number | null) => Promise<Set<string>>
+  /** True when the user's library already has this track. Errors keep the track. */
+  isTrackOwned?: (artistName: string, title: string) => Promise<boolean>
   discoveryModeRunner?: typeof runDiscoveryMode
   discoveryModeRegistry?: DiscoveryModeRegistry
   getDiscoveryConnectionSnapshot?: (userId: number) => Promise<DiscoveryConnectionSnapshot>

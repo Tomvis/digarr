@@ -116,6 +116,58 @@ describe('runSubscription', () => {
     )
   })
 
+  it('stores tracks on the track path without resolve/filter', async () => {
+    const subscription = makeSubscription({ userId: 4 })
+    const deps = makeDeps({
+      getRecommendedRecordingMbids: vi.fn().mockResolvedValue(new Set(['r-known'])),
+      isTrackOwned: vi.fn().mockResolvedValue(false),
+      mbClient: {
+        lookupArtist: vi.fn().mockResolvedValue({ id: 'a-1', name: 'Artist' }),
+        searchArtist: vi.fn(),
+        extractStreamingUrls: vi.fn().mockReturnValue({}),
+      },
+    })
+    const mk = (n: string, position: number) => ({
+      artistName: 'A',
+      artistMbid: 'a-1',
+      title: n,
+      recordingMbid: n,
+      position,
+      total: 10,
+      source: 'weekly-jams',
+    })
+    const adapter = makeAdapter({
+      fetch: vi.fn().mockResolvedValue({
+        artists: [],
+        tracks: [mk('r-1', 0), mk('r-2', 1), mk('r-known', 2)],
+      }),
+    })
+
+    const result = await runSubscription(subscription, adapter, deps)
+
+    expect(resolveMock).not.toHaveBeenCalled()
+    expect(filterMock).not.toHaveBeenCalled()
+    expect(deps.db.insertRecommendation).toHaveBeenCalledTimes(2)
+    expect(deps.getRecommendedRecordingMbids).toHaveBeenCalledWith(4)
+    expect(deps.jobRecorder.complete).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          artistsFound: 0,
+          artistsNew: 0,
+          tracksFound: 3,
+          tracksNew: 2,
+        }),
+        batchId: 99,
+      }),
+    )
+    expect(deps.queries.updateSubscription).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ lastResultCount: 2 }),
+    )
+    expect(result.batchId).toBe(99)
+  })
+
   it('completes empty when adapter returns no artists', async () => {
     const subscription = makeSubscription()
     const deps = makeDeps()

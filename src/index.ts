@@ -36,6 +36,7 @@ import { createSubsonicLibrarySource } from './core/library/sources/subsonic'
 import { createLibrarySyncStore } from './core/library/store'
 import { createSyncOrchestrator, type SyncOrchestrator } from './core/library/sync'
 import { markShuttingDown } from './core/lifecycle'
+import { normalizeAlbumTitle, normalizeArtistName } from './core/matching/normalize'
 import { startMusicRaterSyncScheduler } from './core/music-rater/scheduler'
 import { syncMusicRaterCorpus } from './core/music-rater/sync'
 import { dispatch } from './core/notifications'
@@ -88,6 +89,7 @@ import { runSubscription } from './core/subscriptions/runner'
 import type {
   MusicBrainzClient as SubMBClient,
   SubscriptionConfig,
+  SubscriptionRunDeps,
 } from './core/subscriptions/types'
 import { createEmbyPlaylistTarget } from './core/targets/emby-playlist'
 import { createJellyfinPlaylistTarget } from './core/targets/jellyfin-playlist'
@@ -162,6 +164,7 @@ import {
   getExistingAlbumReleaseGroupMbids,
   getGenreFeedbackHistory,
   getRecommendation,
+  getRecommendedRecordingMbids,
   getRejectedArtistMbids,
   insertRecommendation,
   listRecommendations,
@@ -1096,6 +1099,34 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
     }
   }
 
+  // Owned-track filter: only when the subscription user has a Subsonic library.
+  let isTrackOwned: SubscriptionRunDeps['isTrackOwned']
+  if (userConns?.subsonicUrl && userConns.subsonicUsername && userConns.subsonicPassword) {
+    const subsonic = createSubsonicClient(
+      userConns.subsonicUrl,
+      userConns.subsonicUsername,
+      userConns.subsonicPassword,
+      { musicFolderId: userConns.subsonicMusicFolderId },
+    )
+    const tracksByArtist = new Map<
+      string,
+      Promise<Awaited<ReturnType<typeof subsonic.searchTracks>>>
+    >()
+    isTrackOwned = async (artistName, title) => {
+      const artistKey = normalizeArtistName(artistName)
+      let pending = tracksByArtist.get(artistKey)
+      if (!pending) {
+        pending = subsonic.searchTracks(artistName, 100)
+        tracksByArtist.set(artistKey, pending)
+      }
+      const wanted = normalizeAlbumTitle(title)
+      return (await pending).some(
+        (t) =>
+          normalizeArtistName(t.artist) === artistKey && normalizeAlbumTitle(t.name) === wanted,
+      )
+    }
+  }
+
   await runSubscription(
     subscriptionConfig,
     (adapter ?? {
@@ -1122,6 +1153,8 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
       cooldownDays: prefs.rejectionCooldownDays,
       defaultScoreThreshold: prefs.scoreThreshold,
       topArtistNames,
+      getRecommendedRecordingMbids: (userId) => getRecommendedRecordingMbids(db, userId),
+      isTrackOwned,
       discoveryModeRegistry,
       getDiscoveryConnectionSnapshot,
       pipelineOrchestrator: orchestrator,

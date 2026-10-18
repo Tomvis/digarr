@@ -10,6 +10,7 @@ import { score } from '@/core/pipeline/score'
 import { store } from '@/core/pipeline/store'
 import { resolveWeights } from '@/core/pipeline/weight-presets'
 import { DISCOVERY_MODE_SUBSCRIPTION_TYPE } from '@/core/subscriptions/registry'
+import { selectTracks, storeTracks } from '@/core/subscriptions/tracks'
 import type {
   DiscoveryModeSubscriptionConfig,
   RunResult,
@@ -222,20 +223,49 @@ export async function runSubscription(
       }
     }
 
-    const { artists } = await adapter.fetch(subscription.sourceConfig, {
+    const { artists, tracks } = await adapter.fetch(subscription.sourceConfig, {
       limit: subscription.maxArtistsPerRun ?? undefined,
     })
 
-    if (artists.length === 0) {
-      await jobRecorder.complete(jobId, {
-        metadata: { adapterType: subscription.sourceType, artistsFound: 0, artistsNew: 0 },
+    const hasTracks = (tracks?.length ?? 0) > 0
+    let tracksFound = 0
+    let tracksNew = 0
+    let trackBatchId: number | undefined
+    if (hasTracks && tracks) {
+      tracksFound = tracks.length
+      const known = deps.getRecommendedRecordingMbids
+        ? await deps.getRecommendedRecordingMbids(subscription.userId)
+        : new Set<string>()
+      const selected = await selectTracks(tracks, {
+        known,
+        isOwned: deps.isTrackOwned,
+        threshold: subscription.scoreThreshold ?? deps.defaultScoreThreshold,
+        cap: subscription.maxArtistsPerRun ?? undefined,
       })
+      if (selected.length > 0) {
+        const stored = await storeTracks(selected, deps.db, deps.mbClient, {
+          userId: subscription.userId ?? undefined,
+          subscriptionId: subscription.id,
+        })
+        trackBatchId = stored.batchId
+        tracksNew = stored.added
+      }
+    }
+
+    if (artists.length === 0) {
+      const metadata: Record<string, unknown> = {
+        adapterType: subscription.sourceType,
+        artistsFound: 0,
+        artistsNew: 0,
+      }
+      if (hasTracks) Object.assign(metadata, { tracksFound, tracksNew })
+      await jobRecorder.complete(jobId, { metadata, batchId: trackBatchId })
       await queries.updateSubscription(subscription.id, {
         lastRunAt: new Date(),
-        lastResultCount: 0,
+        lastResultCount: tracksNew,
         lastError: null,
       })
-      return { runId: jobId, batchId: null, artistsFound: 0, artistsNew: 0 }
+      return { runId: jobId, batchId: trackBatchId ?? null, artistsFound: 0, artistsNew: 0 }
     }
 
     const artistsFound = artists.length
@@ -272,17 +302,22 @@ export async function runSubscription(
     const artistsNew = filtered.length
 
     await jobRecorder.complete(jobId, {
-      metadata: { adapterType: subscription.sourceType, artistsFound, artistsNew },
-      batchId,
+      metadata: {
+        adapterType: subscription.sourceType,
+        artistsFound,
+        artistsNew,
+        ...(hasTracks ? { tracksFound, tracksNew } : {}),
+      },
+      batchId: batchId ?? trackBatchId,
     })
 
     await queries.updateSubscription(subscription.id, {
       lastRunAt: new Date(),
-      lastResultCount: artistsNew,
+      lastResultCount: artistsNew + tracksNew,
       lastError: null,
     })
 
-    return { runId: jobId, batchId: batchId ?? null, artistsFound, artistsNew }
+    return { runId: jobId, batchId: batchId ?? trackBatchId ?? null, artistsFound, artistsNew }
   } catch (err: unknown) {
     const errorMessage = errMsg(err)
     console.error(`[subscription-runner] Subscription ${subscription.id} failed:`, err)
