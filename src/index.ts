@@ -36,7 +36,6 @@ import { createSubsonicLibrarySource } from './core/library/sources/subsonic'
 import { createLibrarySyncStore } from './core/library/store'
 import { createSyncOrchestrator, type SyncOrchestrator } from './core/library/sync'
 import { markShuttingDown } from './core/lifecycle'
-import { normalizeAlbumTitle, normalizeArtistName } from './core/matching/normalize'
 import { startMusicRaterSyncScheduler } from './core/music-rater/scheduler'
 import { syncMusicRaterCorpus } from './core/music-rater/sync'
 import { dispatch } from './core/notifications'
@@ -84,6 +83,7 @@ import { createSpotifyChartsAdapter } from './core/subscriptions/adapters/spotif
 import { createSpotifyLikedSongsAdapter } from './core/subscriptions/adapters/spotify-liked-songs'
 import { createSpotifyPlaylistAdapter } from './core/subscriptions/adapters/spotify-playlist'
 import { resolveSubscriptionSourceConnections } from './core/subscriptions/connections'
+import { createSubsonicOwnedCheck } from './core/subscriptions/owned'
 import { AdapterRegistry, DISCOVERY_MODE_SUBSCRIPTION_TYPE } from './core/subscriptions/registry'
 import { runSubscription } from './core/subscriptions/runner'
 import type {
@@ -1137,26 +1137,7 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
       userConns.subsonicPassword,
       { musicFolderId: userConns.subsonicMusicFolderId },
     )
-    const tracksByArtist = new Map<
-      string,
-      Promise<Awaited<ReturnType<typeof subsonic.searchTracks>>>
-    >()
-    isTrackOwned = async (artistName, title) => {
-      const artistKey = normalizeArtistName(artistName)
-      let pending = tracksByArtist.get(artistKey)
-      if (!pending) {
-        const search = subsonic.searchTracks(artistName, 100)
-        // Drop failed lookups so a transient error can be retried.
-        search.catch(() => tracksByArtist.delete(artistKey))
-        pending = search
-        tracksByArtist.set(artistKey, pending)
-      }
-      const wanted = normalizeAlbumTitle(title)
-      return (await pending).some(
-        (t) =>
-          normalizeArtistName(t.artist) === artistKey && normalizeAlbumTitle(t.name) === wanted,
-      )
-    }
+    isTrackOwned = createSubsonicOwnedCheck(subsonic)
   }
 
   await runSubscription(
