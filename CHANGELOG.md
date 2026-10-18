@@ -12,6 +12,8 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Added
 
+- Customize the Dashboard per account: show or hide every card, drag or use move buttons and arrow keys to reorder, choose one to three desktop columns, and reset to the curated layout. Empty cards hide by default with an option to keep them visible. Your decisions combines approvals and rejections; Listening switches between top artists and recent plays. Card titles link to their source pages, which have a Show on dashboard switch. All 15 languages are supported (#995).
+
 - Built-in Streamable HTTP MCP endpoint at `/api/v1/mcp` for recommendations, approvals, rejections, blocks, scans, discovery modes, job status, artist search, and playlists. Personal API tokens are required; read scope permits read tools only. Account settings shows a copyable client configuration after token creation in all 15 languages. No extra service or MCP session store is needed. (#979)
 - slskd targets now let you set a minimum search gap (3 seconds by default, 1-60 seconds) and keep jobs retryable with bounded backoff when slskd returns HTTP 409/429 (#971).
 - The slskd connection test checks the linked Lidarr download directory, reports missing or unlistable paths and likely incomplete folders, and shows the result in your language (#972).
