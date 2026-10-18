@@ -10,6 +10,9 @@ import {
   rebuildGenres,
   rescoreRecommendations,
 } from '@/core/ops/hygiene'
+import type { Database } from '@/db'
+import { artists, recommendationBatches, recommendations, users } from '@/db/schema'
+import { makeTestDb } from '../../helpers/test-db'
 
 function makeUpdateDb(rowCount: number) {
   return {
@@ -69,6 +72,40 @@ describe('dedupeRepair', () => {
     expect(result.tool).toBe('dedupe')
     expect(result).toHaveProperty('duplicateGroups')
     expect(result).toHaveProperty('removed')
+  })
+})
+
+describe('dedupeRepair kind scoping', () => {
+  it('leaves track and album recs alone but still dedupes artist recs', async () => {
+    const { db, close } = await makeTestDb()
+    try {
+      const d = db as unknown as Database
+      const [user] = await d.insert(users).values({ username: 'u', passwordHash: 'h' }).returning()
+      const [artist] = await d
+        .insert(artists)
+        .values({ name: 'A', mbid: '00000000-0000-0000-0000-000000000021' })
+        .returning()
+      const [batch] = await d.insert(recommendationBatches).values({}).returning()
+      if (!user || !artist || !batch) throw new Error('fixture')
+      const base = { userId: user.id, batchId: batch.id, artistId: artist.id }
+      await d.insert(recommendations).values([
+        { ...base, kind: 'artist', score: 0.9 },
+        { ...base, kind: 'track', score: 0.8 },
+        { ...base, kind: 'album', score: 0.7 },
+      ])
+      const first = await dedupeRepair(d as never)
+      expect(first).toMatchObject({ duplicateGroups: 0, removed: 0 })
+      await d.insert(recommendations).values({ ...base, kind: 'artist', score: 0.5 })
+      const second = await dedupeRepair(d as never)
+      expect(second).toMatchObject({ duplicateGroups: 1, removed: 1 })
+      const rows = await d.select().from(recommendations)
+      const dup = rows.filter((r) => r.status === 'duplicate')
+      expect(dup).toHaveLength(1)
+      expect(dup[0]?.kind).toBe('artist')
+      expect(dup[0]?.score).toBe(0.5)
+    } finally {
+      await close()
+    }
   })
 })
 

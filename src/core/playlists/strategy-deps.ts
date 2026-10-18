@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, max } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, max, ne } from 'drizzle-orm'
 import type { Database } from '@/db'
 import { artists, recommendations } from '@/db/schema'
 import type { StrategyArtist, StrategyDeps } from './strategies/types'
@@ -18,7 +18,13 @@ export function buildStrategyDeps(db: Database, userId: number | null): Strategy
         })
         .from(recommendations)
         .innerJoin(artists, eq(artists.id, recommendations.artistId))
-        .where(and(eq(recommendations.status, 'pending'), eq(recommendations.userId, userId)))
+        .where(
+          and(
+            eq(recommendations.status, 'pending'),
+            eq(recommendations.userId, userId),
+            ne(recommendations.kind, 'track'),
+          ),
+        )
         .groupBy(artists.id)
         .orderBy(desc(max(recommendations.score)), artists.id)
         .limit(opts.limit)
@@ -39,6 +45,7 @@ export function buildStrategyDeps(db: Database, userId: number | null): Strategy
         .where(
           and(
             inArray(recommendations.status, APPROVED_STATUSES),
+            ne(recommendations.kind, 'track'),
             opts.since ? gte(recommendations.actedOnAt, opts.since) : undefined,
             userId != null ? eq(recommendations.userId, userId) : undefined,
           ),
@@ -74,6 +81,7 @@ export function buildStrategyDeps(db: Database, userId: number | null): Strategy
         .where(
           and(
             inArray(recommendations.status, APPROVED_STATUSES),
+            ne(recommendations.kind, 'track'),
             lt(recommendations.actedOnAt, opts.olderThan),
             userId != null ? eq(recommendations.userId, userId) : undefined,
           ),

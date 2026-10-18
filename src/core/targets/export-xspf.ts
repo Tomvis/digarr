@@ -32,9 +32,10 @@ export function exportToXspf(
     const parts = ['    <track>']
     parts.push(`      <location>${escapeXml(getStreamingUrl(rec))}</location>`)
     parts.push(`      <creator>${escapeXml(rec.artistName)}</creator>`)
-    parts.push(`      <title>${escapeXml(rec.artistName)}</title>`)
-    if (rec.suggestedAlbum) {
-      parts.push(`      <album>${escapeXml(rec.suggestedAlbum)}</album>`)
+    parts.push(`      <title>${escapeXml(rec.trackTitle ?? rec.artistName)}</title>`)
+    const album = rec.trackAlbum ?? rec.suggestedAlbum
+    if (album) {
+      parts.push(`      <album>${escapeXml(album)}</album>`)
     }
     if (rec.aiReasoning) {
       parts.push(`      <annotation>${escapeXml(rec.aiReasoning)}</annotation>`)

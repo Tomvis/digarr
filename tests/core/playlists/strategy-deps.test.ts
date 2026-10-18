@@ -53,3 +53,36 @@ describe('audition artist selection', () => {
     expect(await buildStrategyDeps(db, null).getPendingArtists({ limit: 2 })).toEqual([])
   })
 })
+
+describe('track recommendations', () => {
+  it('are excluded from pending and approved artist selection', async () => {
+    const result = await makeTestDb()
+    close = result.close
+    const db = result.db as unknown as Database
+    const [user] = await db.insert(users).values({ username: 'u', passwordHash: 'h' }).returning()
+    const [a, b] = await db
+      .insert(artists)
+      .values([
+        { name: 'Plain', mbid: '00000000-0000-0000-0000-000000000011' },
+        { name: 'TrackOnly', mbid: '00000000-0000-0000-0000-000000000012' },
+      ])
+      .returning()
+    const [batch] = await db.insert(recommendationBatches).values({}).returning()
+    if (!user || !a || !b || !batch) throw new Error('fixture')
+    const base = { userId: user.id, batchId: batch.id }
+    const acted = new Date()
+    await db.insert(recommendations).values([
+      { ...base, artistId: a.id, status: 'pending', score: 0.5 },
+      { ...base, artistId: b.id, status: 'pending', score: 0.9, kind: 'track' },
+      { ...base, artistId: a.id, status: 'approved', score: 0.5, actedOnAt: acted },
+      { ...base, artistId: b.id, status: 'approved', score: 0.9, kind: 'track', actedOnAt: acted },
+    ])
+    const deps = buildStrategyDeps(db, user.id)
+    expect((await deps.getPendingArtists({ limit: 10 })).map((x) => x.name)).toEqual(['Plain'])
+    expect((await deps.getApprovedArtists({ limit: 10 })).map((x) => x.name)).toEqual(['Plain'])
+    const later = new Date(acted.getTime() + 1000)
+    expect(
+      (await deps.getOlderApprovedArtists({ olderThan: later, limit: 10 })).map((x) => x.name),
+    ).toEqual(['Plain'])
+  })
+})

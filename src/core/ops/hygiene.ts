@@ -41,6 +41,7 @@ export async function dedupeRepair(db: OpsDb): Promise<HygieneResult> {
       cnt: sql<number>`count(*)::int`,
     })
     .from(recommendations)
+    .where(eq(recommendations.kind, 'artist'))
     .groupBy(recommendations.userId, recommendations.artistId)
     .having(sql`count(*) > 1`)
 
@@ -62,6 +63,7 @@ export async function dedupeRepair(db: OpsDb): Promise<HygieneResult> {
             ? eq(recommendations.userId, group.userId)
             : sql`${recommendations.userId} IS NULL`,
           eq(recommendations.artistId, group.artistId),
+          eq(recommendations.kind, 'artist'),
         ),
       )
       .orderBy(sql`${recommendations.score} DESC`)
@@ -160,6 +162,7 @@ function rescoreOne(
   kind: string,
   weights: ScoringWeights,
 ): number | null {
+  if (kind === 'track') return null
   if (kind !== 'artist' && kind !== 'album') return null
   if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return null
   const { consensus, similarity, genreOverlap, aiConfidence, feedbackBoost } = sources

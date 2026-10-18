@@ -75,6 +75,8 @@ export function exportRoutes(deps: ExportDeps) {
       createdAt:
         typeof rec.createdAt === 'string' ? rec.createdAt : new Date(rec.createdAt).toISOString(),
       suggestedAlbum: rec.recommendedReleaseGroupTitle ?? undefined,
+      trackTitle: rec.recommendedTrackTitle ?? undefined,
+      trackAlbum: rec.recommendedTrackAlbum ?? undefined,
     }))
 
     // format already validated above - safe to index directly

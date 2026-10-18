@@ -114,6 +114,8 @@ export type ExportableRecommendation = {
   streamingUrls: Record<string, string>
   createdAt: string
   suggestedAlbum?: string
+  trackTitle?: string
+  trackAlbum?: string
 }
 
 /** Resolve the best streaming URL for a recommendation, falling back to MusicBrainz. */

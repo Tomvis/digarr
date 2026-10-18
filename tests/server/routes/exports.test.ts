@@ -80,6 +80,43 @@ describe('export routes', () => {
     expect(text).toContain('xspf.org')
   })
 
+  it('carries track fields into json and csv exports', async () => {
+    mockDeps.listRecommendations.mockResolvedValueOnce({
+      items: [
+        {
+          id: 2,
+          score: 0.8,
+          status: 'pending',
+          createdAt: '2026-03-20T00:00:00Z',
+          recommendedTrackTitle: 'Creep',
+          recommendedTrackAlbum: 'Pablo Honey',
+          artist: { name: 'Radiohead', mbid: 'm', genres: [], streamingUrls: {} },
+        },
+      ],
+      total: 1,
+    })
+    const app = createTestApp()
+    const json = await (await app.request('/api/v1/exports/json')).json()
+    expect(json[0]).toMatchObject({ trackTitle: 'Creep', trackAlbum: 'Pablo Honey' })
+    mockDeps.listRecommendations.mockResolvedValueOnce({
+      items: [
+        {
+          id: 2,
+          score: 0.8,
+          status: 'pending',
+          createdAt: '2026-03-20T00:00:00Z',
+          recommendedTrackTitle: 'Creep',
+          recommendedTrackAlbum: 'Pablo Honey',
+          artist: { name: 'Radiohead', mbid: 'm', genres: [], streamingUrls: {} },
+        },
+      ],
+      total: 1,
+    })
+    const csv = await (await app.request('/api/v1/exports/csv')).text()
+    expect(csv.split('\n')[0]).toBe('artist,mbid,genres,score,status,date,track,track_album')
+    expect(csv).toContain(',Creep,Pablo Honey')
+  })
+
   it('returns 400 for unknown format', async () => {
     const app = createTestApp()
     const res = await app.request('/api/v1/exports/xml')
