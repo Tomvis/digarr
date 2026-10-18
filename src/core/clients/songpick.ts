@@ -66,6 +66,10 @@ export function createSongpickClient(
           typeof error === 'string' && error ? error : `songpick returned HTTP ${res.status}`,
         )
       }
+      const status = (body as { status?: unknown } | undefined)?.status
+      if (typeof status !== 'string') {
+        throw new SongpickError(res.status, 'songpick returned an invalid response')
+      }
       return body as SongpickResponse
     },
 

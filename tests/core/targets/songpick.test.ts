@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSongpickTarget } from '@/core/targets/songpick'
+import { createSongpickTarget, pickRootFolderPath } from '@/core/targets/songpick'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -47,4 +47,27 @@ describe('songpick target', () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+})
+
+describe('target default root folder', () => {
+  it('calls the resolver with undefined when no override is given', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ status: 'owned' })))
+    const resolve = vi.fn().mockResolvedValue('/music/lera')
+    const t = createSongpickTarget(2, { url: 'http://sp', resolveRootFolderPath: resolve })
+    expect(await t.addTrack?.(track)).toMatchObject({ success: true, songpickStatus: 'owned' })
+    expect(resolve).toHaveBeenCalledWith(undefined)
+  })
+})
+
+describe('pickRootFolderPath', () => {
+  const folders = [
+    { id: 2, path: '/music/tom' },
+    { id: 3, path: '/music/lera' },
+  ]
+  it('override wins', () => expect(pickRootFolderPath(folders, 3, 2)).toBe('/music/lera'))
+  it('uses user pref without override', () =>
+    expect(pickRootFolderPath(folders, undefined, 2)).toBe('/music/tom'))
+  it('no pref gives undefined', () => expect(pickRootFolderPath(folders)).toBeUndefined())
+  it('unknown id gives undefined', () => expect(pickRootFolderPath(folders, 9)).toBeUndefined())
+  it('no folders gives undefined', () => expect(pickRootFolderPath([], 2)).toBeUndefined())
 })

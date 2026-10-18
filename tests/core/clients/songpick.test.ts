@@ -48,7 +48,16 @@ describe('songpick client', () => {
       timeoutMs: 20,
       fetch: f as unknown as typeof fetch,
     })
-    await expect(c.want(req)).rejects.toBeDefined()
+    const err = await c.want(req).catch((e) => e)
+    expect(err).toMatchObject({ name: 'TimeoutError' })
+  })
+
+  it('throws SongpickError on a 200 without a usable body', async () => {
+    for (const body of ['', 'not json', '{"x":1}']) {
+      const f = vi.fn().mockResolvedValue(new Response(body))
+      const c = createSongpickClient('http://sp', { fetch: f as unknown as typeof fetch })
+      await expect(c.want(req)).rejects.toBeInstanceOf(SongpickError)
+    }
   })
 
   it('health reports success and failure', async () => {

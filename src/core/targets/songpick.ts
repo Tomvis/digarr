@@ -10,6 +10,17 @@ export type SongpickTargetConfig = {
   timeoutMs?: number
 }
 
+/** Override wins, then the user's pref; no id or an unknown id yields undefined. */
+export function pickRootFolderPath(
+  folders: { id: number; path: string }[],
+  override?: number,
+  userPref?: number | string | null,
+): string | undefined {
+  const wanted = override ?? userPref
+  if (wanted == null || wanted === '') return undefined
+  return folders.find((f) => f.id === Number(wanted))?.path
+}
+
 export function createSongpickTarget(id: number, cfg: SongpickTargetConfig): DestinationTarget {
   const client = createSongpickClient(cfg.url, { timeoutMs: cfg.timeoutMs })
   const fail = (error: string): TrackTargetResult => ({

@@ -97,7 +97,7 @@ import { createLidarrTarget } from './core/targets/lidarr'
 import { createNavidromePlaylistTarget } from './core/targets/navidrome-playlist'
 import { createPlexPlaylistTarget } from './core/targets/plex-playlist'
 import { createSlskdTarget } from './core/targets/slskd'
-import { createSongpickTarget } from './core/targets/songpick'
+import { createSongpickTarget, pickRootFolderPath } from './core/targets/songpick'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
 import { testTargetConnection } from './core/targets/test-connection'
 import type { DestinationTarget } from './core/targets/types'
@@ -871,15 +871,16 @@ async function getEnabledTargetsForResolvedUser(
               settings?.preferences ?? null,
               userId,
             )
-            const wanted = rootFolderId ?? userPrefs?.rootFolderId
-            const folders = await createLidarrClient(
+            const client = createLidarrClient(
               lidarrRow.config.url as string,
               lidarrRow.config.apiKey as string,
               (lidarrRow.config.skipTlsVerify as boolean) ?? false,
-            ).getRootFolders()
-            const folder =
-              wanted != null ? folders.find((f) => f.id === Number(wanted)) : folders[0]
-            return folder?.path
+            )
+            return pickRootFolderPath(
+              await client.getRootFolders(),
+              rootFolderId,
+              userPrefs?.rootFolderId,
+            )
           },
         }),
       )
