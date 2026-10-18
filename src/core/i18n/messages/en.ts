@@ -145,7 +145,7 @@ export const en = {
     'A normal scan finds artists. Use one of the options below to generate album recommendations.',
   'discover.emptyTracks': 'No song recommendations in this view.',
   'discover.emptyTracksHelp':
-    'Song picks come from your ListenBrainz listening history once the song source is enabled.',
+    'Song picks come from ListenBrainz Weekly Jams and Weekly Exploration subscriptions. Add one under Subscriptions to get song recommendations.',
   'discover.emptyPending': "No pending recommendations. You're all caught up.",
   'discover.emptyRejected': 'No rejected recommendations.',
   'genres.title': 'Genres',
@@ -327,6 +327,7 @@ export const en = {
   'discover.approvedCount': 'Approved',
   'discover.approvePartial': 'Added to {0} of {1} targets. Failed: {2}',
   'discover.approveAllFailed': 'Could not add to any target. Failed: {0}',
+  'discover.trackAlreadyOwned': 'Already in your library',
   'discover.retrySucceeded': 'Failed targets added successfully',
   'discover.bulkApproveFailed': 'Bulk approve failed',
   'discover.bulkRejectFailed': 'Bulk reject failed',

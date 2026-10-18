@@ -146,7 +146,7 @@ export const de = {
     'Ein normaler Scan findet Künstler. Verwenden Sie eine der folgenden Optionen, um Albumempfehlungen zu erstellen.',
   'discover.emptyTracks': 'Keine Song-Empfehlungen in dieser Ansicht.',
   'discover.emptyTracksHelp':
-    'Song-Tipps stammen aus deinem ListenBrainz-Hörverlauf, sobald die Song-Quelle aktiviert ist.',
+    'Song-Tipps stammen aus ListenBrainz-Abos für Weekly Jams und Weekly Exploration. Lege unter Abos eines an, um Song-Empfehlungen zu erhalten.',
   'discover.emptyPending': 'Keine ausstehenden Empfehlungen. Sie sind auf dem neuesten Stand.',
   'discover.emptyRejected': 'Keine abgelehnten Empfehlungen.',
   'genres.title': 'Musikgenres',
@@ -330,6 +330,7 @@ export const de = {
   'discover.approvedCount': 'Genehmigt',
   'discover.approvePartial': 'Zu {0} von {1} Zielen hinzugefügt. Fehlgeschlagen: {2}',
   'discover.approveAllFailed': 'Konnte zu keinem Ziel hinzugefügt werden. Fehlgeschlagen: {0}',
+  'discover.trackAlreadyOwned': 'Bereits in deiner Bibliothek',
   'discover.retrySucceeded': 'Fehlgeschlagene Ziele erfolgreich hinzugefügt',
   'discover.bulkApproveFailed': 'Die Massengenehmigung ist fehlgeschlagen',
   'discover.bulkRejectFailed': 'Die Massenablehnung ist fehlgeschlagen',

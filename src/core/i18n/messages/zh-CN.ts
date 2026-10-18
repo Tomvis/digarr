@@ -137,7 +137,8 @@ export const zhCN = {
   'discover.emptyAlbums': '该视图中没有专辑推荐。',
   'discover.emptyAlbumsHelp': '普通扫描会查找艺术家。使用以下任一选项生成专辑推荐。',
   'discover.emptyTracks': '此视图中没有歌曲推荐。',
-  'discover.emptyTracksHelp': '启用歌曲来源后,歌曲推荐将来自你的 ListenBrainz 收听历史。',
+  'discover.emptyTracksHelp':
+    '歌曲推荐来自 ListenBrainz Weekly Jams 和 Weekly Exploration 订阅。在“订阅”中添加一个即可获得歌曲推荐。',
   'discover.emptyPending': '没有待处理的推荐。当前已全部处理完。',
   'discover.emptyRejected': '没有拒绝的建议。',
   'genres.title': '音乐流派',
@@ -309,6 +310,7 @@ export const zhCN = {
   'discover.approvedCount': '已批准',
   'discover.approvePartial': '已添加到 {1} 个目标中的 {0} 个。失败：{2}',
   'discover.approveAllFailed': '无法添加到任何目标。失败：{0}',
+  'discover.trackAlreadyOwned': '已在你的音乐库中',
   'discover.retrySucceeded': '失败的目标已成功添加',
   'discover.bulkApproveFailed': '批量批准失败',
   'discover.bulkRejectFailed': '批量拒绝失败',

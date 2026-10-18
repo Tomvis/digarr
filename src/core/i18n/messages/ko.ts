@@ -145,7 +145,7 @@ export const ko = {
     '일반 스캔은 아티스트를 찾습니다. 아래 옵션 중 하나를 사용해 앨범 추천을 생성하세요.',
   'discover.emptyTracks': '이 보기에는 곡 추천이 없습니다.',
   'discover.emptyTracksHelp':
-    '곡 소스를 활성화하면 ListenBrainz 청취 기록에서 곡 추천이 만들어집니다.',
+    '곡 추천은 ListenBrainz Weekly Jams 및 Weekly Exploration 구독에서 만들어집니다. 구독에서 하나를 추가하면 곡 추천을 받을 수 있습니다.',
   'discover.emptyPending': '대기 중인 추천이 없습니다. 모두 확인한 상태입니다.',
   'discover.emptyRejected': '거부된 추천이 없습니다.',
   'genres.title': '음악 장르',
@@ -325,6 +325,7 @@ export const ko = {
   'discover.approvedCount': '승인됨',
   'discover.approvePartial': '대상 {1}개 중 {0}개에 추가했습니다. 실패: {2}',
   'discover.approveAllFailed': '어떤 대상에도 추가하지 못했습니다. 실패: {0}',
+  'discover.trackAlreadyOwned': '이미 라이브러리에 있습니다',
   'discover.retrySucceeded': '실패한 대상을 추가했습니다',
   'discover.bulkApproveFailed': '일괄 승인 실패',
   'discover.bulkRejectFailed': '일괄 거부 실패',

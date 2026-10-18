@@ -146,7 +146,7 @@ export const pl = {
     'Zwykłe skanowanie wyszukuje wykonawców. Użyj jednej z poniższych opcji, aby utworzyć rekomendacje albumów.',
   'discover.emptyTracks': 'Brak rekomendacji utworów w tym widoku.',
   'discover.emptyTracksHelp':
-    'Propozycje utworów pochodzą z historii odsłuchań ListenBrainz po włączeniu źródła utworów.',
+    'Propozycje utworów pochodzą z subskrypcji ListenBrainz Weekly Jams i Weekly Exploration. Dodaj jedną w Subskrypcjach, aby otrzymywać rekomendacje utworów.',
   'discover.emptyPending': 'Brak oczekujących rekomendacji. Wszystko jest na bieżąco.',
   'discover.emptyRejected': 'Brak odrzuconych rekomendacji.',
   'genres.title': 'Gatunki muzyczne',
@@ -330,6 +330,7 @@ export const pl = {
   'discover.approvedCount': 'Zatwierdzone',
   'discover.approvePartial': 'Dodano do {0} z {1} celów. Nieudane: {2}',
   'discover.approveAllFailed': 'Nie udało się dodać do żadnego celu. Nieudane: {0}',
+  'discover.trackAlreadyOwned': 'Już jest w Twojej bibliotece',
   'discover.retrySucceeded': 'Nieudane cele dodane pomyślnie',
   'discover.bulkApproveFailed': 'Zatwierdzenie zbiorcze nie powiodło się',
   'discover.bulkRejectFailed': 'Odrzucenie zbiorcze nie powiodło się',

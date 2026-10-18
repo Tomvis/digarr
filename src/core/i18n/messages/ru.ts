@@ -145,7 +145,7 @@ export const ru = {
     'Обычное сканирование ищет исполнителей. Используйте один из вариантов ниже, чтобы создать рекомендации альбомов.',
   'discover.emptyTracks': 'В этом представлении нет рекомендаций треков.',
   'discover.emptyTracksHelp':
-    'Рекомендации треков берутся из истории прослушиваний ListenBrainz после включения источника треков.',
+    'Рекомендации треков приходят из подписок ListenBrainz Weekly Jams и Weekly Exploration. Добавьте одну в разделе «Подписки», чтобы получать рекомендации треков.',
   'discover.emptyPending': 'Нет ожидающих рекомендаций. Вы уже всё просмотрели.',
   'discover.emptyRejected': 'Нет отклоненных рекомендаций.',
   'genres.title': 'Музыкальные жанры',
@@ -329,6 +329,7 @@ export const ru = {
   'discover.approvedCount': 'Утверждено',
   'discover.approvePartial': 'Добавлено в {0} из {1} целей. Неудачные: {2}',
   'discover.approveAllFailed': 'Не удалось добавить ни в одну цель. Неудачные: {0}',
+  'discover.trackAlreadyOwned': 'Уже есть в вашей библиотеке',
   'discover.retrySucceeded': 'Неудачные цели успешно добавлены',
   'discover.bulkApproveFailed': 'Массовое одобрение не удалось',
   'discover.bulkRejectFailed': 'Массовое отклонение не удалось',

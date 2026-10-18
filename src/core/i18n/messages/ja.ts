@@ -146,7 +146,7 @@ export const ja = {
     '通常のスキャンではアーティストを探します。以下のいずれかの方法でアルバムのおすすめを生成できます。',
   'discover.emptyTracks': 'このビューに楽曲のおすすめはありません。',
   'discover.emptyTracksHelp':
-    '楽曲ソースを有効にすると、ListenBrainz の再生履歴からおすすめ楽曲が表示されます。',
+    'おすすめ楽曲は ListenBrainz の Weekly Jams と Weekly Exploration のサブスクリプションから届きます。サブスクリプションでいずれかを追加すると楽曲のおすすめが表示されます。',
   'discover.emptyPending': '保留中のおすすめはありません。すべて確認済みです。',
   'discover.emptyRejected': '拒否された推奨事項はありません。',
   'genres.title': '音楽ジャンル',
@@ -329,6 +329,7 @@ export const ja = {
   'discover.approvedCount': '承認済み',
   'discover.approvePartial': '{1} 個中 {0} 個のターゲットに追加しました。失敗: {2}',
   'discover.approveAllFailed': 'いずれのターゲットにも追加できませんでした。失敗: {0}',
+  'discover.trackAlreadyOwned': 'すでにライブラリにあります',
   'discover.retrySucceeded': '失敗したターゲットを追加しました',
   'discover.bulkApproveFailed': '一括承認に失敗しました',
   'discover.bulkRejectFailed': '一括拒否に失敗しました',

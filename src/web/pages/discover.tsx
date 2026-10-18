@@ -713,11 +713,15 @@ export function DiscoverPage() {
       setActingIds((prev) => new Set([...prev, recId]))
       try {
         const targetOptions = resolveApprovalTargetOptions(targets, targetId)
-        await approveToTarget(recId, targetId, {
+        const res = await approveToTarget(recId, targetId, {
           ...targetOptions,
         })
         refetch()
-        toast.success(t('dashboard.sentToTarget'))
+        // Track recs surface songpick's outcome (error text / already owned).
+        const isTrack = items.find((r) => r.id === recId)?.kind === 'track'
+        if (!isTrack || reportApprovalOutcome(res, t, 'track')) {
+          toast.success(t('dashboard.sentToTarget'))
+        }
       } catch {
         toast.error(t('dashboard.approveFailed'))
       } finally {
@@ -728,7 +732,7 @@ export function DiscoverPage() {
         })
       }
     },
-    [refetch, t, targets],
+    [items, refetch, t, targets],
   )
 
   // Undo toast
@@ -836,13 +840,10 @@ export function DiscoverPage() {
     async (id: number, prevStatus = 'pending') => {
       setActingIds((prev) => new Set([...prev, id]))
       const newStatus = filter === 'rejected' ? 'pending' : 'approved'
+      const kind = items.find((r) => r.id === id)?.kind
       try {
         let res: Awaited<ReturnType<typeof approveToTarget>>
-        if (
-          newStatus === 'approved' &&
-          standaloneSlskdTarget &&
-          items.find((r) => r.id === id)?.kind !== 'track'
-        ) {
+        if (newStatus === 'approved' && standaloneSlskdTarget && kind !== 'track') {
           const targetId = `${standaloneSlskdTarget.type}-${standaloneSlskdTarget.id}`
           const targetOptions = resolveApprovalTargetOptions(targets, targetId)
           res = await approveToTarget(id, targetId, targetOptions)
@@ -850,7 +851,7 @@ export function DiscoverPage() {
           res = await updateRecommendation(id, { status: newStatus })
         }
         if (filter !== 'rejected') {
-          if (reportApprovalOutcome(res, t)) showUndo({ id, prevStatus, action: 'approve' })
+          if (reportApprovalOutcome(res, t, kind)) showUndo({ id, prevStatus, action: 'approve' })
         } else {
           toast.success(t('discover.restoredToPending'))
         }
@@ -905,8 +906,12 @@ export function DiscoverPage() {
   async function handleRetry(id: number) {
     setActingIds((prev) => new Set([...prev, id]))
     try {
-      await updateRecommendation(id, { status: 'approved' })
-      toast.success(t('discover.queuedForRetry'))
+      const res = await updateRecommendation(id, { status: 'approved' })
+      // Track retries are synchronous songpick wants: report their outcome.
+      const isTrack = items.find((r) => r.id === id)?.kind === 'track'
+      if (!isTrack || reportApprovalOutcome(res, t, 'track')) {
+        toast.success(t('discover.queuedForRetry'))
+      }
       refetch()
     } catch {
       toast.error(t('discover.retryFailed'))
@@ -1799,7 +1804,8 @@ export function DiscoverPage() {
               } else {
                 res = await approveRecommendation(recId, overrides)
               }
-              if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.addedToLidarr'))
+              const kind = items.find((r) => r.id === recId)?.kind
+              if (reportApprovalOutcome(res, t, kind)) toast.success(t('dashboard.addedToLidarr'))
               refetch()
             } catch (err) {
               toast.error(approveErrorMessage(err, t('dashboard.addToLidarrFailed'), t))

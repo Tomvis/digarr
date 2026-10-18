@@ -146,7 +146,7 @@ export const nl = {
     'Een normale scan zoekt artiesten. Gebruik een van de onderstaande opties om albumaanbevelingen te maken.',
   'discover.emptyTracks': 'Geen nummeraanbevelingen in deze weergave.',
   'discover.emptyTracksHelp':
-    'Nummertips komen uit je ListenBrainz-luistergeschiedenis zodra de nummerbron is ingeschakeld.',
+    'Nummertips komen uit ListenBrainz-abonnementen op Weekly Jams en Weekly Exploration. Voeg er een toe onder Abonnementen om nummeraanbevelingen te krijgen.',
   'discover.emptyPending': 'Geen openstaande aanbevelingen. U bent helemaal bij.',
   'discover.emptyRejected': 'Geen afgewezen aanbevelingen.',
   'genres.title': 'Muziekgenres',
@@ -331,6 +331,7 @@ export const nl = {
   'discover.approvedCount': 'Goedgekeurd',
   'discover.approvePartial': 'Toegevoegd aan {0} van {1} bestemmingen. Mislukt: {2}',
   'discover.approveAllFailed': 'Kon aan geen enkele bestemming toevoegen. Mislukt: {0}',
+  'discover.trackAlreadyOwned': 'Staat al in je bibliotheek',
   'discover.retrySucceeded': 'Mislukte bestemmingen succesvol toegevoegd',
   'discover.bulkApproveFailed': 'Bulkgoedkeuring mislukt',
   'discover.bulkRejectFailed': 'Bulkafwijzing mislukt',

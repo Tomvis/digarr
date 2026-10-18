@@ -1,5 +1,6 @@
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
+import type { RecommendationKind } from '@/core/types'
 import type { ApprovalResponse, LidarrRemovalSkipReason } from './api'
 
 type Translate = (key: MessageKey) => string
@@ -30,11 +31,26 @@ export function undoOutcomeMessage(res: ApprovalResponse): MessageKey {
  * Surface the per-target outcome of an approve attempt at submit time.
  * Returns true when every attempted target succeeded (caller runs its normal
  * success path); returns false after showing a partial/total-failure toast.
+ *
+ * Track recs (songpick) also show the target's error text, the server's
+ * reason when no target was attempted, and an info toast when the song is
+ * already owned (`duplicate`).
  */
-export function reportApprovalOutcome(res: ApprovalResponse, t: Translate): boolean {
+export function reportApprovalOutcome(
+  res: ApprovalResponse,
+  t: Translate,
+  kind?: RecommendationKind,
+): boolean {
+  const isTrack = kind === 'track'
+  if (isTrack && res.status === 'duplicate') {
+    toast.info(t('discover.trackAlreadyOwned'))
+    return false
+  }
   const summary = res.targetSummary
   if (summary && summary.total > 0 && summary.failed > 0) {
-    const names = summary.failures.map((f) => f.name).join(', ')
+    const names = summary.failures
+      .map((f) => (isTrack && f.error ? `${f.name} (${f.error})` : f.name))
+      .join(', ')
     if (summary.succeeded > 0) {
       toast.warning(
         t('discover.approvePartial')
@@ -50,7 +66,7 @@ export function reportApprovalOutcome(res: ApprovalResponse, t: Translate): bool
   // No target summary (discovery-only / no actionable targets) but the server
   // still reports a failed add.
   if (res.status === 'add_failed') {
-    toast.error(t('dashboard.approveFailed'))
+    toast.error((isTrack && res.lidarrError) || t('dashboard.approveFailed'))
     return false
   }
   // Full success, but a target reported a non-fatal partial outcome (e.g. the

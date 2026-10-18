@@ -146,7 +146,7 @@ export const ptBR = {
     'Uma varredura normal encontra artistas. Use uma das opções abaixo para gerar recomendações de álbuns.',
   'discover.emptyTracks': 'Nenhuma recomendação de música nesta visualização.',
   'discover.emptyTracksHelp':
-    'As sugestões de músicas vêm do seu histórico do ListenBrainz quando a fonte de músicas está ativada.',
+    'As sugestões de músicas vêm das assinaturas ListenBrainz Weekly Jams e Weekly Exploration. Adicione uma em Assinaturas para receber recomendações de músicas.',
   'discover.emptyPending': 'Nenhuma recomendação pendente. Você está em dia.',
   'discover.emptyRejected': 'Nenhuma recomendação rejeitada.',
   'genres.title': 'Gêneros',
@@ -330,6 +330,7 @@ export const ptBR = {
   'discover.approvedCount': 'Aprovado',
   'discover.approvePartial': 'Adicionado a {0} de {1} destinos. Falhas: {2}',
   'discover.approveAllFailed': 'Não foi possível adicionar a nenhum destino. Falhas: {0}',
+  'discover.trackAlreadyOwned': 'Já está na sua biblioteca',
   'discover.retrySucceeded': 'Destinos com falha adicionados com sucesso',
   'discover.bulkApproveFailed': 'Falha na aprovação em massa',
   'discover.bulkRejectFailed': 'Falha na rejeição em massa',

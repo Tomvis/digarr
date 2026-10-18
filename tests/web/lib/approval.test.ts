@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reportApprovalOutcome, undoOutcomeMessage } from '@/web/lib/approval'
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }))
 
 const { toast } = await import('sonner')
@@ -80,6 +80,96 @@ describe('reportApprovalOutcome', () => {
 
   it('returns true for a plain approve with no targets', () => {
     expect(reportApprovalOutcome({ status: 'approved' }, t)).toBe(true)
+  })
+
+  it('keeps artist toasts name-only (no error text)', () => {
+    reportApprovalOutcome(
+      {
+        status: 'add_failed',
+        targetSummary: {
+          total: 1,
+          succeeded: 0,
+          failed: 1,
+          failures: [{ id: 'lidarr-1', name: 'Lidarr', error: 'down' }],
+        },
+      },
+      t,
+      'artist',
+    )
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('All failed: Lidarr')
+  })
+})
+
+describe('reportApprovalOutcome for track recs', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("shows songpick's error text when the want fails", () => {
+    const clean = reportApprovalOutcome(
+      {
+        status: 'add_failed',
+        lidarrError: 'No Lidarr root folder configured for this user',
+        targetSummary: {
+          total: 1,
+          succeeded: 0,
+          failed: 1,
+          failures: [
+            {
+              id: 'songpick-1',
+              name: 'Songpick',
+              error: 'No Lidarr root folder configured for this user',
+            },
+          ],
+        },
+      },
+      t,
+      'track',
+    )
+    expect(clean).toBe(false)
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'All failed: Songpick (No Lidarr root folder configured for this user)',
+    )
+  })
+
+  it('shows the no-target reason when nothing was attempted', () => {
+    const clean = reportApprovalOutcome(
+      {
+        status: 'add_failed',
+        lidarrError: 'No enabled songpick target to want this track',
+        targetSummary: { total: 0, succeeded: 0, failed: 0, failures: [] },
+      },
+      t,
+      'track',
+    )
+    expect(clean).toBe(false)
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'No enabled songpick target to want this track',
+    )
+  })
+
+  it('falls back to the generic failure text without an error', () => {
+    reportApprovalOutcome({ status: 'add_failed' }, t, 'track')
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('dashboard.approveFailed')
+  })
+
+  it('shows an info toast when the song is already owned', () => {
+    const clean = reportApprovalOutcome(
+      { status: 'duplicate', targetSummary: { total: 1, succeeded: 1, failed: 0, failures: [] } },
+      t,
+      'track',
+    )
+    expect(clean).toBe(false)
+    expect(toast.info).toHaveBeenCalledExactlyOnceWith('discover.trackAlreadyOwned')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('returns true when the want succeeded', () => {
+    expect(
+      reportApprovalOutcome(
+        { status: 'approved', targetSummary: { total: 1, succeeded: 1, failed: 0, failures: [] } },
+        t,
+        'track',
+      ),
+    ).toBe(true)
   })
 })
 

@@ -146,7 +146,7 @@ export const ro = {
     'O scanare normală caută artiști. Folosiți una dintre opțiunile de mai jos pentru a genera recomandări de albume.',
   'discover.emptyTracks': 'Nicio recomandare de piese în această vizualizare.',
   'discover.emptyTracksHelp':
-    'Recomandările de piese vin din istoricul tău ListenBrainz după activarea sursei de piese.',
+    'Recomandările de piese vin din abonamentele ListenBrainz Weekly Jams și Weekly Exploration. Adaugă unul în Abonamente pentru a primi recomandări de piese.',
   'discover.emptyPending': 'Nicio recomandare în așteptare. Sunteți la zi.',
   'discover.emptyRejected': 'Nicio recomandare respinsă.',
   'genres.title': 'Genuri',
@@ -331,6 +331,7 @@ export const ro = {
   'discover.approvedCount': 'Aprobat',
   'discover.approvePartial': 'Adăugat la {0} din {1} ținte. Eșuate: {2}',
   'discover.approveAllFailed': 'Nu s-a putut adăuga la nicio țintă. Eșuate: {0}',
+  'discover.trackAlreadyOwned': 'Deja în biblioteca ta',
   'discover.retrySucceeded': 'Țintele eșuate au fost adăugate cu succes',
   'discover.bulkApproveFailed': 'Aprobarea în bloc a eșuat',
   'discover.bulkRejectFailed': 'Respingerea în bloc a eșuat',

@@ -145,7 +145,7 @@ export const tr = {
     'Normal tarama sanatçıları bulur. Albüm önerileri oluşturmak için aşağıdaki seçeneklerden birini kullanın.',
   'discover.emptyTracks': 'Bu görünümde şarkı önerisi yok.',
   'discover.emptyTracksHelp':
-    'Şarkı önerileri, şarkı kaynağı etkinleştirildiğinde ListenBrainz dinleme geçmişinizden gelir.',
+    'Şarkı önerileri ListenBrainz Weekly Jams ve Weekly Exploration aboneliklerinden gelir. Şarkı önerileri almak için Abonelikler bölümünden bir tane ekleyin.',
   'discover.emptyPending': 'Bekleyen öneri yok. Her şey güncel.',
   'discover.emptyRejected': 'Reddedilen öneri yok.',
   'genres.title': 'Müzik türleri',
@@ -328,6 +328,7 @@ export const tr = {
   'discover.approvedCount': 'Onaylandı',
   'discover.approvePartial': '{1} hedeften {0} tanesine eklendi. Başarısız: {2}',
   'discover.approveAllFailed': 'Hiçbir hedefe eklenemedi. Başarısız: {0}',
+  'discover.trackAlreadyOwned': 'Zaten kitaplığınızda',
   'discover.retrySucceeded': 'Başarısız hedefler başarıyla eklendi',
   'discover.bulkApproveFailed': 'Toplu onay başarısız oldu',
   'discover.bulkRejectFailed': 'Toplu reddetme başarısız oldu',

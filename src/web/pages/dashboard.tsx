@@ -614,13 +614,15 @@ export function Dashboard() {
   // Recently approved recs for the gallery
   const approvedRecs = (approvedData?.items ?? []) as Recommendation[]
 
+  const kindOf = (id: number) => allPending.find((r) => r.id === id)?.kind
+
   async function handleAction(id: number, status: 'approved' | 'rejected') {
     setActedIds((prev) => new Set([...prev, id]))
     try {
       const res = await (status === 'approved'
         ? approveRecommendation(id)
         : updateRecommendation(id, { status }))
-      if (reportApprovalOutcome(res, t)) {
+      if (reportApprovalOutcome(res, t, kindOf(id))) {
         toast.success(
           status === 'approved' ? t('dashboard.approvedSuccess') : t('dashboard.rejectedSuccess'),
         )
@@ -685,7 +687,7 @@ export function Dashboard() {
       const res = await approveToTarget(recId, targetId, {
         ...targetOptions,
       })
-      if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.sentToTarget'))
+      if (reportApprovalOutcome(res, t, kindOf(recId))) toast.success(t('dashboard.sentToTarget'))
       queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
     } catch {
@@ -842,7 +844,9 @@ export function Dashboard() {
               } else {
                 res = await approveRecommendation(recId, overrides)
               }
-              if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.addedToLidarr'))
+              if (reportApprovalOutcome(res, t, kindOf(recId))) {
+                toast.success(t('dashboard.addedToLidarr'))
+              }
               queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
               queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
             } catch {

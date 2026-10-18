@@ -146,7 +146,7 @@ export const fr = {
     "Une analyse normale recherche des artistes. Utilisez l'une des options ci-dessous pour générer des recommandations d'albums.",
   'discover.emptyTracks': 'Aucune recommandation de titre dans cette vue.',
   'discover.emptyTracksHelp':
-    'Les titres proposés proviennent de votre historique ListenBrainz lorsque la source de titres est activée.',
+    'Les titres proposés proviennent des abonnements ListenBrainz Weekly Jams et Weekly Exploration. Ajoutez-en un dans Abonnements pour recevoir des recommandations de titres.',
   'discover.emptyPending': 'Aucune recommandation en attente. Vous êtes tous rattrapés.',
   'discover.emptyRejected': 'Aucune recommandation rejetée.',
   'genres.title': 'Genres musicaux',
@@ -331,6 +331,7 @@ export const fr = {
   'discover.approvedCount': 'Approuvé',
   'discover.approvePartial': 'Ajouté à {0} sur {1} cibles. Échecs : {2}',
   'discover.approveAllFailed': "Impossible d'ajouter à une cible. Échecs : {0}",
+  'discover.trackAlreadyOwned': 'Déjà dans votre bibliothèque',
   'discover.retrySucceeded': 'Cibles en échec ajoutées avec succès',
   'discover.bulkApproveFailed': "Échec de l'approbation groupée",
   'discover.bulkRejectFailed': 'Échec du rejet groupé',

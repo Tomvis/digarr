@@ -146,7 +146,7 @@ export const es = {
     'Un análisis normal encuentra artistas. Usa una de las opciones siguientes para generar recomendaciones de álbumes.',
   'discover.emptyTracks': 'No hay recomendaciones de canciones en esta vista.',
   'discover.emptyTracksHelp':
-    'Las canciones sugeridas provienen de tu historial de ListenBrainz cuando la fuente de canciones está activada.',
+    'Las canciones sugeridas provienen de las suscripciones de ListenBrainz Weekly Jams y Weekly Exploration. Añade una en Suscripciones para recibir recomendaciones de canciones.',
   'discover.emptyPending': 'No hay recomendaciones pendientes. Estás al día.',
   'discover.emptyRejected': 'No hay recomendaciones rechazadas.',
   'genres.title': 'Géneros musicales',
@@ -330,6 +330,7 @@ export const es = {
   'discover.approvedCount': 'Aprobado',
   'discover.approvePartial': 'Añadido a {0} de {1} destinos. Fallaron: {2}',
   'discover.approveAllFailed': 'No se pudo añadir a ningún destino. Fallaron: {0}',
+  'discover.trackAlreadyOwned': 'Ya está en tu biblioteca',
   'discover.retrySucceeded': 'Destinos fallidos añadidos correctamente',
   'discover.bulkApproveFailed': 'Error en la aprobación masiva',
   'discover.bulkRejectFailed': 'Error en el rechazo masivo',

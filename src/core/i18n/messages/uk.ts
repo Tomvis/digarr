@@ -145,7 +145,7 @@ export const uk = {
     'Звичайне сканування шукає виконавців. Скористайтеся одним із варіантів нижче, щоб створити рекомендації альбомів.',
   'discover.emptyTracks': 'У цьому поданні немає рекомендацій треків.',
   'discover.emptyTracksHelp':
-    'Рекомендації треків беруться з історії прослуховувань ListenBrainz після вмикання джерела треків.',
+    'Рекомендації треків надходять із підписок ListenBrainz Weekly Jams і Weekly Exploration. Додайте одну в розділі «Підписки», щоб отримувати рекомендації треків.',
   'discover.emptyPending': 'Немає незавершених рекомендацій. Усе переглянуто.',
   'discover.emptyRejected': 'Немає відхилених рекомендацій.',
   'genres.title': 'Музичні жанри',
@@ -330,6 +330,7 @@ export const uk = {
   'discover.approvedCount': 'Затверджено',
   'discover.approvePartial': 'Додано до {0} з {1} цілей. Невдалі: {2}',
   'discover.approveAllFailed': 'Не вдалося додати до жодної цілі. Невдалі: {0}',
+  'discover.trackAlreadyOwned': 'Уже є у вашій бібліотеці',
   'discover.retrySucceeded': 'Невдалі цілі успішно додано',
   'discover.bulkApproveFailed': 'Помилка масового схвалення',
   'discover.bulkRejectFailed': 'Не вдалося масово відхилити',

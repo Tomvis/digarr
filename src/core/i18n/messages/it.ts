@@ -146,7 +146,7 @@ export const it = {
     'Una scansione normale trova artisti. Usa una delle opzioni seguenti per generare consigli di album.',
   'discover.emptyTracks': 'Nessun brano consigliato in questa vista.',
   'discover.emptyTracksHelp':
-    'I brani consigliati derivano dalla tua cronologia ListenBrainz quando la sorgente dei brani è attiva.',
+    'I brani consigliati provengono dagli abbonamenti ListenBrainz Weekly Jams e Weekly Exploration. Aggiungine uno in Abbonamenti per ricevere consigli sui brani.',
   'discover.emptyPending': 'Nessuna raccomandazione in sospeso. Sei in pari.',
   'discover.emptyRejected': 'Nessuna raccomandazione rifiutata.',
   'genres.title': 'Generi musicali',
@@ -331,6 +331,7 @@ export const it = {
   'discover.approvedCount': 'Approvato',
   'discover.approvePartial': 'Aggiunto a {0} di {1} destinazioni. Falliti: {2}',
   'discover.approveAllFailed': 'Impossibile aggiungere a qualsiasi destinazione. Falliti: {0}',
+  'discover.trackAlreadyOwned': 'Già nella tua libreria',
   'discover.retrySucceeded': 'Destinazioni fallite aggiunte correttamente',
   'discover.bulkApproveFailed': 'Approvazione collettiva non riuscita',
   'discover.bulkRejectFailed': 'Il rifiuto collettivo non è riuscito',
