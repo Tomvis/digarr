@@ -1809,6 +1809,8 @@ export const ro = {
   'streaming.spotifyEmbedTitle': 'Previzualizare Spotify',
   'streaming.spotifyLoad': 'Încarcă playerul Spotify',
   'streaming.spotifyLoadHint': 'Nu se cere nimic de la Spotify până nu dai clic.',
+  'streaming.spotifyAutoloadOption': 'Încarcă automat în tabloul de bord',
+  'streaming.spotifyAutoloadOff': 'Nu încărca automat',
   'discover.moodAddedSuccess': '„{0}" a fost adăugat; căutăm artiști similari',
   'discover.moodAddFailed': 'Adăugarea „{0}" a eșuat',
   'discover.moodAddQueued': 'În coadă',

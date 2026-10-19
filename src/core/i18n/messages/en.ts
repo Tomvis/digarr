@@ -1824,6 +1824,8 @@ export const en = {
   'streaming.spotifyEmbedTitle': 'Spotify preview',
   'streaming.spotifyLoad': 'Load Spotify player',
   'streaming.spotifyLoadHint': 'Nothing is requested from Spotify until you click.',
+  'streaming.spotifyAutoloadOption': 'Load automatically on the dashboard',
+  'streaming.spotifyAutoloadOff': "Don't load automatically",
 
   // Mood discover toasts
   'discover.moodAddedSuccess': 'Added "{0}" and discovering similar artists',

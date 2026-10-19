@@ -6,6 +6,10 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ## Unreleased
 
+### Added
+
+- Today's Pick on the dashboard can load the Spotify player automatically. It stays click-to-load by default; tick "Load automatically on the dashboard" under the load button to opt in, and use "Don't load automatically" under the player to turn it off. Other places that embed Spotify are unchanged (#1125).
+
 ### Changed
 
 - Scrobbler write-back moved from Settings > Account to the ListenBrainz and Last.fm cards in Settings > Connections, next to the credentials and the Last.fm connect button. Preferences and API are unchanged, and returning from Last.fm authorization now lands on Connections (#1123).
