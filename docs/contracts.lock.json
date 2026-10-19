@@ -94,6 +94,7 @@
         "drizzle/0060_damp_grim_reaper.sql": "49202023b2d5a70185bc566c6fc87497e506357a1f712432d2ce31a0e1d2af3b",
         "drizzle/0061_artist_image_https.sql": "e9f0fb6c4dc1510b661ce181528ff4cadf158552ff655025b53352f3292336bb",
         "drizzle/0062_recommended_recording.sql": "ffedbec3adcdb5defda2148ea44de086324f37ce28db06f2e6e41d45a1395cef",
+        "drizzle/0063_musicbrainz_cache.sql": "a6620525bad3748ce5db36ae38a30e65a58b438f8b5dc46c53681f859ff1c5e7",
         "drizzle/meta/0000_snapshot.json": "0288497d803f09f4ad1304b866b91ab25785865951841152291b11e6642230c2",
         "drizzle/meta/0001_snapshot.json": "2d057997cde52ff489663572db9d8c8a905017420e37fc808444e0fd2e23057d",
         "drizzle/meta/0002_snapshot.json": "1b11da03bfc729f4c3a59fed6765ed2e7fff3e602dc1738e176062cff922a4b9",
@@ -153,7 +154,8 @@
         "drizzle/meta/0060_snapshot.json": "ca7914721ad1e36fb9912faff7f8907477f1233897e96449ed9b745729f53064",
         "drizzle/meta/0061_snapshot.json": "2379d4a4e7c452ed5c6b7f6f998a5667d10b26a643268596a401c97ed1295557",
         "drizzle/meta/0062_snapshot.json": "46bbecc9872c87a9215685dec8f150b30f5321aebd309e684b8014753d5a9cce",
-        "drizzle/meta/_journal.json": "671f5496c79c6f2d4175b5866e7d3fcdf006020a0eb5aca7220c0cf6360e1deb",
+        "drizzle/meta/0063_snapshot.json": "fc2c028cf6abf199ac58d50624e60531738e1b9510d92e4002eed9373d924b07",
+        "drizzle/meta/_journal.json": "c29eeae6fbd667123e4f37527e78526299649be8dc5d7456cd028d0b78d20a9d",
         "scripts/prepare-rollback-backup.ts": "16f86f11d35ca8d4f20cda207fafb2c60323b301f1d9e3befe1e583981529a36",
         "scripts/rotate-encryption-key.ts": "45e964db2a6d7b623df8151d6ea256c83d6e0d6eb2984fd5c2409acdf1868980",
         "scripts/rotation-sites.ts": "6b25ef3f836cdc7a333fd493a09ae4bd770bded277ba164f01decbd3bf68d882",
@@ -187,6 +189,7 @@
         "src/db/queries/jobs.ts": "88b3d71b463afec4a24e4f5476fc5ccf6606863c6a0b2211ec392e057be5cdff",
         "src/db/queries/library-albums.ts": "64e2581dc7fa3465acd12c1fc996b16eaf897353ff5c1ee17a086488cdbf8116",
         "src/db/queries/library-health.ts": "0e6e71f30c0649fe848df896997f7961ad0b7708322be644687deb39d53b646d",
+        "src/db/queries/musicbrainz-cache.ts": "c26a5c1bc7cae5463fcca0d70913171925236fcfea33a9b4961f9a0afc5098c4",
         "src/db/queries/oauth-pending.ts": "2f7cde20dbaa8b63e49f66fbae0403847e91e8146e220819bdd32adc6b87f56b",
         "src/db/queries/oauth-tokens.ts": "878479c899c2eeb1077296c3d8eb19a189bf7d6e1b87c2611e6dfe5b093d3e81",
         "src/db/queries/playlist-exports.ts": "e9960e26d65e30e9b310f859008ad529b959d45f9365cdc4410c6b3db160e365",
@@ -200,17 +203,17 @@
         "src/db/queries/subscriptions.ts": "64f3bb457240921a82ba1de0ed12059a15bb65649e312686a3275ac53a1333f4",
         "src/db/queries/targets.ts": "9cdc79b2dc51f9ff3ce481f0f4b18ae33c3c356475b18f9b39b4b3639e1760dd",
         "src/db/queries/users.ts": "f5ce2a210b6c7c2b957166a03799bf5f8295abc2920d675a09556fb048e44218",
-        "src/db/schema.ts": "0e27dea84b589a2cf8f0a62c521d19f43d5158d9cbabb7d14e14a38992898e10",
+        "src/db/schema.ts": "d9e5d38ece5fe753966acce954115d2360479ad37d9cff829376dd9c573aa071",
         "src/db/wait.ts": "f4fccab8242a627d2be30ce263e7190860d2789f80ae52d602e7e734e253561b"
       },
-      "digest": "f5ed47b6ed9a5e1be0d2b202566a35f45f9109aae66f306157856b3df4d420b1",
+      "digest": "eb911575549db38f1b70638883d40e4046beb041e3148c78a63bf8ee576ab9cc",
       "review": {
-        "outcome": "no-impact",
-        "docs": [],
-        "note": "Adds the optional excludeRecentlyPlayed object to the Preferences JSON type and mergePreferences defaults; no column, table or migration changes, and backups carry it inside the existing preferences jsonb.",
+        "outcome": "docs-updated",
+        "docs": ["CHANGELOG.md", "docs/OPERATIONS.md", "docs/guides/switching-backends.md"],
+        "note": "Migration 0063 adds the rebuildable musicbrainz_cache table and expires_at index with IF NOT EXISTS; reads now also return expires_at so memory refills never outlive the row. JSON backups and backend copies exclude the table and it is safe to truncate. Validated on isolated in-memory PGlite (re-run, restart hit, expiry); no live PostgreSQL run.",
         "breaking": "none",
-        "migration": "No migration: upgrade needs no extra step, rollback to an older image ignores the extra preferences key, and backup and restore keep it inside the existing preferences JSON.",
-        "digest": "f5ed47b6ed9a5e1be0d2b202566a35f45f9109aae66f306157856b3df4d420b1"
+        "migration": "Additive table: take a normal backup before upgrading; the previous image ignores the table on rollback, leaving it unused and harmless.",
+        "digest": "eb911575549db38f1b70638883d40e4046beb041e3148c78a63bf8ee576ab9cc"
       }
     },
     "configuration": {
@@ -566,12 +569,13 @@
         "src/core/clients/listenbrainz.ts": "9f6ff6f4435d74b920428e912a5a5dcd0d8c2416f20e94faaed94709b14de094",
         "src/core/clients/media-browser.ts": "556e6aa096a51e2921536f218cac57496930dda20a1400a495f1ae47d8772bff",
         "src/core/clients/media-server-queue.ts": "2f7fd59f67d7f3debb2f811de9fa3d0bc81a720d4943cba177783f0265ad54af",
+        "src/core/clients/musicbrainz-cache.ts": "a0addb7bbee88ac44add1b45ca69a8cc3c18d273dcce4d96a19a0e9dc290e6bf",
         "src/core/clients/musicbrainz-special-purpose.ts": "eb55a4d4ceeef6fa754cf839e3cb170ca396be8d2e8a00eca4cfa31e1d3470eb",
-        "src/core/clients/musicbrainz.ts": "7f592a0083d60f4b1fbec97d54767f1c14ae489f3f5642dcd5e83f5c01eb88b4",
+        "src/core/clients/musicbrainz.ts": "ef0e3945c7e6a4e7b0408daa4ef90f640b49de4ea15fdd2d277dd6f38b484ca5",
         "src/core/clients/musicinfo.ts": "15df66753c13778af9a78d20e06bc4035aa48dc54f4bb39d6ed607fdef6d96ab",
         "src/core/clients/plex.ts": "52ac9a3dfc06e1d38a10e238dad8d3ffa6ea80bb8c01092c8780c6768367e2f1",
         "src/core/clients/rate-limiter.ts": "8a70bc3ba24c839268550b29b6ac47d5444d99e32ba93eba0db55cf8abfc3df7",
-        "src/core/clients/release-group-cache.ts": "9aff724de4359a80b80a412a2e4faaa76e8f69f4a24015a97a5ee62e8f31df40",
+        "src/core/clients/release-group-cache.ts": "5c8fc1cc9b64dbea272bab41a355838f02289ba1ed50b30861f2a533a1d1b47c",
         "src/core/clients/scrobbler-write-back.ts": "7ef373927545b67ca1eec769314168ed770560238296251f5bf5c860e074cb84",
         "src/core/clients/slskd.ts": "aa09ef7caf876b354f77c5f99dc8ea689f7ce4dc6e7e4f5427a82f4068bd67b7",
         "src/core/clients/spotify.ts": "a1e8d6983aeea2bf0b36fac82ca75b7720d1b55790802ecb9ea9b8b2da2eedb5",
@@ -630,7 +634,7 @@
         "src/core/library/sources/subsonic.ts": "33cb85e764e3fff1a5235e92a6f1acd4afaadaabab4af1848254a3ff7c945896",
         "src/core/library/sources/types.ts": "f1b86f927fc378a7d6b3b1dabc2e230080defbc2ed1550f582b19d3748b3eccb",
         "src/core/library/store.ts": "cdaa1921a8e72b0c57420a03ca019b87b5b1adcc3ffcae05a1cbf3833e41abfc",
-        "src/core/library/sync.ts": "5b4b961931d2f89be7613abe4a9f3c10ee164c0b7ffa4f0e1fdc853bc72a35a0",
+        "src/core/library/sync.ts": "3f3c9040f9fcb92a457ef4cdfe8ac48ac13da7bad13bcefd3966649f36db967a",
         "src/core/library/types.ts": "ebee38068d7f89f38469fc852051a98d4b9d2fbc0275160f53ea860c551290b0",
         "src/core/lifecycle.ts": "ebff2573fe7b8faf00e868d1c58c5fa26e10c4f32b0c179e2d8638bcab61067b",
         "src/core/net/guarded-fetch.ts": "517d7075fc57ed03c0173c10b6ba68c7253721c9d514e6ab90df9704540d6611",
@@ -760,17 +764,17 @@
         "src/core/types.ts": "2199cb41bce4cf7253461dcc3a62df288e6eda26f9618186722ba71c4ae91730",
         "src/core/url-safety.ts": "b7e00702468a04821fe62905eef32e23ac228337e31c3a7e6527ee4dc73cffaf",
         "src/core/validation.ts": "d8d4ab1eaef3258a80b64a72b7d0f26d66dfcfbada07eb0aacfa012a7028224a",
-        "src/index.ts": "96e86b1665ddddc967789b30bd2ee034a80cea14cb0e0108e0329ba782253cca",
+        "src/index.ts": "2c26341fb4a31f015b25a9ccec50ca700191a068f0b23a5c74668acaaaea10b6",
         "src/version.ts": "98cd5ddd0a4fe5557a0640df9cefbc1a4898cc6d70053edfa5eacf1822c1bc5e"
       },
-      "digest": "951e4e10e20e3e49e859d65baccc86df88faf81ca1248218add2b000f0f44a67",
+      "digest": "7fb5831baf168d0c1d9fee38366ae442fcf6c9a397b8beaf27f863b90733ac03",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["docs/ARCHITECTURE.md"],
-        "note": "Recently played matching now adds both the submitted additional_info recording MBID and the ListenBrainz mbid_mapping recording MBID to the played set, so a stale or redirected submitted MBID no longer hides a play; ARCHITECTURE filter section updated.",
+        "docs": ["CHANGELOG.md", "docs/ARCHITECTURE.md", "docs/OPERATIONS.md"],
+        "note": "Release-group persistent TTL is 24h and memory refills inherit the DB expiry, so release groups are never staler than before; artist-search TTL 3 days; forced library sync bypasses cached searches and release groups and writes fresh results to both layers. TTL text updated in ARCHITECTURE, OPERATIONS and the changelog.",
         "breaking": "none",
         "migration": "",
-        "digest": "951e4e10e20e3e49e859d65baccc86df88faf81ca1248218add2b000f0f44a67"
+        "digest": "7fb5831baf168d0c1d9fee38366ae442fcf6c9a397b8beaf27f863b90733ac03"
       }
     },
     "deployment": {
