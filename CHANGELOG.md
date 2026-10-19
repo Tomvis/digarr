@@ -27,6 +27,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Changed
 
+- `GET /api/v1/recommendations` no longer includes the artist cache fields `topTracks`, `description`, `externalLinks`, `wikidataId`, `wikidataFetchedAt`, `wikidataFailedAt`, `cachedAt` and `genresCachedAt`. A 50-row page with populated caches went from about 1.3 MB to about 35 KB. Use `GET /api/v1/artists/:id/top-tracks` and `/enrichment`, or `GET /api/v1/recommendations/:id`, for those fields. Exports query only the fields they write, and bulk reject with a reason or permanent block now runs in one transaction with 3 statements instead of about 2000 for 500 rows (#1095).
 - Approving, rejecting or undoing on Discover updates the visible list in place: one action now sends the PATCH plus one counts request and, in grid and list views, a reload of the current page, instead of refetching the current page (or every loaded stack page) plus four separate count requests. In the All view an acted card stays with its new status. The tab counts come from the new `GET /api/v1/recommendations/counts`. Warm-status polling stops once every artist on the page is warm, paging keeps the current grid visible until the next page loads, and a Today's Pick action on the Dashboard reloads only the cards it changes (#1097).
 - Discovery scans skip resolution for artists already excluded, overlap and reuse artist images, and save recommendations in bulk; download syncs share one inventory read per target (#1094).
 

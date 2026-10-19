@@ -185,7 +185,7 @@
         "src/db/queries/oauth-tokens.ts": "878479c899c2eeb1077296c3d8eb19a189bf7d6e1b87c2611e6dfe5b093d3e81",
         "src/db/queries/playlist-exports.ts": "e9960e26d65e30e9b310f859008ad529b959d45f9365cdc4410c6b3db160e365",
         "src/db/queries/playlists.ts": "53e3afe9bbcb09c962fba06e773cadf6c629dfc0f97b78098393ab4e5f19394a",
-        "src/db/queries/recommendations.ts": "3568f1828ad8b35edd126e373bebf500294d4b6f7728dfa6075b40a4ae4f1377",
+        "src/db/queries/recommendations.ts": "e358f0887722717d065ddb29005d703d4aec96e8f0235ecf637a70d8e1a35532",
         "src/db/queries/recording-artist-cache.ts": "dd949706e674604c018e2941e4c462dc24afb623ce0ba288971f30cb360b05c0",
         "src/db/queries/sessions.ts": "ae5de14afbd4fe5a8d7315cb1232a785e59a3c0a569c27fc8ccc1de8b4b74ebd",
         "src/db/queries/settings.ts": "86660c18b1c95247e4c16141c77f631c82face72b6e40c31e36655fe7cd1eb26",
@@ -197,14 +197,14 @@
         "src/db/schema.ts": "01706b9a850861edca978323db0f3270da0b2e0c005afaa851601c0ae95c3381",
         "src/db/wait.ts": "f4fccab8242a627d2be30ce263e7190860d2789f80ae52d602e7e734e253561b"
       },
-      "digest": "0450474c85470be49f5028c2b44f05d22557f249783f5bbcac4f11342fa4751b",
+      "digest": "e4ff3da1d358b66f5cadf2b63ad9866a9b339e4de58b4e47239d9af37217213f",
       "review": {
         "outcome": "no-impact",
         "docs": [],
-        "note": "Adds a read-only tab counts query; no schema, migration, backup or restore change.",
+        "note": "Bulk reject runs as one transaction with the same ownership, reason and ON CONFLICT DO NOTHING block semantics; no schema or backup change.",
         "breaking": "none",
-        "migration": "Adds a read-only tab counts query; no schema, migration, backup or restore change.",
-        "digest": "0450474c85470be49f5028c2b44f05d22557f249783f5bbcac4f11342fa4751b"
+        "migration": "Bulk reject runs as one transaction with the same ownership, reason and ON CONFLICT DO NOTHING block semantics; no schema or backup change.",
+        "digest": "e4ff3da1d358b66f5cadf2b63ad9866a9b339e4de58b4e47239d9af37217213f"
       }
     },
     "configuration": {
@@ -272,7 +272,7 @@
     },
     "api": {
       "files": {
-        "src/server/deps.ts": "b0757dea7c1168ec33d036590967a6b31791df7a24183ad47be131caf16244d1",
+        "src/server/deps.ts": "4c1d190afdb922d6af349b48acfea57094dfb733fe73be048e5923f00c459acb",
         "src/server/helpers/client-ip.ts": "b70857eba04e8a0b75137b98ba21c3f9edbeba2a6d9a7a7c2162224b5b44c2a5",
         "src/server/helpers/openapi-doc.ts": "10866df5ca12fa942ec685472bbc1a90157d0dcc29001fc6f48bcd75704a1fe6",
         "src/server/helpers/openapi-routes.ts": "09187c4cd72a57088485977b41c2650a9691e74d658fb28487b3fd0829ced57a",
@@ -293,7 +293,7 @@
         "src/server/routes/batches.ts": "083c7b475b11e1afa34adfffa357bf398098faaa6ea4ca7a6f5c9df470f4fe7d",
         "src/server/routes/dashboard.ts": "ed7401ae574d24d0a68ee80e46ace07f625ed379f25bd27e6a3a745714f8f8d8",
         "src/server/routes/discovery-modes.ts": "f84e434fd2bdf8b9a3c92ba5d983d3acd76abe8bec15c440bd67b5b8e491c7d4",
-        "src/server/routes/exports.ts": "6e93cc52cb4ed3909081b9b27ca25c93c3f61d14e546d1466f7c79f87f46a92c",
+        "src/server/routes/exports.ts": "74c47dbedf5c5dcc7ad95c306f60e2a2d95cb1bf0f5a9b67bb64524304b050a2",
         "src/server/routes/genres.ts": "fbaf9454ecec0f6dfcf49b95c41807b14c4aa3dba2233e0aa3e18da4e5ff3723",
         "src/server/routes/health.ts": "35dc74f5a76a2c6d2ed738a977ad6af2857b5e029808a71f86978bcdcc52934f",
         "src/server/routes/jobs.ts": "b0a0b4abf7f0e0c284245cd3cbcb41f1ad0d15f7d827a1b2bb17a298fd6fd02c",
@@ -301,12 +301,12 @@
         "src/server/routes/lidarr.ts": "d2f726dcae32a8146e887724b8fc484bc8c7bff3b495f3e08f679fda59c732a0",
         "src/server/routes/listening-images.ts": "872e674cc8a9bb4cd5b1eb60160dd096e6abd6379cb85d464e484f7a6b2c36b5",
         "src/server/routes/listening.ts": "07cc8c4f308bfaa175ca088db30b961219c729d0386f6df55732f40fded1eeb8",
-        "src/server/routes/mcp.ts": "75fdba073140ce4e5e20e26cb8bafe86dc08fb525a792ebf4f499047c2ed2b26",
+        "src/server/routes/mcp.ts": "b55788e04b4afbcbe727e3226a3c5891354b8fabdf1ee2f848c4e962edce024b",
         "src/server/routes/media.ts": "4a46245005cf2fcd3dd2496c976a2faa76db1dc60344d6d54760d31df8cd3aff",
         "src/server/routes/mood.ts": "dc8a0dd1c576b56210b8e5d0e877f84d65ff6607d7fe160eab0927143466732c",
         "src/server/routes/pipeline.ts": "53961349786a641e0578c92d9b985b0ca28921e1896bc467be6f2adf20071179",
         "src/server/routes/playlists.ts": "ec42d35f636cbc59ce550452306047fe79b9fd300cde47abd5693dfb0bea7025",
-        "src/server/routes/recommendations.ts": "01653b5bb6f64fb96c67846c241fc5253825f45452f5ba8d6dc42d52081bdb50",
+        "src/server/routes/recommendations.ts": "c05e1c4ef64673890858208a1784ea5ab98f42d0dd7a25ec07ea13193e2363fc",
         "src/server/routes/search.ts": "b4bfb05b2ad246ee6ba17d6c1d28f8185b68188fa667c5d39fa998bec5d1203c",
         "src/server/routes/settings.ts": "ebfb1674533dc76cd4b97018ada9923676ad5504c3f8e094ae61f13a441c5233",
         "src/server/routes/slskd.ts": "16b9650783850962225799dd25cf312f6e0fe36cf2880e80149bf5be9aa05e88",
@@ -332,14 +332,14 @@
         "src/server/static.ts": "9b9425315642c8583fd27610b5b51697de68d0bec98420a4ceef7bba52072fc8",
         "src/server/types.ts": "83a039a9b33b0ab57bf718066a2837816eac788a3418a1b2924dd127659627c6"
       },
-      "digest": "fb19d06a98abdadd76dc2ea9ad3206ded3fd9fa864452a8bc1c7c179b54d6368",
+      "digest": "30ef68ae317a5f626c5b3925a8f7f3cb67fa71671dcbe8d3b55f01c02590a567",
       "review": {
-        "outcome": "no-impact",
-        "docs": [],
-        "note": "Listening image enrichment reads the artist cache and caches Lidarr lookups in-process; routes, responses and auth are unchanged.",
+        "outcome": "docs-updated",
+        "docs": ["docs/API.md", "CHANGELOG.md"],
+        "note": "Recommendation list artist drops cache fields (topTracks, description, externalLinks, wikidata, cache timestamps); documented with replacement endpoints; bulk reject and exports keep the same results.",
         "breaking": "none",
         "migration": "",
-        "digest": "fb19d06a98abdadd76dc2ea9ad3206ded3fd9fa864452a8bc1c7c179b54d6368"
+        "digest": "30ef68ae317a5f626c5b3925a8f7f3cb67fa71671dcbe8d3b55f01c02590a567"
       }
     },
     "interface": {
@@ -747,17 +747,17 @@
         "src/core/types.ts": "6d84c932174ff44fbb0f95b1466e8f790e8e06b8b7e028f7828623bb46bf4cd6",
         "src/core/url-safety.ts": "b7e00702468a04821fe62905eef32e23ac228337e31c3a7e6527ee4dc73cffaf",
         "src/core/validation.ts": "d8d4ab1eaef3258a80b64a72b7d0f26d66dfcfbada07eb0aacfa012a7028224a",
-        "src/index.ts": "4494bfb16668aa5acce5275010513e8edb94ebd4b5d39938f98d1cd8c36f297f",
+        "src/index.ts": "6792f26da5ebbee14a36cae57ac2ebdf8477d23af9233409e746de83368dc53f",
         "src/version.ts": "98cd5ddd0a4fe5557a0640df9cefbc1a4898cc6d70053edfa5eacf1822c1bc5e"
       },
-      "digest": "6b5b4fd511d7cf7a5dbeb0bf10cd3dcfc99a5e036bd68b004ba2ea5e4d74e6bf",
+      "digest": "9a50eaced3d67c1bb40b9cb8c0d7de25fd914de0c9ad182a1ede9d1e6ec6d68c",
       "review": {
         "outcome": "no-impact",
         "docs": [],
-        "note": "Skip definitely excluded artist resolution, bound and reuse run-local image work with cancellation draining, bulk-save recommendations with the existing conflict and failure semantics, and share target-local download snapshots; recommendation identities, scores, ownership and import verification remain unchanged.",
+        "note": "Startup wiring only passes the new export and bulk reject queries; behavior is unchanged.",
         "breaking": "none",
         "migration": "",
-        "digest": "6b5b4fd511d7cf7a5dbeb0bf10cd3dcfc99a5e036bd68b004ba2ea5e4d74e6bf"
+        "digest": "9a50eaced3d67c1bb40b9cb8c0d7de25fd914de0c9ad182a1ede9d1e6ec6d68c"
       }
     },
     "deployment": {
