@@ -91,6 +91,7 @@
         "drizzle/0057_absurd_the_captain.sql": "1431b3786f41f6d49d766f0a8cca2bbdbe21392b1f150a0dd252c7ed1e8955cf",
         "drizzle/0058_playlist_enabled_retire.sql": "46d0eacb545b3ab6ee25aebebf4bdc4f86b995a99d15e4acf8780466f338f1a8",
         "drizzle/0059_certain_centennial.sql": "ef9af9c700d9b9c14a0c20b7b9464ca52b12c87693d64a8773fdbca8f4ebd6aa",
+        "drizzle/0060_damp_grim_reaper.sql": "49202023b2d5a70185bc566c6fc87497e506357a1f712432d2ce31a0e1d2af3b",
         "drizzle/meta/0000_snapshot.json": "0288497d803f09f4ad1304b866b91ab25785865951841152291b11e6642230c2",
         "drizzle/meta/0001_snapshot.json": "2d057997cde52ff489663572db9d8c8a905017420e37fc808444e0fd2e23057d",
         "drizzle/meta/0002_snapshot.json": "1b11da03bfc729f4c3a59fed6765ed2e7fff3e602dc1738e176062cff922a4b9",
@@ -147,7 +148,8 @@
         "drizzle/meta/0057_snapshot.json": "c13a423eda3be48d61d975d3f751d519684a587d54f7a1d5e470c7fe60d6ee38",
         "drizzle/meta/0058_snapshot.json": "58f702f293195424c81e3e58acad9cd7df3f8209b6e1a5afb209ae9de904bc94",
         "drizzle/meta/0059_snapshot.json": "f856cdb77c84f57c97444f7541eac43f8ee13b27ccd5310690565dfcd3516c05",
-        "drizzle/meta/_journal.json": "e4fce0a2fa2f56cf946cd233e387b6919c5f08ef8aa2a8e4ae2f6050bd03bc1b",
+        "drizzle/meta/0060_snapshot.json": "ca7914721ad1e36fb9912faff7f8907477f1233897e96449ed9b745729f53064",
+        "drizzle/meta/_journal.json": "32d4d0e36a0e28417ac68b9f4751d2bf129e006d4c968a370482ff1fd50ae1d5",
         "scripts/prepare-rollback-backup.ts": "16f86f11d35ca8d4f20cda207fafb2c60323b301f1d9e3befe1e583981529a36",
         "scripts/rotate-encryption-key.ts": "45e964db2a6d7b623df8151d6ea256c83d6e0d6eb2984fd5c2409acdf1868980",
         "scripts/rotation-sites.ts": "6b25ef3f836cdc7a333fd493a09ae4bd770bded277ba164f01decbd3bf68d882",
@@ -173,12 +175,12 @@
         "src/db/queries/approval-requests.ts": "6547d3941a56731fbd48066b6334d8055415e229188f5f33e7c41564bf0833f3",
         "src/db/queries/artist-blocks.ts": "88fee42a98ec0483cd2bfbc296404765ce74e671a404c10eeebc8afba288e9a1",
         "src/db/queries/artist-metadata.ts": "66bb8aae77cef9ff2449884ffb3878d598c0a9c8500138b66dfad8e8b84f5b42",
-        "src/db/queries/artists.ts": "ba4d5b665cf57127b7a5b549a0812966e605622ace93596116e0c9fb5182f221",
+        "src/db/queries/artists.ts": "113aaf2c7158127ffb0e563ef5ee7722fdcc980910db9f9152b359fbc7a57e9c",
         "src/db/queries/batches.ts": "5488ebea7af47bccd7c9861a41293bcf8199b60873e02b3f7dc1c7084cd9f970",
         "src/db/queries/dashboard.ts": "5c93c4c55114c1799ffb65b2bb14b32ad4109bbf803c096117a4407b2765b041",
         "src/db/queries/gap-fill.ts": "614d60689b39a363cea37394d22f09dfc482486061e16131beeb2a758d589e7f",
         "src/db/queries/genres.ts": "623e351944c65a8b03ac3361cbe49f073a424f791fd4170719db6f78afa8c934",
-        "src/db/queries/jobs.ts": "c27b7efc5db1626c61898e93a87a5866c19f1f28456014315f0b089ca1474962",
+        "src/db/queries/jobs.ts": "4a69d8cea2bb8d22913ea730e982053b8e92ec23506ff74fcacc80358f78171e",
         "src/db/queries/library-albums.ts": "64e2581dc7fa3465acd12c1fc996b16eaf897353ff5c1ee17a086488cdbf8116",
         "src/db/queries/library-health.ts": "0e6e71f30c0649fe848df896997f7961ad0b7708322be644687deb39d53b646d",
         "src/db/queries/oauth-pending.ts": "2f7cde20dbaa8b63e49f66fbae0403847e91e8146e220819bdd32adc6b87f56b",
@@ -194,17 +196,17 @@
         "src/db/queries/subscriptions.ts": "64f3bb457240921a82ba1de0ed12059a15bb65649e312686a3275ac53a1333f4",
         "src/db/queries/targets.ts": "9cdc79b2dc51f9ff3ce481f0f4b18ae33c3c356475b18f9b39b4b3639e1760dd",
         "src/db/queries/users.ts": "f5ce2a210b6c7c2b957166a03799bf5f8295abc2920d675a09556fb048e44218",
-        "src/db/schema.ts": "01706b9a850861edca978323db0f3270da0b2e0c005afaa851601c0ae95c3381",
+        "src/db/schema.ts": "e729ed83307cdf724b056e1ea31765bdbec1625610d1e61b6e0e13566f3665ca",
         "src/db/wait.ts": "f4fccab8242a627d2be30ce263e7190860d2789f80ae52d602e7e734e253561b"
       },
-      "digest": "e4ff3da1d358b66f5cadf2b63ad9866a9b339e4de58b4e47239d9af37217213f",
+      "digest": "4293ca21da6ed16e7fe9e0816eeecf5de342bab027c8ee751c03034aefa4b93f",
       "review": {
-        "outcome": "no-impact",
-        "docs": [],
-        "note": "Bulk reject runs as one transaction with the same ownership, reason and ON CONFLICT DO NOTHING block semantics; no schema or backup change.",
+        "outcome": "docs-updated",
+        "docs": ["CHANGELOG.md", "docs/OPERATIONS.md", "docs/guides/switching-backends.md"],
+        "note": "Document the additive job history ordering index, index build time, backend copies, and recovery.",
         "breaking": "none",
-        "migration": "Bulk reject runs as one transaction with the same ownership, reason and ON CONFLICT DO NOTHING block semantics; no schema or backup change.",
-        "digest": "e4ff3da1d358b66f5cadf2b63ad9866a9b339e4de58b4e47239d9af37217213f"
+        "migration": "Before upgrade, take a complete database backup. Migration 0060 adds only an IF NOT EXISTS ordering index and remains backward compatible. Rollback uses the previous image with the index retained, or restores the complete pre-upgrade backup while the application is stopped.",
+        "digest": "4293ca21da6ed16e7fe9e0816eeecf5de342bab027c8ee751c03034aefa4b93f"
       }
     },
     "configuration": {
@@ -274,7 +276,7 @@
       "files": {
         "src/server/deps.ts": "4c1d190afdb922d6af349b48acfea57094dfb733fe73be048e5923f00c459acb",
         "src/server/helpers/client-ip.ts": "b70857eba04e8a0b75137b98ba21c3f9edbeba2a6d9a7a7c2162224b5b44c2a5",
-        "src/server/helpers/openapi-doc.ts": "10866df5ca12fa942ec685472bbc1a90157d0dcc29001fc6f48bcd75704a1fe6",
+        "src/server/helpers/openapi-doc.ts": "b512509ccb06b92fe1a9117da7d5f981c76766e921deb7f5ef6df9229f99be3d",
         "src/server/helpers/openapi-routes.ts": "09187c4cd72a57088485977b41c2650a9691e74d658fb28487b3fd0829ced57a",
         "src/server/helpers/pagination-cursor.ts": "83f85dcbd7c6baf5a061ad93c58ac73167f16875034400a3ae2f28915ff62303",
         "src/server/helpers/pagination.ts": "a9be92e3d8e4ff8d3b276c0a4b495e343235c5f2ee63667411b558104bc25be7",
@@ -296,8 +298,8 @@
         "src/server/routes/exports.ts": "74c47dbedf5c5dcc7ad95c306f60e2a2d95cb1bf0f5a9b67bb64524304b050a2",
         "src/server/routes/genres.ts": "fbaf9454ecec0f6dfcf49b95c41807b14c4aa3dba2233e0aa3e18da4e5ff3723",
         "src/server/routes/health.ts": "35dc74f5a76a2c6d2ed738a977ad6af2857b5e029808a71f86978bcdcc52934f",
-        "src/server/routes/jobs.ts": "b0a0b4abf7f0e0c284245cd3cbcb41f1ad0d15f7d827a1b2bb17a298fd6fd02c",
-        "src/server/routes/library.ts": "ea1a73179de3543ef1e599d05cc2ca0d5b392d24b0f806b452fe6dd904bfc667",
+        "src/server/routes/jobs.ts": "e63cba1b86075418235c1e06f2460baa1210d28bd76185bdac376ff697f46dca",
+        "src/server/routes/library.ts": "ac0058c60c6bbb2308f0d713df40b4ac99d39bde0ba92d23a1d845c717b6096f",
         "src/server/routes/lidarr.ts": "d2f726dcae32a8146e887724b8fc484bc8c7bff3b495f3e08f679fda59c732a0",
         "src/server/routes/listening-images.ts": "872e674cc8a9bb4cd5b1eb60160dd096e6abd6379cb85d464e484f7a6b2c36b5",
         "src/server/routes/listening.ts": "07cc8c4f308bfaa175ca088db30b961219c729d0386f6df55732f40fded1eeb8",
@@ -332,14 +334,14 @@
         "src/server/static.ts": "9b9425315642c8583fd27610b5b51697de68d0bec98420a4ceef7bba52072fc8",
         "src/server/types.ts": "83a039a9b33b0ab57bf718066a2837816eac788a3418a1b2924dd127659627c6"
       },
-      "digest": "30ef68ae317a5f626c5b3925a8f7f3cb67fa71671dcbe8d3b55f01c02590a567",
+      "digest": "c99f16c2a53fb2044e9081b78f82037920b878fe2de27169811eed00227dc925",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["docs/API.md", "CHANGELOG.md"],
-        "note": "Recommendation list artist drops cache fields (topTracks, description, externalLinks, wikidata, cache timestamps); documented with replacement endpoints; bulk reject and exports keep the same results.",
-        "breaking": "none",
+        "docs": ["docs/API.md", "src/server/helpers/openapi-doc.ts", "CHANGELOG.md"],
+        "note": "Document bounded reconciliation pages, projected review rows, stable job ordering, compact summaries, and the existing full-detail endpoint.",
+        "breaking": "Reconciliation clients must request successive pages and stop using removed internal fields; job clients need the detail endpoint for complete metadata and source diagnostics.",
         "migration": "",
-        "digest": "30ef68ae317a5f626c5b3925a8f7f3cb67fa71671dcbe8d3b55f01c02590a567"
+        "digest": "c99f16c2a53fb2044e9081b78f82037920b878fe2de27169811eed00227dc925"
       }
     },
     "interface": {
@@ -407,7 +409,7 @@
         "src/web/components/import-artists.tsx": "e17cfc4f24c54f2d53b83a37dca71c21f1b0370c6489b1b9317882e922d31538",
         "src/web/components/integration-capabilities.tsx": "2ac482eeefc2acfc8f8ec5ca8821af01bd9bb415a287ad390461c7cb8518cf71",
         "src/web/components/integration-health-card.tsx": "8cf551afba8d8da97d9e2485b695b53a6a7664651d3fd3cf9ca3f97dcda9ecbd",
-        "src/web/components/job-run-row.tsx": "0aed80604de687ec3f3c35fd99b8ce954503e535f07b0368ebe65d08a415a9c5",
+        "src/web/components/job-run-row.tsx": "5ef8651583619a94ba9287eae188eebf4e92058068210787b2c3adb63fd9af17",
         "src/web/components/keyboard-shortcuts.tsx": "a4513986274813c3b937a4e00f9ddc10126c787301609029027b60b90647cdcd",
         "src/web/components/language-switcher.tsx": "69cc47bddb3c4736245b7632fba1f4d5ebe506f8214066f9cab6ed65746497ee",
         "src/web/components/library-album-coverage-badge.tsx": "3820031a5bec8bf740297694680b5930fb1efe4009f4782bf57221e7c3ecf550",
@@ -470,7 +472,7 @@
         "src/web/hooks/use-spotify-embed.ts": "7327425789266250fb45694f5755c76bac371eda96676190a56f8df3263391c0",
         "src/web/hooks/use-swipe.ts": "d17f0c75cd42e8d91e31585bcf7d3ed9e5fbe939093a030d25cf2ce41adef250",
         "src/web/index.css": "b8085bf0a9a16b9a7424f93297dbbf6e008ee6a618163cd5f07e22216f540bfc",
-        "src/web/lib/api.ts": "06025c97c747054c39f3fdb14ac52fb7f9cad5b85368255051f70b0982e8c832",
+        "src/web/lib/api.ts": "cfb86049916ba85b6c915a7277a7adbb05803ba10c9e6c1cbf5677c4f60ee878",
         "src/web/lib/approval.ts": "0c9308835f714b2815ccde73e6a0286037b6d0ea65dfd3778738e81736f04f14",
         "src/web/lib/constants.ts": "caf03680f9edcca8f43ae1c6201e34a73c4a7a9f4a8a74f3c291eb043d7ef928",
         "src/web/lib/discover-cache.ts": "33b98aaeed8fdd7f9e53fbfe9ee5b23779920483bcf10481048c11a2ad7f4a2e",
@@ -500,7 +502,7 @@
         "src/web/pages/genres.tsx": "993a08b560ee596026a9c5f0895ff33f180a28e35ab3541f1de204c410337d36",
         "src/web/pages/job-history.tsx": "86353905057886ac679b87d9158ddbcbc167ba88fd2cb723c46eba49d609b3f8",
         "src/web/pages/library-health.tsx": "a9647beb71b15a921ed05d86cb8112f1a069c6b12a2c893ba76006b101227cd1",
-        "src/web/pages/library-reconciliation.tsx": "4c987cd1281651aa0c3c32c1035c3a283adcfff9d4d8bb527bfa74f9d9e5626c",
+        "src/web/pages/library-reconciliation.tsx": "99d523dc507b8eb9e22bbcb33bc19180a54570e7d132233ee766f7ae49625ce3",
         "src/web/pages/library.tsx": "562ae854c00762927b11cb79018dc9708001af940eabe49b9799955158fc6e71",
         "src/web/pages/playlist-detail.tsx": "a94d75ee56fcd1bac87d813616d8d417d8d11e4fb4b4d1103341339c5e22999d",
         "src/web/pages/playlists.tsx": "c0307556923a04379f4a4abdd385ef324f45715ec6a8e5bd3fee2ac2246616d2",
@@ -527,14 +529,14 @@
         "src/web/spotify-embed-bridge.ts": "10e28d14cd6990afed56ac3fb5693546de6c0d4662fc338ff30ef356d37f3410",
         "src/web/vite-env.d.ts": "9c47195150631180578868a67de22d5f75a8373b8dbc89de0ce445d535b4de72"
       },
-      "digest": "4a5e4577443e93b344097ada69097ffda882eb1f57f31092227696905408c30c",
+      "digest": "4c1f505c9a9deb828385c19b5ef52fafbed3585dcbc3ccbd093847a26c26d6a8",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["CHANGELOG.md"],
-        "note": "Discover updates its caches in place after actions, refetches only the counts and the active grid/list page, gates warm status to admins, and loads tab counts from one endpoint; Dashboard refetches only changed cards. What each view shows is unchanged.",
+        "docs": ["CHANGELOG.md", "docs/OPERATIONS.md"],
+        "note": "History expands with an on-demand detail request; reconciliation loads 20 rows per page and refetches the affected page after corrections. Artist selection remains available across pages through All.",
         "breaking": "none",
         "migration": "",
-        "digest": "4a5e4577443e93b344097ada69097ffda882eb1f57f31092227696905408c30c"
+        "digest": "4c1f505c9a9deb828385c19b5ef52fafbed3585dcbc3ccbd093847a26c26d6a8"
       }
     },
     "features": {
@@ -619,7 +621,7 @@
         "src/core/library/sources/plex.ts": "fbd3444be5e492c2242328743cd254e4935e2e09a9fc2d870e8cd2b2136828c5",
         "src/core/library/sources/subsonic.ts": "33cb85e764e3fff1a5235e92a6f1acd4afaadaabab4af1848254a3ff7c945896",
         "src/core/library/sources/types.ts": "f1b86f927fc378a7d6b3b1dabc2e230080defbc2ed1550f582b19d3748b3eccb",
-        "src/core/library/store.ts": "1a11c18e0c0e106cd864b99ab8dc5da668b0d0fc7ced106aa761ac44fb664d37",
+        "src/core/library/store.ts": "cdaa1921a8e72b0c57420a03ca019b87b5b1adcc3ffcae05a1cbf3833e41abfc",
         "src/core/library/sync.ts": "2a4bda0806ab5aae742a1474b85cf0952759ef97e198a19a35bc077a6dcd5c07",
         "src/core/library/types.ts": "ebee38068d7f89f38469fc852051a98d4b9d2fbc0275160f53ea860c551290b0",
         "src/core/lifecycle.ts": "ebff2573fe7b8faf00e868d1c58c5fa26e10c4f32b0c179e2d8638bcab61067b",
@@ -750,14 +752,14 @@
         "src/index.ts": "6792f26da5ebbee14a36cae57ac2ebdf8477d23af9233409e746de83368dc53f",
         "src/version.ts": "98cd5ddd0a4fe5557a0640df9cefbc1a4898cc6d70053edfa5eacf1822c1bc5e"
       },
-      "digest": "9a50eaced3d67c1bb40b9cb8c0d7de25fd914de0c9ad182a1ede9d1e6ec6d68c",
+      "digest": "2e0d688af815b2b61ee8256f85d5007069f8aaa92c8df6551c855520be1215a6",
       "review": {
-        "outcome": "no-impact",
-        "docs": [],
-        "note": "Startup wiring only passes the new export and bulk reject queries; behavior is unchanged.",
+        "outcome": "docs-updated",
+        "docs": ["docs/API.md", "CHANGELOG.md"],
+        "note": "Document server pagination and review projections while preserving current-user and global visibility, override filtering, and the bulk-ignore cap.",
         "breaking": "none",
         "migration": "",
-        "digest": "9a50eaced3d67c1bb40b9cb8c0d7de25fd914de0c9ad182a1ede9d1e6ec6d68c"
+        "digest": "2e0d688af815b2b61ee8256f85d5007069f8aaa92c8df6551c855520be1215a6"
       }
     },
     "deployment": {
