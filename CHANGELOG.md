@@ -26,6 +26,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Changed
 
+- Approving, rejecting or undoing on Discover updates the visible list in place: one action now sends the PATCH plus one counts request and, in grid and list views, a reload of the current page, instead of refetching the current page (or every loaded stack page) plus four separate count requests. In the All view an acted card stays with its new status. The tab counts come from the new `GET /api/v1/recommendations/counts`. Warm-status polling stops once every artist on the page is warm, paging keeps the current grid visible until the next page loads, and a Today's Pick action on the Dashboard reloads only the cards it changes (#1097).
 - Discovery scans skip resolution for artists already excluded, overlap and reuse artist images, and save recommendations in bulk; download syncs share one inventory read per target (#1094).
 
 - Hashed web assets are now cached for a year and the app shell revalidates on each load, API JSON is gzip-compressed when the client asks for it (event streams and audio are untouched), static file requests no longer fill the request log, the setup check is remembered once setup is complete, and the first library sync, health scan and slskd warmup now start 60 seconds after boot instead of immediately. The Docker image only ships the PGlite runtime dependency and a minified server bundle, going from 204 MB to 137 MB (#1091).
