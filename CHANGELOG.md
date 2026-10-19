@@ -19,6 +19,8 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Fixed
 
+- Deezer track lookup works again for Audition and playlists, and the Discover preview. Deezer stopped answering `artist:"..."` searches, so nearly every artist fell through to MusicBrainz titles. Digarr now finds the artist by exact name and takes its top tracks, or falls back to a plain search filtered to that exact artist. The MusicBrainz fallback also skips placeholder and non-song titles (`[untitled]`, broadcasts, rehearsals, demos, live sessions) when it has other recordings (#1135).
+- The pending-artist playability summary no longer counts artists whose only match is a MusicBrainz title as playable; they show as "Title only, nothing to play" and `GET /api/v1/recommendations/playability` returns a new `reasons.titleOnly` count. Runs saved before this change keep their old classification until the next Audition run (#1135, #1045).
 - Playlist generation is no longer marked stuck after 2 minutes; a full-size Audition takes longer than that, so the limit is now 15 minutes (#1136).
 - Integration health no longer keeps showing `failing` for up to 30 days after the failing target, subscription or scrobbler connection was removed (#1069).
 - The TheAudioDB image proxy also covers images hosted on `r2.theaudiodb.com`, which were loaded straight from the browser even with proxying on (#1131).
