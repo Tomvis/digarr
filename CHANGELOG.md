@@ -12,6 +12,7 @@ Releases that have been promoted to the `:stable` Docker channel carry a `(stabl
 
 ### Fixed
 
+- With a Lidarr target, album recommendations skip release types the Lidarr metadata profile filters out (for example compilations under a studio-only profile), and an album add that still fails for that reason says which type the profile blocks instead of "album not found in Lidarr" (#1108).
 - The pre-migration auto-backup streams each table to disk in pages instead of building the whole database in memory first, so upgrades on large libraries no longer risk running out of memory before the server starts. Snapshots are now compact JSON (about 30% smaller) and restore exactly as before (#1092).
 - Genre counts, library reconciliation pages, and Job History use less database work and transfer less data; migration 0060 adds a backward-compatible job ordering index (#1096).
 - Listening pages no longer wait on one Lidarr image lookup per artist: known images come from the artist cache, the rest are looked up four at a time and cached (50 uncached artists went from ~10 s to ~2.7 s, repeats ~0.1 s) (#1093).

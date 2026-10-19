@@ -652,6 +652,7 @@ const runPipeline = async (userId?: number) => {
     providerRegistry,
     librarySync: librarySyncOrchestrator,
     userId: resolvedUserId,
+    getEnabledTargets: () => getEnabledTargetsForResolvedUser(resolvedUserId),
   })
 }
 
