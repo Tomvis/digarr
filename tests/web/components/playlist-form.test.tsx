@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 const apiMocks = vi.hoisted(() => ({ listTargets: vi.fn() }))
 
@@ -20,9 +18,10 @@ vi.mock('@/web/lib/api', async (importOriginal) => {
 
 import { PlaylistForm } from '@/web/components/playlist-form'
 import type { PlaylistInsert } from '@/web/lib/api'
+import { createTestQueryClient } from '../helpers/query'
 
 function renderForm(onSave: (data: PlaylistInsert) => void) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = createTestQueryClient()
   return render(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
@@ -109,5 +108,33 @@ describe('PlaylistForm targets', () => {
         }),
       ),
     )
+  })
+
+  it('selects the only playlist target as text and sends no enabled flag', async () => {
+    apiMocks.listTargets.mockResolvedValue([
+      {
+        id: 1,
+        userId: 1,
+        type: 'navidrome-playlist',
+        name: 'Navidrome',
+        config: {},
+        enabled: true,
+        owned: true,
+      },
+    ])
+    const onSave = vi.fn()
+    renderForm(onSave)
+
+    expect(await screen.findByText('Navidrome')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Navidrome' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Enabled')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Solo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ targetIds: [1] })),
+    )
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('enabled')
   })
 })

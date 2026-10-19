@@ -17,22 +17,12 @@ export type DiscoveryModeSubscriptionConfig = {
 export type AdapterResult = {
   artists: DiscoveredArtist[]
   tracks?: DiscoveredTrack[]
-}
-
-export type AdapterConfigField = {
-  key: string
-  label: string
-  type: 'text' | 'password' | 'number' | 'select'
-  required?: boolean
-  placeholder?: string
-  options?: Array<{ value: string; label: string }>
-  helpText?: string
+  /** Why a feed came back empty without failing, e.g. no playlist generated yet. */
+  message?: string
 }
 
 export interface SubscriptionAdapter {
   type: string
-  label: string
-  configFields: AdapterConfigField[]
   fetch(config: Record<string, unknown>, options?: { limit?: number }): Promise<AdapterResult>
 }
 

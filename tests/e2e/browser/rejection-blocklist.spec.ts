@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { ensureAdminToken, installAuthCookie } from './auth'
-import { installDiscoverStackView, seedRecommendations } from './seed'
+import { installDiscoverListView, installDiscoverStackView, seedRecommendations } from './seed'
 
-// The reason picker (reason + permanent block) only renders in the swipe
-// "stack" view, so these tests force that view before navigating.
+// The reason picker (reason + permanent block) opens in every Discover view.
+// These tests force the swipe "stack" view, and one covers the list view.
 test.describe('rejection picker + blocklist', () => {
   test.beforeEach(async ({ page }) => {
     const token = await ensureAdminToken(page.request, { completeSetup: true })
@@ -27,7 +27,7 @@ test.describe('rejection picker + blocklist', () => {
     await expect(dialog).toBeVisible({ timeout: 10_000 })
 
     // Picker title is "<prompt> - <artistName>"; capture the name to verify it
-    // later shows up (and disappears) in the Blocked settings tab.
+    // later shows up (and disappears) in the Blocked settings section.
     const title = (await dialog.locator('h2').first().textContent()) ?? ''
     const artistName = title.includes(' - ') ? title.split(' - ').slice(1).join(' - ').trim() : ''
     expect(artistName, 'expected to capture artist name from picker title').toBeTruthy()
@@ -46,9 +46,12 @@ test.describe('rejection picker + blocklist', () => {
     await expect(dialog).toBeHidden()
     await rejectPatch
 
-    // Navigate to Settings -> Blocked tab and verify the artist is listed
-    await page.goto('/settings')
-    await page.getByRole('button', { name: /^blocked$/i }).click()
+    // Navigate to the Blocked section of Settings > Recommendations and verify the artist is listed
+    await page.goto('/settings?tab=blocked')
+    await expect(page.getByRole('button', { name: /^blocked - \d+/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     await expect(page.getByText(artistName)).toBeVisible({ timeout: 5_000 })
 
     // Unblock removes it
@@ -71,5 +74,23 @@ test.describe('rejection picker + blocklist', () => {
     await dialog.getByRole('button', { name: /maybe later, not now/i }).click()
     const checkbox = dialog.getByLabel(/don't show this artist again/i)
     await expect(checkbox).toBeDisabled()
+  })
+
+  test('list view reject opens the picker and skips the reason in one click', async ({ page }) => {
+    await installDiscoverListView(page)
+    await page.goto('/discover')
+
+    const card = page.locator('[data-testid="rec-card-button"]').first()
+    await expect(card).toBeVisible({ timeout: 10_000 })
+    await card.getByRole('button', { name: /^reject$/i }).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+    const rejectPatch = page.waitForResponse(
+      (r) => /\/api\/v1\/recommendations\/\d+$/.test(r.url()) && r.request().method() === 'PATCH',
+    )
+    await dialog.getByRole('button', { name: /reject without a reason/i }).click()
+    await rejectPatch
+    await expect(dialog).toBeHidden()
   })
 })

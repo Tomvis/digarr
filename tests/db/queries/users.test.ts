@@ -1,26 +1,10 @@
 // @vitest-environment node
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from '@/db'
-import { listUserIdsWithMusicRaterConnection, updateUserPreferredLocale } from '@/db/queries/users'
+import { listUserIdsWithMusicRaterConnection } from '@/db/queries/users'
 import { users } from '@/db/schema'
 import { makeTestDb } from '../../helpers/test-db'
-
-describe('updateUserPreferredLocale', () => {
-  it('updates the preferred locale for a user', async () => {
-    const chain = {
-      set: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue(undefined),
-    }
-    const db = { update: vi.fn().mockReturnValue(chain) } as unknown as Database
-
-    await updateUserPreferredLocale(db, 1, 'de')
-
-    expect(db.update).toHaveBeenCalledOnce()
-    expect(chain.set).toHaveBeenCalledWith({ preferredLocale: 'de' })
-    expect(chain.where).toHaveBeenCalledOnce()
-  })
-})
 
 /**
  * Real-DB coverage for the empty-string disconnect gap: clearing the URL is

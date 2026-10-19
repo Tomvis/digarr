@@ -1,10 +1,11 @@
 import type { DiscoveryAvailabilityResult } from '../../core/discovery-modes/availability'
 import type { DiscoveryConfigField } from '../../core/discovery-modes/types'
 import type { GenreInfo } from '../../core/genre/types'
-import { getMessages } from '../../core/i18n/messages'
+import { en } from '../../core/i18n/messages/en'
 import type { MessageKey } from '../../core/i18n/messages/types'
 import type { NotificationChannel } from '../../core/notifications/types'
-import type { PlaylistGenerationSummary } from '../../core/playlists/types'
+import type { PlaylistExportOutcome, PlaylistGenerationSummary } from '../../core/playlists/types'
+import { getLoadedMessages } from './locale-catalogs'
 import { getRequestLocale } from './locale-storage'
 
 export type LibraryArtist = {
@@ -57,25 +58,33 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public data: unknown,
+    public retryAfter?: number,
   ) {
     super(extractApiErrorMessage(status, data))
   }
 }
 
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined
+  const seconds = Number(value)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+}
+
 function extractApiErrorMessage(status: number, data: unknown): string {
   if (data && typeof data === 'object') {
     const record = data as Record<string, unknown>
-    // problem+json: translate `code` i18n key, fall back to `title`.
+    // problem+json: translate `code` i18n key, fall back to `title`. Problems
+    // converted from legacy bodies carry `error`, the text users saw before; their
+    // `title` is only the generic HTTP reason phrase.
     if (typeof record.code === 'string' && record.code.trim()) {
       const translated = translateErrorCode(record.code)
       if (translated) return translated
-      if (typeof record.title === 'string' && record.title.trim()) return record.title
-    }
-    if (typeof record.title === 'string' && record.title.trim()) {
-      return record.title
     }
     if (typeof record.error === 'string' && record.error.trim()) {
       return record.error
+    }
+    if (typeof record.title === 'string' && record.title.trim()) {
+      return record.title
     }
     if (typeof record.message === 'string' && record.message.trim()) {
       return record.message
@@ -86,7 +95,7 @@ function extractApiErrorMessage(status: number, data: unknown): string {
 }
 
 function translateErrorCode(code: string): string | null {
-  const messages = getMessages(getRequestLocale())
+  const messages = getLoadedMessages(getRequestLocale()) ?? en
   const value = messages[code as MessageKey]
   return typeof value === 'string' && value.length > 0 ? value : null
 }
@@ -116,6 +125,12 @@ function getBrowserHeaders(options?: RequestInit): Headers {
   return headers
 }
 
+function handleSessionExpired(): never {
+  clearStoredToken()
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  throw new ApiError(401, { error: 'Session expired' })
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const { headers: _extraHeaders, ...restOptions } = options ?? {}
   const res = await fetch(`${BASE}${path}`, {
@@ -124,13 +139,9 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
     headers: getBrowserHeaders(options),
   })
   if (!res.ok) {
-    if (res.status === 401) {
-      clearStoredToken()
-      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
-      throw new ApiError(res.status, { error: 'Session expired' })
-    }
+    if (res.status === 401) handleSessionExpired()
     const error = await res.json().catch(() => ({ error: res.statusText }))
-    throw new ApiError(res.status, error)
+    throw new ApiError(res.status, error, parseRetryAfter(res.headers.get('Retry-After')))
   }
   if (res.status === 204) {
     return undefined as T
@@ -138,13 +149,15 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-function authedRawFetch(path: string, options?: RequestInit): Promise<Response> {
+async function authedRawFetch(path: string, options?: RequestInit): Promise<Response> {
   const { headers: _extraHeaders, ...restOptions } = options ?? {}
-  return fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${path}`, {
     ...restOptions,
     credentials: 'same-origin',
     headers: getBrowserHeaders(options),
   })
+  if (res.status === 401) handleSessionExpired()
+  return res
 }
 
 // Auth
@@ -254,6 +267,29 @@ export const updateEmail = (email: string | null) =>
     body: JSON.stringify({ email }),
   })
 
+export type PersonalApiToken = {
+  id: number
+  name: string
+  prefix: string
+  scope: 'read' | 'write' | 'admin'
+  createdAt: string
+  lastUsedAt: string | null
+  expiresAt: string | null
+}
+
+export const listApiTokens = () => fetchApi<PersonalApiToken[]>('/auth/tokens')
+export const createApiToken = (data: {
+  name: string
+  scope: PersonalApiToken['scope']
+  expiresInDays: 30 | 90 | 365 | null
+}) =>
+  fetchApi<PersonalApiToken & { token: string }>('/auth/tokens', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+export const revokeApiToken = (id: number) =>
+  fetchApi<void>(`/auth/tokens/${id}`, { method: 'DELETE' })
+
 export const logoutUser = () => fetchApi<void>('/auth/logout', { method: 'POST' })
 
 // Setup
@@ -321,6 +357,14 @@ export const getRecommendations = (params?: Record<string, string>) => {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : ''
   return fetchApi<{ items: unknown[]; total: number }>(`/recommendations${qs}`)
 }
+export type RecommendationTabCounts = {
+  all: number
+  pending: number
+  approved: number
+  rejected: number
+}
+export const getRecommendationCounts = () =>
+  fetchApi<RecommendationTabCounts>('/recommendations/counts')
 export type ApprovalTargetSummary = {
   total: number
   succeeded: number
@@ -338,6 +382,9 @@ export type ApprovalResponse = {
   // Present on the unapprove (status='pending') response only.
   lidarrArtistRemoved?: boolean
   lidarrRemovalSkippedReason?: LidarrRemovalSkipReason
+  /** Rejects only: true when a permanent reject created a new block. */
+  blockCreated?: boolean
+  requestId?: number
 }
 export const updateRecommendation = (id: number, body: Record<string, unknown>) =>
   fetchApi<ApprovalResponse>(`/recommendations/${id}`, {
@@ -347,25 +394,50 @@ export const updateRecommendation = (id: number, body: Record<string, unknown>) 
 export const approveRecommendation = (
   id: number,
   options?: {
+    tags?: number[]
     monitorOption?: string
     selectedAlbumIds?: string[]
     qualityProfileId?: number
     metadataProfileId?: number
     rootFolderId?: number
+    lidarrTargetId?: string
+    feedbackTrack?: { artistName: string; trackName: string; recordingMbid?: string }
+    auditionTrackId?: number
   },
 ) => updateRecommendation(id, { status: 'approved', ...options })
 export type BulkApprovalResponse = {
   results: Array<{ id: number; status: string; error?: string }>
 }
+export type MissingAlbumsApprovalResponse = {
+  results: Array<{
+    albumMbid: string
+    success: boolean
+    targetActions: Record<string, unknown>
+    status?: string
+    requestId?: number
+  }>
+  succeeded: number
+  failed: number
+  requested?: number
+}
+export const approveMissingAlbums = (artistId: number, albumMbids: string[]) =>
+  fetchApi<MissingAlbumsApprovalResponse>('/recommendations/missing-albums', {
+    method: 'POST',
+    body: JSON.stringify({ artistId, albumMbids }),
+  })
+
 export const bulkAction = (
   ids: number[],
   action: string,
   options?: { reason?: string | null; permanent?: boolean },
 ) =>
-  fetchApi('/recommendations/bulk', {
-    method: 'POST',
-    body: JSON.stringify({ ids, action, ...options }),
-  })
+  fetchApi<{ results: Array<{ id: number; status: string; requestId?: number; error?: string }> }>(
+    '/recommendations/bulk',
+    {
+      method: 'POST',
+      body: JSON.stringify({ ids, action, ...options }),
+    },
+  )
 
 export const getFeedbackSummary = () =>
   fetchApi<{
@@ -500,21 +572,34 @@ export const getApprovalTrend = () => fetchApi<ApprovalTrend[]>('/analytics/tren
 export const getTimeToAct = () => fetchApi<TimeToAct[]>('/analytics/time-to-act')
 
 // Lidarr
-export const getLidarrProfiles = () =>
-  fetchApi<Array<{ id: number; name: string }>>('/lidarr/profiles')
-export const getLidarrMetadataProfiles = () =>
-  fetchApi<Array<{ id: number; name: string }>>('/lidarr/metadataprofiles')
-export const getLidarrRootFolders = () =>
-  fetchApi<Array<{ id: number; path: string; freeSpace?: number }>>('/lidarr/rootfolders')
-// Non-admin-safe picker data for the approve dialog: profile names + root-folder
-// paths only, no freeSpace/structure. The three fns above stay for the admin
-// settings screen, which is allowed to see the full payloads.
-export const getLidarrApproveOptions = () =>
-  fetchApi<{
-    qualityProfiles: Array<{ id: number; name: string }>
-    metadataProfiles: Array<{ id: number; name: string }>
-    rootFolders: Array<{ id: number; path: string }>
-  }>('/lidarr/approve-options')
+// Non-admin-safe picker data: profile names + root-folder paths only, no
+// freeSpace/structure. Used by the approve dialog and per-user Lidarr defaults.
+export type LidarrApproveOptions = {
+  tags?: Array<{ id: number; label: string }>
+  qualityProfiles: Array<{ id: number; name: string }>
+  metadataProfiles: Array<{ id: number; name: string }>
+  rootFolders: Array<{ id: number; path: string }>
+  defaults?: {
+    tags?: number[]
+    qualityProfileId: number | null
+    metadataProfileId: number | null
+    rootFolderId: number | null
+  }
+}
+
+// Without targetId: the server connection. With it: the instance that target uses.
+export const getLidarrApproveOptions = (targetId?: number) =>
+  fetchApi<LidarrApproveOptions>(
+    targetId === undefined
+      ? '/lidarr/approve-options'
+      : `/lidarr/approve-options?targetId=${encodeURIComponent(String(targetId))}`,
+  )
+
+export const createLidarrTag = (label: string, targetId?: number) =>
+  fetchApi<{ id: number; label: string }>(
+    `/lidarr/tags${targetId === undefined ? '' : `?targetId=${targetId}`}`,
+    { method: 'POST', body: JSON.stringify({ label }) },
+  )
 
 // Library Health
 export type HealthCheckItem = {
@@ -630,26 +715,10 @@ export type LibraryArtistIdentity = { source: string; sourceArtistId: string }
 export type LibraryAlbumIdentity = { source: string; sourceAlbumId: string }
 export type LibraryUnreconciledRow = {
   id: number
-  userId: number | null
   source: string
   sourceArtistId: string
   name: string
-  nameNormalized: string
-  mbid: string | null
-  matchMethod: string | null
-  matchConfidence: number | null
   unreconciledReason: LibraryUnreconciledReason | null
-  genres: string[] | null
-  syncedAt: string
-  lastGapCheckAt: string | null
-}
-export type LibrarySourceSyncResult =
-  | { source: string; status: 'completed'; counts: LibrarySyncCounts }
-  | { source: string; status: 'skipped_fresh'; counts: LibrarySyncCounts | null }
-  | { source: string; status: 'failed'; error: string }
-export type LibrarySyncSummary = {
-  userId: number | null
-  results: LibrarySourceSyncResult[]
 }
 export type LibraryOverrideInput = {
   source: string
@@ -674,20 +743,12 @@ export type LibraryAlbumCoverage = {
 }
 export type LibraryUnreconciledAlbumRow = {
   id: number
-  userId: number | null
   source: string
-  sourceArtistId: string
   sourceAlbumId: string
   title: string
-  titleNormalized: string
-  albumMbid: string | null
-  artistMbid: string | null
   primaryType: string | null
   releaseYear: number | null
-  matchMethod: string | null
-  matchConfidence: number | null
   unreconciledReason: LibraryUnreconciledReason | null
-  syncedAt: string
 }
 export type LibraryAlbumOverrideInput = {
   source: string
@@ -697,19 +758,22 @@ export type LibraryAlbumOverrideInput = {
 }
 export const getLibrarySources = () =>
   fetchApi<{ sources: LibrarySyncSourceRow[] }>('/library/sources')
-// Returns LibrarySourceSyncResult when source is given, LibrarySyncSummary when not.
-// Caller can distinguish by presence of `results` (summary) vs `status` (single result).
+// 202: the sync runs in the background; progress is read from getLibrarySources().
 export const triggerLibrarySync = (source?: string) =>
-  fetchApi<LibrarySourceSyncResult | LibrarySyncSummary>('/library/sync', {
+  fetchApi<{ source?: string; status: 'started' }>('/library/sync', {
     method: 'POST',
     body: JSON.stringify(source ? { source } : {}),
   })
-export const getLibraryUnreconciled = () =>
-  fetchApi<{ items: LibraryUnreconciledRow[] }>('/library/unreconciled')
+export const getLibraryUnreconciled = (limit = 20, offset = 0) =>
+  fetchApi<{ items: LibraryUnreconciledRow[]; total: number }>(
+    `/library/unreconciled?limit=${limit}&offset=${offset}`,
+  )
 export const getLibraryAlbumCoverage = (artistMbid: string) =>
   fetchApi<LibraryAlbumCoverage>(`/library/album-coverage/${encodeURIComponent(artistMbid)}`)
-export const getLibraryUnreconciledAlbums = () =>
-  fetchApi<{ items: LibraryUnreconciledAlbumRow[] }>('/library/unreconciled-albums')
+export const getLibraryUnreconciledAlbums = (limit = 20, offset = 0) =>
+  fetchApi<{ items: LibraryUnreconciledAlbumRow[]; total: number }>(
+    `/library/unreconciled-albums?limit=${limit}&offset=${offset}`,
+  )
 export const bulkIgnoreLibraryArtists = (items: LibraryArtistIdentity[]) =>
   fetchApi<void>('/library/overrides/bulk-ignore', {
     method: 'POST',
@@ -732,26 +796,77 @@ export const saveLibraryAlbumOverride = (payload: LibraryAlbumOverrideInput) =>
   })
 export const rerunLibraryReconciler = () => fetchApi<void>('/library/reconcile', { method: 'POST' })
 
+export type ApprovalPolicy = 'direct' | 'request_only' | 'auto_approve'
+export type UserApprovalSettings = {
+  approvalPolicy: ApprovalPolicy
+  maxOpenRequests: number | null
+  approvalThreshold: number | null
+}
+export type ApprovalRequest = {
+  id: number
+  token: string
+  recommendationId: number
+  requester: { id: number; username: string }
+  recommendation: {
+    artistName: string
+    albumTitle: string | null
+    score: number
+    reasons: string[]
+  }
+  status: 'pending' | 'approved' | 'declined'
+  lastError: string | null
+  note: string | null
+  createdAt: string
+}
+export const listApprovalRequests = () => fetchApi<ApprovalRequest[]>('/approval-requests')
+export const listOwnApprovalRequests = () => fetchApi<ApprovalRequest[]>('/approval-requests/mine')
+export const resolveApprovalRequest = (
+  id: number,
+  decision: 'approve' | 'decline',
+  note?: string,
+) =>
+  fetchApi<{ request: { status: ApprovalRequest['status'] }; approval?: ApprovalResponse }>(
+    `/approval-requests/${id}/${decision}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    },
+  )
+
+export const getPersonalNotificationChannels = () =>
+  fetchApi<{ channels: NotificationChannel[] }>('/auth/me/notification-channels')
+export const updatePersonalNotificationChannels = (channels: NotificationChannel[]) =>
+  fetchApi<void>('/auth/me/notification-channels', {
+    method: 'PATCH',
+    body: JSON.stringify({ channels }),
+  })
+
 // User management (admin)
 export const listUsers = () =>
   fetchApi<
-    Array<{
-      id: number
-      username: string
-      isAdmin: boolean
-      email: string | null
-      oidcSubject: string | null
-      authProvider: string
-      createdAt: string
-    }>
+    Array<
+      {
+        id: number
+        username: string
+        isAdmin: boolean
+        email: string | null
+        oidcSubject: string | null
+        authProvider: string
+        createdAt: string
+      } & UserApprovalSettings
+    >
   >('/users')
-export const createUserApi = (data: { username: string; password: string; isAdmin?: boolean }) =>
+export const createUserApi = (
+  data: { username: string; password: string; isAdmin?: boolean } & Partial<UserApprovalSettings>,
+) =>
   fetchApi<{ id: number; username: string; isAdmin: boolean }>('/users', {
     method: 'POST',
     body: JSON.stringify(data),
   })
 export const updateUserAdmin = (id: number, isAdmin: boolean) =>
   fetchApi(`/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isAdmin }) })
+export const updateUserApprovalSettings = (id: number, data: UserApprovalSettings) =>
+  fetchApi(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const deleteUserApi = (id: number) => fetchApi(`/users/${id}`, { method: 'DELETE' })
 
 // Targets
@@ -777,7 +892,10 @@ export const updateTargetApi = (
 ) => fetchApi(`/targets/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const deleteTargetApi = (id: number) => fetchApi(`/targets/${id}`, { method: 'DELETE' })
 export const testTargetApi = (id: number) =>
-  fetchApi<{ success: boolean; message: string }>(`/targets/${id}/test`, { method: 'POST' })
+  fetchApi<{ success: boolean; message: string; details?: { messageKey?: string } }>(
+    `/targets/${id}/test`,
+    { method: 'POST' },
+  )
 
 // Target-aware approve
 export async function approveToTarget(
@@ -786,11 +904,14 @@ export async function approveToTarget(
   options?: {
     approvalMode?: 'single_target' | 'combined_lidarr_slskd'
     lidarrTargetId?: string
+    tags?: number[]
     monitorOption?: string
     selectedAlbumIds?: string[]
     qualityProfileId?: number
     metadataProfileId?: number
     rootFolderId?: number
+    feedbackTrack?: { artistName: string; trackName: string; recordingMbid?: string }
+    auditionTrackId?: number
   },
 ): Promise<ApprovalResponse> {
   return fetchApi(`/recommendations/${recId}`, {
@@ -883,15 +1004,31 @@ export const moodDiscover = (query: string) =>
   }>('/mood/discover', { method: 'POST', body: JSON.stringify({ query }) })
 
 // OAuth
-export async function initiateOAuth(
+export function initiateOAuth(
+  provider: 'lastfm',
+  data: Record<string, never>,
+): Promise<{ authUrl: string }>
+export function initiateOAuth(
   provider: string,
   data: { clientId: string; clientSecret: string; redirectUri: string },
+): Promise<{ authUrl: string }>
+export async function initiateOAuth(
+  provider: string,
+  data: { clientId: string; clientSecret: string; redirectUri: string } | Record<string, never>,
 ): Promise<{ authUrl: string }> {
   return fetchApi(`/auth/oauth/${provider}/initiate`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
+
+export interface ScrobblerWriteBackStatus {
+  listenbrainz: { configured: boolean; lastError: string | null }
+  lastfm: { configured: boolean; connected: boolean; lastError: string | null }
+}
+
+export const getScrobblerWriteBackStatus = () =>
+  fetchApi<ScrobblerWriteBackStatus>('/auth/me/write-back')
 
 // User preferences (per-user scoring weights, thresholds, etc.)
 export const getUserPreferences = () => fetchApi<Record<string, unknown>>('/auth/me/preferences')
@@ -914,6 +1051,19 @@ export async function getPopularAlbumsAvailability(): Promise<{
   lastfm: boolean
 }> {
   return fetchApi('/recommendations/popular-albums/availability')
+}
+
+export type PendingPlayability = {
+  pendingArtists: number
+  withTrack: number
+  withoutTrack: number
+  reasons: { missingSource: number; noMatch: number; upstreamFailure: number; titleOnly: number }
+  unknown: number
+  checkedAt: string | null
+}
+
+export async function getPendingPlayability(): Promise<PendingPlayability> {
+  return fetchApi('/recommendations/playability')
 }
 
 // Subscriptions
@@ -979,7 +1129,19 @@ export const createSubscriptionApi = (data: {
     body: JSON.stringify(data),
   })
 
-export const updateSubscriptionApi = (id: number, data: Partial<Subscription>) =>
+// Mirrors the server's strict PATCH schema; source identity is fixed at creation.
+export type SubscriptionUpdate = Partial<
+  Pick<
+    Subscription,
+    'name' | 'enabled' | 'sourceConfig' | 'maxArtistsPerRun' | 'cron' | 'scoringWeightPreset'
+  >
+> & {
+  listenerRange?: { min?: number; max?: number }
+  scoreThreshold?: number
+  scoringWeightOverrides?: Record<string, number>
+}
+
+export const updateSubscriptionApi = (id: number, data: SubscriptionUpdate) =>
   fetchApi<void>(`/subscriptions/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
@@ -1015,6 +1177,7 @@ export const importCsvFile = async (file: File) => {
     subscriptionId: number
     artistCount: number
     truncated: boolean
+    unreadable: number
   }>('/subscriptions/import/csv', {
     method: 'POST',
     body: formData,
@@ -1046,28 +1209,10 @@ export type GenreCoverage = {
   totalArtists: number
 }
 
-export type ActivityEntry = {
-  type: 'approved' | 'rejected' | 'subscription_run' | 'scan_completed'
-  timestamp: string
-  data: {
-    artistName?: string
-    trackTitle?: string
-    subscriptionName?: string
-    artistsFound?: number
-    artistsNew?: number
-    discovered?: number
-    added?: number
-    username?: string
-  }
-}
-
 export const getDashboardTaste = () => fetchApi<TasteGenre[]>('/dashboard/taste')
 
 export const getDashboardGenreCoverage = () =>
   fetchApi<GenreCoverage | null>('/dashboard/genre-coverage')
-
-export const getDashboardActivity = (limit = 5) =>
-  fetchApi<ActivityEntry[]>(`/dashboard/activity?limit=${limit}`)
 
 // Playlists
 export type PlaylistConfig = {
@@ -1092,6 +1237,7 @@ export type PlaylistRow = {
 }
 
 export type PlaylistTrackRow = {
+  recommendationId?: number
   id: number
   playlistId: number
   artistName: string
@@ -1109,7 +1255,6 @@ export type PlaylistInsert = {
   targetIds?: number[]
   schedule?: string | null
   config?: PlaylistConfig | null
-  enabled?: boolean
 }
 
 export const getPlaylists = () => fetchApi<PlaylistRow[]>('/playlists')
@@ -1120,6 +1265,7 @@ export type PlaylistGeneration = {
   startedAt: string
   completedAt: string | null
   resolution: PlaylistGenerationSummary | null
+  exports: PlaylistExportOutcome[] | null
 }
 
 export const getPlaylist = (id: number) =>
@@ -1257,11 +1403,22 @@ export type JobRun = {
   metadata: Record<string, unknown>
   sourceResults: Record<
     string,
-    { status: string; artists?: number; ms?: number; error?: string; reason?: string }
+    {
+      status: string
+      artists?: number
+      ms?: number
+      error?: string
+      reason?: string
+      seedsQueried?: number
+      seedsWithResults?: number
+      skipReasons?: Record<string, number>
+    }
   > | null
   subscriptionId: number | null
   batchId: number | null
 }
+
+export type JobSummary = JobRun
 
 export type JobHealth = {
   pipeline: { status: string; lastRun: string | null; nextRun: string | null }
@@ -1269,6 +1426,19 @@ export type JobHealth = {
   playlists: { status: string; lastRun: string | null }
   librarySync?: { status: string; lastRun: string | null }
   sources: Record<string, string>
+  integrations: IntegrationHealth[]
+}
+
+export type IntegrationHealth = {
+  id: string
+  label: string | null
+  owner: { id: number; username: string } | null
+  itemFailures: number
+  kind: 'target' | 'library' | 'source' | 'subscription' | 'scrobbler'
+  name: string
+  status: 'ok' | 'failing'
+  lastSuccess: string | null
+  lastError: { at: string; message: string | null } | null
 }
 
 export const getJobHealth = () => fetchApi<JobHealth>('/jobs/health')
@@ -1285,7 +1455,7 @@ export const listJobs = (params?: {
   if (params?.limit !== undefined) sp.set('limit', String(params.limit))
   if (params?.offset !== undefined) sp.set('offset', String(params.offset))
   const qs = sp.toString()
-  return fetchApi<{ items: JobRun[]; total: number }>(`/jobs${qs ? `?${qs}` : ''}`)
+  return fetchApi<{ items: JobSummary[]; total: number }>(`/jobs${qs ? `?${qs}` : ''}`)
 }
 
 export const getJob = (id: number) => fetchApi<JobRun>(`/jobs/${id}`)
@@ -1337,6 +1507,7 @@ export type BlockedAlbumApi = {
   artistName: string
   artistMbid: string | null
   releaseGroupMbid: string
+  albumTitle: string | null
   reason: RejectionReason | null
   reasonText: string | null
   blockedAt: string
@@ -1347,36 +1518,3 @@ export const listAlbumBlocks = (): Promise<{ items: BlockedAlbumApi[] }> =>
 
 export const deleteAlbumBlock = (releaseGroupMbid: string): Promise<void> =>
   fetchApi(`/album-blocks/${releaseGroupMbid}`, { method: 'DELETE' })
-
-// API Keys (self-service; session-auth only, each user manages their own)
-
-export type ApiKey = {
-  id: number
-  userId: number
-  name: string
-  prefix: string
-  scopes: string[]
-  createdAt: string
-  lastUsedAt: string | null
-  expiresAt: string | null
-  revokedAt: string | null
-}
-
-export async function listApiKeys(): Promise<{ items: ApiKey[] }> {
-  return fetchApi('/api-keys')
-}
-
-export async function createApiKey(body: {
-  name: string
-  scopes: string[]
-  expiresAt?: string | null
-}): Promise<{ key: ApiKey; token: string }> {
-  return fetchApi('/api-keys', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export async function revokeApiKey(id: number): Promise<void> {
-  await fetchApi(`/api-keys/${id}`, { method: 'DELETE' })
-}

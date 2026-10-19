@@ -24,6 +24,8 @@ export type GenreFeedback = {
  */
 const STRONG_NEGATIVE_PENALTY = 0.5
 
+const UNKNOWN_POPULARITY = 0.5
+
 /** Compute a weighted composite score, clamped to [0, 1]. */
 export function computeWeightedScore(
   weights: ScoringWeights,
@@ -185,8 +187,9 @@ export function score(
     const feedbackBoost =
       genreRates.length > 0 ? genreRates.reduce((a, b) => a + b, 0) / genreRates.length : 0.5
 
-    // Popularity: normalized 0-1 from artist_metadata, 0 if not found
-    const popularity = popularityMap?.get(artist.name.trim().toLowerCase()) ?? 0
+    // Popularity: normalized 0-1 from artist_metadata; unknown is neutral so a
+    // missing metadata row does not count as "least popular".
+    const popularity = popularityMap?.get(artist.name.trim().toLowerCase()) ?? UNKNOWN_POPULARITY
 
     const artistCritic = artistCriticMap?.get(normalizeArtistName(artist.name))
     const criticScore = artistCritic ?? UNREVIEWED_ARTIST_CRITIC_SCORE
@@ -224,7 +227,8 @@ export function score(
       // Missing data is absent, not bad: an unknown popularity is not 0, and
       // an older release is not a worse one -- recency only boosts new
       // releases. Feeding 0s in dragged acclaimed back-catalogue albums
-      // (music-rater) under the threshold.
+      // (music-rater) under the threshold. This also covers upstream's gap-fill
+      // rule (old missing back catalogue must not sink).
       const knownPopularity = popularityMap?.has(artist.name.trim().toLowerCase())
         ? popularity
         : undefined

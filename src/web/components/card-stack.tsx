@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
+import { shouldIgnoreShortcut } from '../hooks/use-keyboard-shortcuts'
 import { useI18n } from '../lib/i18n'
-import { cn } from '../lib/utils'
+import { prefersReducedMotion } from '../lib/utils'
 import { ArtistThumb } from './artist-thumb'
 import type { Recommendation } from './recommendation-card'
 import { RejectionPicker } from './rejection-picker'
@@ -16,6 +17,12 @@ export type RejectPayload = {
 
 type CardStackProps = {
   recommendations: Recommendation[]
+  /** Server-side total; defaults to the loaded count. */
+  totalCount?: number
+  /** Changing this (e.g. a new filter) returns to the first card. */
+  resetKey?: string
+  /** Called as the user nears the last loaded card so the next page can load. */
+  onNearEnd?: () => void
   onApprove: (id: number, prevStatus?: string) => void
   onReject: (id: number, prevStatus?: string, payload?: RejectPayload) => void
   onDetail: (id: number) => void
@@ -104,37 +111,49 @@ function StackCard({
       {/* Card body */}
       <div className="flex flex-col flex-1 p-4 gap-3">
         {/* Artist name + disambiguation */}
-        <div>
-          <h2 className="text-xl font-bold text-text leading-tight">
-            {rec.kind === 'track'
-              ? (rec.recommendedTrackTitle ?? rec.artist.name)
-              : rec.artist.name}
-          </h2>
-          {rec.kind === 'track' && (
+        {rec.kind === 'album' ? (
+          <div>
+            <span
+              data-testid="rec-kind-album"
+              className="bg-accent/5 text-accent-text text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+            >
+              {t('recommendation.albumBadge')}
+            </span>
+            <h2 className="text-xl font-bold text-text leading-tight mt-0.5">
+              {rec.recommendedReleaseGroupTitle ?? rec.artist.name}
+            </h2>
+            <p className="text-xs text-muted mt-0.5">{rec.artist.name}</p>
+          </div>
+        ) : rec.kind === 'track' ? (
+          <div>
+            <h2 className="text-xl font-bold text-text leading-tight">
+              {rec.recommendedTrackTitle ?? rec.artist.name}
+            </h2>
             <p className="text-xs text-muted mt-0.5">
               {rec.recommendedTrackAlbum
                 ? `${rec.artist.name} · ${rec.recommendedTrackAlbum}`
                 : rec.artist.name}
             </p>
-          )}
-          {rec.artist.disambiguation && (
-            <p className="text-xs text-muted mt-0.5">{rec.artist.disambiguation}</p>
-          )}
-        </div>
+            {rec.artist.disambiguation && (
+              <p className="text-xs text-muted mt-0.5">{rec.artist.disambiguation}</p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <h2 className="text-xl font-bold text-text leading-tight">{rec.artist.name}</h2>
+            {rec.artist.disambiguation && (
+              <p className="text-xs text-muted mt-0.5">{rec.artist.disambiguation}</p>
+            )}
+          </div>
+        )}
 
         {/* Genre/tag pills */}
         {allTags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {allTags.map((tag, i) => (
+            {allTags.map((tag) => (
               <span
                 key={tag}
-                className={cn(
-                  'text-micro px-1.5 py-0.5 rounded-full',
-                  i % 4 === 0 && 'bg-accent/10 text-accent',
-                  i % 4 === 1 && 'bg-info/10 text-info',
-                  i % 4 === 2 && 'bg-approve/10 text-approve',
-                  i % 4 === 3 && 'bg-reject/10 text-reject',
-                )}
+                className="text-micro px-1.5 py-0.5 rounded-full bg-surface-2 text-text"
               >
                 {tag}
               </span>
@@ -166,7 +185,7 @@ function StackCard({
                 type="button"
                 onClick={onReject}
                 aria-label={t('recommendation.reject')}
-                className="flex-1 py-2.5 rounded-xl bg-reject/10 text-reject border border-reject/30 font-medium text-sm hover:bg-reject/20 transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-reject/5 text-reject border border-reject/30 font-medium text-sm hover:bg-reject/20 transition-colors"
               >
                 {t('recommendation.reject')}
               </button>
@@ -224,7 +243,17 @@ function StackCard({
  * Dating-app style card stack: one card at a time, swipe left/right to act.
  * Arrow keys also navigate.
  */
-export function CardStack({ recommendations, onApprove, onReject, onDetail }: CardStackProps) {
+const NEAR_END_CARDS = 5
+
+export function CardStack({
+  recommendations,
+  totalCount,
+  resetKey,
+  onNearEnd,
+  onApprove,
+  onReject,
+  onDetail,
+}: CardStackProps) {
   const { t } = useI18n()
   const [index, setIndex] = useState(0)
   const [exiting, setExiting] = useState<'left' | 'right' | null>(null)
@@ -238,34 +267,45 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
 
   const total = recommendations.length
   const rec = recommendations[index]
+  const reducedMotion = prefersReducedMotion()
 
   // Keep stable refs for keyboard handler to avoid stale closures
   const approveRef = useRef<() => void>(() => {})
   const rejectRef = useRef<() => void>(() => {})
 
-  // Reset to first card when the recommendations array identity changes.
-  // We track the ref here and trigger via the effect below.
-  const prevRecsRef = useRef(recommendations)
-  const recsChanged = prevRecsRef.current !== recommendations
-  if (recsChanged) prevRecsRef.current = recommendations
+  const shownIdRef = useRef<number | undefined>(undefined)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally react to array identity change, not contents
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new resetKey alone returns to the first card
   useEffect(() => {
     setIndex(0)
     setExiting(null)
+  }, [resetKey])
+
+  // A refetch or an appended page keeps the card on screen instead of jumping back to the start.
+  useEffect(() => {
+    const shownId = shownIdRef.current
+    if (shownId === undefined) return
+    const at = recommendations.findIndex((r) => r.id === shownId)
+    setIndex((i) => (at >= 0 ? at : Math.max(0, Math.min(i, recommendations.length - 1))))
   }, [recommendations])
 
-  // Keyboard: left arrow = reject, right arrow = approve, up/down = navigate
+  useEffect(() => {
+    shownIdRef.current = rec?.id
+  })
+
+  useEffect(() => {
+    if (total > 0 && index >= total - NEAR_END_CARDS) onNearEnd?.()
+  }, [index, total, onNearEnd])
+
+  // Keyboard: left arrow / r = reject, right arrow / a = approve, up/down / k/j = navigate
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (exitingRef.current) return
+      if (shouldIgnoreShortcut(e) || exitingRef.current) return
 
-      if (e.key === 'ArrowRight') {
+      if (e.key === 'ArrowRight' || e.key === 'a') {
         e.preventDefault()
         approveRef.current()
-      } else if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft' || e.key === 'r') {
         e.preventDefault()
         rejectRef.current()
       } else if (e.key === 'ArrowDown' || e.key === 'j') {
@@ -280,10 +320,19 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [total])
 
+  // The acted card may leave the list in the same render as the advance, so
+  // track the next card by id rather than by index.
+  function advanceFrom(id: number) {
+    const at = recommendations.findIndex((r) => r.id === id)
+    const next = recommendations[at + 1]
+    if (at >= 0 && next) shownIdRef.current = next.id
+  }
+
   function triggerApprove() {
     if (!rec || exiting) return
     setExiting('right')
     setTimeout(() => {
+      advanceFrom(rec.id)
       onApprove(rec.id, rec.status)
       setIndex((i) => Math.min(i + 1, total - 1))
       setExiting(null)
@@ -302,6 +351,7 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
     if (!target) return
     setExiting('left')
     setTimeout(() => {
+      advanceFrom(target.id)
       onReject(target.id, target.prevStatus, payload)
       setIndex((i) => Math.min(i + 1, total - 1))
       setExiting(null)
@@ -343,7 +393,7 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
           onClick={() => setIndex((i) => Math.max(i - 1, 0))}
           disabled={index === 0}
           aria-label={t('recommendation.previousCardNav')}
-          className="p-1 rounded hover:text-text disabled:opacity-30 transition-colors"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded hover:text-text disabled:opacity-30 transition-colors sm:min-h-8 sm:min-w-8"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -362,14 +412,14 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
         <span className="tabular-nums font-medium">
           {t('cardStack.counter')
             .replace('{0}', String(index + 1))
-            .replace('{1}', String(total))}
+            .replace('{1}', String(Math.max(totalCount ?? total, total)))}
         </span>
         <button
           type="button"
           onClick={() => setIndex((i) => Math.min(i + 1, total - 1))}
           disabled={index >= total - 1}
           aria-label={t('recommendation.nextCardNav')}
-          className="p-1 rounded hover:text-text disabled:opacity-30 transition-colors"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded hover:text-text disabled:opacity-30 transition-colors sm:min-h-8 sm:min-w-8"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -391,11 +441,14 @@ export function CardStack({ recommendations, onApprove, onReject, onDetail }: Ca
       <div
         className="w-full transition-all duration-250"
         style={{
-          transform: exiting
-            ? `translateX(${exiting === 'right' ? '110%' : '-110%'}) rotate(${exiting === 'right' ? '8deg' : '-8deg'})`
-            : 'translateX(0) rotate(0deg)',
+          // Reduced motion hides the card at once; the 250ms commit delay stays the same.
+          transform:
+            exiting && !reducedMotion
+              ? `translateX(${exiting === 'right' ? '110%' : '-110%'}) rotate(${exiting === 'right' ? '8deg' : '-8deg'})`
+              : 'translateX(0) rotate(0deg)',
           opacity: exiting ? 0 : 1,
-          transition: exiting ? 'transform 0.25s ease-out, opacity 0.2s ease-out' : 'none',
+          transition:
+            exiting && !reducedMotion ? 'transform 0.25s ease-out, opacity 0.2s ease-out' : 'none',
         }}
       >
         {rec && (

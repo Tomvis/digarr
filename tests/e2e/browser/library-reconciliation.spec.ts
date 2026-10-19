@@ -4,23 +4,23 @@ import { ensureAdminToken, installAuthCookie } from './auth'
 test.describe('library reconciliation', () => {
   test('reconciliation page renders for an admin session', async ({ page }) => {
     const token = await ensureAdminToken(page.request, { completeSetup: true })
-    test.skip(!token, 'Requires a working local Postgres test database')
+    expect(token).toBeTruthy()
     if (!token) return
 
     await installAuthCookie(page)
 
-    await page.goto('/library/reconciliation')
+    await page.goto('/library?tab=reconciliation')
     await expect(page.getByRole('heading', { name: 'Unreconciled Artists' })).toBeVisible()
   })
 
   test('bulk ignores only eligible visible artists after confirmation', async ({ page }) => {
     const token = await ensureAdminToken(page.request, { completeSetup: true })
-    test.skip(!token, 'Requires a working local Postgres test database')
+    expect(token).toBeTruthy()
     if (!token) return
 
     await installAuthCookie(page)
 
-    await page.route('**/api/v1/library/unreconciled', async (route) => {
+    await page.route('**/api/v1/library/unreconciled?*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -57,21 +57,22 @@ test.describe('library reconciliation', () => {
               lastGapCheckAt: null,
             },
           ],
+          total: 2,
         }),
       })
     })
-    await page.route('**/api/v1/library/unreconciled-albums', async (route) => {
+    await page.route('**/api/v1/library/unreconciled-albums?*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: [] }),
+        body: JSON.stringify({ items: [], total: 0 }),
       })
     })
     await page.route('**/api/v1/library/overrides/bulk-ignore', async (route) => {
       await route.fulfill({ status: 204 })
     })
 
-    await page.goto('/library/reconciliation')
+    await page.goto('/library?tab=reconciliation')
 
     await expect(page.getByText('Ambiguous match', { exact: true })).toBeVisible()
     await expect(page.getByText('Lookup failed', { exact: true })).toBeVisible()

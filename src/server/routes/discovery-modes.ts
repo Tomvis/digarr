@@ -21,9 +21,18 @@ export function discoveryModeRoutes(deps: AppDependencies) {
       return notAuthenticated(c)
     }
 
-    const snapshot = await getDiscoveryConnectionSnapshot(userId)
+    const [snapshot, settings] = await Promise.all([
+      getDiscoveryConnectionSnapshot(userId),
+      deps.getSettings(),
+    ])
+    const visibleModes = discoveryModeRegistry
+      .list()
+      .filter(
+        (mode) =>
+          settings?.preferences?.showExperimentalIntegrations || mode.stability !== 'experimental',
+      )
     const modes = await Promise.all(
-      discoveryModeRegistry.list().map(async (mode) => {
+      visibleModes.map(async (mode) => {
         // A resolver reaches the database, so it must not be able to fail the
         // whole modes page. Degrading to empty options renders the field as
         // the free-text input, which is exactly the pre-resolver behaviour.

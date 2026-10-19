@@ -1,4 +1,4 @@
-import { and, eq, getTableColumns, isNotNull, isNull, or } from 'drizzle-orm'
+import { and, count, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import {
   type LibrarySyncCounts,
   libraryAlbumMatchOverrides,
@@ -8,10 +8,17 @@ import {
   librarySyncState,
 } from '@/db/schema'
 import type { ReconciledAlbum } from './album-reconciler'
-import type { ReconciledArtist, ReconcilerOverride } from './reconciler'
+import type { PreviousArtistMatch, ReconciledArtist, ReconcilerOverride } from './reconciler'
 
 type Db = import('@/db').Database
 type ChunkInsertExecutor = Pick<Db, 'insert'>
+type ArtistWriteExecutor = Pick<Db, 'insert' | 'delete' | 'select'>
+
+const MATCH_METHODS = new Set(['mbid', 'name_exact', 'name_anchored', 'name_disambiguated'])
+
+function isMatchMethod(value: string | null): value is PreviousArtistMatch['matchMethod'] {
+  return value !== null && MATCH_METHODS.has(value)
+}
 
 const SQLITE_MAX_HOST_PARAMETERS = 32_766
 
@@ -50,11 +57,10 @@ export interface LibrarySyncStore {
     artists: ReconciledArtist[],
   ): Promise<LibrarySyncCounts>
 
-  replaceLibraryAlbums(
+  listArtistMatches(
     userId: number | null,
     source: string,
-    albums: ReconciledAlbum[],
-  ): Promise<{ total: number }>
+  ): Promise<Map<string, PreviousArtistMatch>>
 
   findReconciledByNormalizedName(
     userId: number,
@@ -117,9 +123,12 @@ export interface LibrarySyncStore {
 
   listSyncStateForUser(userId: number): Promise<LibrarySyncStateRow[]>
 
-  listUnreconciledForUser(userId: number): Promise<LibraryArtistRow[]>
+  listUnreconciledForUser(userId: number, page?: ReviewPage): Promise<ReviewResult<ArtistReviewRow>>
 
-  listUnreconciledAlbumsForUser(userId: number): Promise<LibraryAlbumRow[]>
+  listUnreconciledAlbumsForUser(
+    userId: number,
+    page?: ReviewPage,
+  ): Promise<ReviewResult<AlbumReviewRow>>
 
   listOwnedAlbumsForArtist(
     userId: number,
@@ -138,6 +147,17 @@ export interface LibrarySyncStore {
 
 export type LibraryArtistRow = typeof libraryArtists.$inferSelect
 export type LibraryAlbumRow = typeof libraryAlbums.$inferSelect
+
+export type ReviewPage = { limit: number; offset: number }
+export type ReviewResult<T> = { items: T[]; total: number }
+export type ArtistReviewRow = Pick<
+  LibraryArtistRow,
+  'id' | 'source' | 'sourceArtistId' | 'name' | 'unreconciledReason'
+>
+export type AlbumReviewRow = Pick<
+  LibraryAlbumRow,
+  'id' | 'source' | 'sourceAlbumId' | 'title' | 'primaryType' | 'releaseYear' | 'unreconciledReason'
+>
 
 function deduplicateNaturalKeys<T>(
   items: T[],
@@ -192,6 +212,55 @@ export function createLibrarySyncStore(database: Db): LibrarySyncStore {
 
   function makeUserClause(userId: number | null) {
     return userId === null ? isNull(libraryArtists.userId) : eq(libraryArtists.userId, userId)
+  }
+
+  async function replaceArtistRows(
+    tx: ArtistWriteExecutor,
+    userId: number | null,
+    source: string,
+    artists: ReconciledArtist[],
+  ): Promise<void> {
+    const sourceClause = and(makeUserClause(userId), eq(libraryArtists.source, source))
+    // Snapshot replacement recreates rows; carry the gap-fill rotation cursor over so
+    // every sync does not send the same first slice of artists back to the front.
+    const gapChecks = new Map<string, { mbid: string | null; lastGapCheckAt: Date | null }>()
+    for (const row of await tx
+      .select({
+        sourceArtistId: libraryArtists.sourceArtistId,
+        mbid: libraryArtists.mbid,
+        lastGapCheckAt: libraryArtists.lastGapCheckAt,
+      })
+      .from(libraryArtists)
+      .where(and(sourceClause, isNotNull(libraryArtists.lastGapCheckAt)))) {
+      gapChecks.set(row.sourceArtistId, row)
+    }
+
+    await tx.delete(libraryArtists).where(sourceClause)
+    if (artists.length === 0) return
+
+    await insertRowsInChunks(
+      tx,
+      libraryArtists,
+      artists.map((a) => {
+        const previous = gapChecks.get(a.sourceArtistId)
+        return {
+          userId,
+          source,
+          sourceArtistId: a.sourceArtistId,
+          name: a.name,
+          nameNormalized: a.nameNormalized,
+          mbid: a.mbid,
+          matchMethod: a.matchMethod,
+          matchConfidence: a.matchConfidence,
+          unreconciledReason: a.unreconciledReason ?? null,
+          genres: a.genres,
+          lastGapCheckAt:
+            previous && a.mbid !== null && previous.mbid === a.mbid
+              ? previous.lastGapCheckAt
+              : null,
+        }
+      }),
+    )
   }
 
   function countArtists(artists: ReconciledArtist[]): LibrarySyncCounts {
@@ -265,33 +334,10 @@ export function createLibrarySyncStore(database: Db): LibrarySyncStore {
       counts.albumsSynced = albums.length
 
       await database.transaction(async (tx) => {
-        const artistUserClause =
-          userId === null ? isNull(libraryArtists.userId) : eq(libraryArtists.userId, userId)
         const albumUserClause =
           userId === null ? isNull(libraryAlbums.userId) : eq(libraryAlbums.userId, userId)
-        await tx
-          .delete(libraryArtists)
-          .where(and(artistUserClause, eq(libraryArtists.source, source)))
+        await replaceArtistRows(tx, userId, source, artists)
         await tx.delete(libraryAlbums).where(and(albumUserClause, eq(libraryAlbums.source, source)))
-
-        if (artists.length > 0) {
-          await insertRowsInChunks(
-            tx,
-            libraryArtists,
-            artists.map((a) => ({
-              userId,
-              source,
-              sourceArtistId: a.sourceArtistId,
-              name: a.name,
-              nameNormalized: a.nameNormalized,
-              mbid: a.mbid,
-              matchMethod: a.matchMethod,
-              matchConfidence: a.matchConfidence,
-              unreconciledReason: a.unreconciledReason ?? null,
-              genres: a.genres,
-            })),
-          )
-        }
 
         if (albums.length > 0) {
           await insertRowsInChunks(
@@ -321,64 +367,39 @@ export function createLibrarySyncStore(database: Db): LibrarySyncStore {
 
     async replaceLibraryArtists(userId, source, artists) {
       const counts = countArtists(artists)
-
-      await database.transaction(async (tx) => {
-        // Truncate per (userId, source)
-        const userClause = makeUserClause(userId)
-        await tx.delete(libraryArtists).where(and(userClause, eq(libraryArtists.source, source)))
-
-        if (artists.length === 0) return
-        await insertRowsInChunks(
-          tx,
-          libraryArtists,
-          artists.map((a) => ({
-            userId,
-            source,
-            sourceArtistId: a.sourceArtistId,
-            name: a.name,
-            nameNormalized: a.nameNormalized,
-            mbid: a.mbid,
-            matchMethod: a.matchMethod,
-            matchConfidence: a.matchConfidence,
-            unreconciledReason: a.unreconciledReason ?? null,
-            genres: a.genres,
-          })),
-        )
-      })
-
+      await database.transaction((tx) => replaceArtistRows(tx, userId, source, artists))
       return counts
     },
 
-    async replaceLibraryAlbums(userId, source, albums) {
-      await database.transaction(async (tx) => {
-        const userClause =
-          userId === null ? isNull(libraryAlbums.userId) : eq(libraryAlbums.userId, userId)
-        await tx.delete(libraryAlbums).where(and(userClause, eq(libraryAlbums.source, source)))
-
-        if (albums.length === 0) return
-
-        await insertRowsInChunks(
-          tx,
-          libraryAlbums,
-          albums.map((album) => ({
-            userId,
-            source,
-            sourceAlbumId: album.sourceAlbumId,
-            sourceArtistId: album.sourceArtistId,
-            title: album.title,
-            titleNormalized: album.titleNormalized,
-            albumMbid: album.albumMbid,
-            artistMbid: album.artistMbid,
-            releaseYear: album.releaseYear,
-            primaryType: album.primaryType,
-            matchMethod: album.matchMethod,
-            matchConfidence: album.matchConfidence,
-            unreconciledReason: album.unreconciledReason,
-          })),
+    async listArtistMatches(userId, source) {
+      const rows = await database
+        .select({
+          sourceArtistId: libraryArtists.sourceArtistId,
+          nameNormalized: libraryArtists.nameNormalized,
+          mbid: libraryArtists.mbid,
+          matchMethod: libraryArtists.matchMethod,
+          matchConfidence: libraryArtists.matchConfidence,
+        })
+        .from(libraryArtists)
+        .where(
+          and(
+            makeUserClause(userId),
+            eq(libraryArtists.source, source),
+            isNotNull(libraryArtists.mbid),
+            isNotNull(libraryArtists.matchMethod),
+          ),
         )
-      })
-
-      return { total: albums.length }
+      const matches = new Map<string, PreviousArtistMatch>()
+      for (const row of rows) {
+        if (!row.mbid || !isMatchMethod(row.matchMethod)) continue
+        matches.set(row.sourceArtistId, {
+          nameNormalized: row.nameNormalized,
+          mbid: row.mbid,
+          matchMethod: row.matchMethod,
+          matchConfidence: row.matchConfidence,
+        })
+      }
+      return matches
     },
 
     async findReconciledByNormalizedName(userId, nameNormalized) {
@@ -628,30 +649,90 @@ export function createLibrarySyncStore(database: Db): LibrarySyncStore {
       return rows as LibrarySyncStateRow[]
     },
 
-    async listUnreconciledForUser(userId) {
-      return database
-        .select({ ...getTableColumns(libraryArtists) })
-        .from(libraryArtists)
-        .leftJoin(
-          libraryMatchOverrides,
-          and(
-            eq(libraryMatchOverrides.userId, userId),
-            eq(libraryMatchOverrides.source, libraryArtists.source),
-            eq(libraryMatchOverrides.sourceArtistId, libraryArtists.sourceArtistId),
-          ),
-        )
-        .where(
-          and(
-            isNull(libraryArtists.mbid),
-            or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId)),
-            isNull(libraryMatchOverrides.id),
-          ),
-        )
+    async listUnreconciledForUser(userId, page = { limit: 20, offset: 0 }) {
+      const query = () =>
+        database
+          .select({
+            id: libraryArtists.id,
+            source: libraryArtists.source,
+            sourceArtistId: libraryArtists.sourceArtistId,
+            name: libraryArtists.name,
+            unreconciledReason: libraryArtists.unreconciledReason,
+          })
+          .from(libraryArtists)
+          .leftJoin(
+            libraryMatchOverrides,
+            and(
+              eq(libraryMatchOverrides.userId, userId),
+              eq(libraryMatchOverrides.source, libraryArtists.source),
+              eq(libraryMatchOverrides.sourceArtistId, libraryArtists.sourceArtistId),
+            ),
+          )
+          .where(
+            and(
+              isNull(libraryArtists.mbid),
+              or(eq(libraryArtists.userId, userId), isNull(libraryArtists.userId)),
+              isNull(libraryMatchOverrides.id),
+            ),
+          )
+      const [items, totals] = await Promise.all([
+        query().orderBy(libraryArtists.id).limit(page.limit).offset(page.offset),
+        database.select({ total: count() }).from(query().as('unresolved')),
+      ])
+      return { items, total: totals[0]?.total ?? 0 }
     },
 
-    async listUnreconciledAlbumsForUser(userId) {
-      return database
-        .select({ ...getTableColumns(libraryAlbums) })
+    async listUnreconciledAlbumsForUser(userId, page = { limit: 20, offset: 0 }) {
+      const query = () =>
+        database
+          .select({
+            id: libraryAlbums.id,
+            source: libraryAlbums.source,
+            sourceAlbumId: libraryAlbums.sourceAlbumId,
+            title: libraryAlbums.title,
+            primaryType: libraryAlbums.primaryType,
+            releaseYear: libraryAlbums.releaseYear,
+            unreconciledReason: libraryAlbums.unreconciledReason,
+          })
+          .from(libraryAlbums)
+          .leftJoin(
+            libraryAlbumMatchOverrides,
+            and(
+              eq(libraryAlbumMatchOverrides.userId, userId),
+              eq(libraryAlbumMatchOverrides.source, libraryAlbums.source),
+              eq(libraryAlbumMatchOverrides.sourceAlbumId, libraryAlbums.sourceAlbumId),
+            ),
+          )
+          .where(
+            and(
+              // Unmatched rows can keep their source MBID, so the reason is what marks them.
+              or(isNull(libraryAlbums.albumMbid), isNotNull(libraryAlbums.unreconciledReason)),
+              or(eq(libraryAlbums.userId, userId), isNull(libraryAlbums.userId)),
+              isNull(libraryAlbumMatchOverrides.id),
+            ),
+          )
+      const [items, totals] = await Promise.all([
+        query().orderBy(libraryAlbums.id).limit(page.limit).offset(page.offset),
+        database.select({ total: count() }).from(query().as('unresolved')),
+      ])
+      return { items, total: totals[0]?.total ?? 0 }
+    },
+
+    async listOwnedAlbumsForArtist(userId, artistMbid) {
+      // Corrections are per user while Lidarr album rows are shared, so they apply here
+      // rather than being written into the synced rows. A null correction is an ignore.
+      const correctedMbid = sql<
+        string | null
+      >`coalesce(${libraryAlbumMatchOverrides.correctAlbumMbid}, ${libraryAlbums.albumMbid})`
+      const rows = await database
+        .select({
+          source: libraryAlbums.source,
+          sourceAlbumId: libraryAlbums.sourceAlbumId,
+          albumMbid: correctedMbid,
+          title: libraryAlbums.title,
+          releaseYear: libraryAlbums.releaseYear,
+          primaryType: libraryAlbums.primaryType,
+        })
         .from(libraryAlbums)
         .leftJoin(
           libraryAlbumMatchOverrides,
@@ -663,29 +744,19 @@ export function createLibrarySyncStore(database: Db): LibrarySyncStore {
         )
         .where(
           and(
-            isNull(libraryAlbums.albumMbid),
-            or(eq(libraryAlbums.userId, userId), isNull(libraryAlbums.userId)),
-            isNull(libraryAlbumMatchOverrides.id),
-          ),
-        )
-    },
-
-    async listOwnedAlbumsForArtist(userId, artistMbid) {
-      const rows = await database
-        .select({
-          source: libraryAlbums.source,
-          sourceAlbumId: libraryAlbums.sourceAlbumId,
-          albumMbid: libraryAlbums.albumMbid,
-          title: libraryAlbums.title,
-          releaseYear: libraryAlbums.releaseYear,
-          primaryType: libraryAlbums.primaryType,
-        })
-        .from(libraryAlbums)
-        .where(
-          and(
             eq(libraryAlbums.artistMbid, artistMbid),
-            eq(libraryAlbums.primaryType, 'Album'),
-            isNotNull(libraryAlbums.albumMbid),
+            or(
+              eq(libraryAlbums.primaryType, 'Album'),
+              and(
+                isNull(libraryAlbums.primaryType),
+                isNotNull(libraryAlbumMatchOverrides.correctAlbumMbid),
+              ),
+            ),
+            or(
+              isNull(libraryAlbumMatchOverrides.id),
+              isNotNull(libraryAlbumMatchOverrides.correctAlbumMbid),
+            ),
+            isNotNull(correctedMbid),
             or(eq(libraryAlbums.userId, userId), isNull(libraryAlbums.userId)),
           ),
         )

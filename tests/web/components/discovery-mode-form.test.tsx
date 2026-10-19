@@ -3,67 +3,94 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { createCriticallyAcclaimedMode } from '@/core/discovery-modes/modes/critically-acclaimed'
-import type { DiscoveryConfigField } from '@/core/discovery-modes/types'
 import { DiscoveryModeForm } from '@/web/components/discovery-mode-form'
 import type { DiscoveryModeResponse } from '@/web/lib/api'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getRequestLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
-function renderForm({ fields }: { fields: DiscoveryConfigField[] }) {
-  const mode: DiscoveryModeResponse = {
-    id: 'test-mode',
-    label: 'Test Mode',
-    description: 'A test discovery mode',
+const limit = { key: 'maxArtistsPerRun', label: 'Artists checked per run', type: 'number' as const }
+const other = { key: 'seed', label: 'Seed artist', type: 'text' as const }
+
+function modeWith(
+  easyFields: DiscoveryModeResponse['easyFields'],
+  advancedFields: DiscoveryModeResponse['advancedFields'],
+): DiscoveryModeResponse {
+  return {
+    id: 'm',
+    label: 'M',
+    description: 'd',
     availability: { enabled: true, fallbackUsed: false, providerPath: [] },
-    easyFields: fields,
-    advancedFields: [],
+    easyFields,
+    advancedFields,
   }
+}
 
+function renderForm(mode: DiscoveryModeResponse) {
   return render(
     <I18nProvider>
-      <DiscoveryModeForm mode={mode} onRun={vi.fn().mockResolvedValue(undefined)} />
+      <DiscoveryModeForm mode={mode} onRun={async () => {}} />
     </I18nProvider>,
   )
 }
 
+describe('DiscoveryModeForm settings toggle', () => {
+  it('keeps the toggle for advanced-only modes and reveals the field', () => {
+    renderForm(modeWith([], [limit]))
+    expect(screen.queryByText('Artists checked per run')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+    expect(screen.getByText('Artists checked per run')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['identical lists', [limit], [limit]],
+    ['no advanced fields', [other], []],
+  ])('hides the toggle for %s', (_name, easy, advanced) => {
+    renderForm(modeWith(easy, advanced))
+    expect(screen.queryByRole('button', { name: 'Advanced' })).toBeNull()
+  })
+})
+
 describe('multiselect rendering', () => {
   it('renders a picker when the field supplies options', () => {
-    renderForm({
-      fields: [
-        {
-          // Deliberately not a real registered field key: this test is
-          // pinning generic multiselect-with-options rendering, not any
-          // one mode's field, so it must not collide with a real
-          // `discoveryMode.field.*` catalog key (e.g. `coverageTypes`,
-          // since `critically-acclaimed` now owns that key with its own
-          // translated label) -- a collision would make the form render
-          // the catalog's translation instead of this fixture's literal
-          // `label` below.
-          key: 'demoMultiselect',
-          label: 'Coverage',
-          type: 'multiselect',
-          options: [
-            { value: 'tymhm', label: 'Things You Might Have Missed' },
-            { value: 'aoty', label: 'Album of the Year' },
-          ],
-        },
-      ],
-    })
+    renderForm(
+      modeWith(
+        [
+          {
+            // Deliberately not a real registered field key: this test is
+            // pinning generic multiselect-with-options rendering, not any
+            // one mode's field, so it must not collide with a real
+            // `discoveryMode.field.*` catalog key (e.g. `coverageTypes`,
+            // since `critically-acclaimed` now owns that key with its own
+            // translated label) -- a collision would make the form render
+            // the catalog's translation instead of this fixture's literal
+            // `label` below.
+            key: 'demoMultiselect',
+            label: 'Coverage',
+            type: 'multiselect',
+            options: [
+              { value: 'tymhm', label: 'Things You Might Have Missed' },
+              { value: 'aoty', label: 'Album of the Year' },
+            ],
+          },
+        ],
+        [],
+      ),
+    )
     expect(screen.getByRole('checkbox', { name: /Things You Might Have Missed/ })).toBeTruthy()
     expect(screen.getByRole('checkbox', { name: /Album of the Year/ })).toBeTruthy()
     expect(screen.getByRole('group', { name: /Coverage/ })).toBeTruthy()
   })
 
   it('keeps the free-text input when the field supplies no options', () => {
-    renderForm({
-      fields: [{ key: 'seedArtists', label: 'Seed artists', type: 'multiselect', required: true }],
-    })
+    renderForm(
+      modeWith(
+        [{ key: 'seedArtists', label: 'Seed artists', type: 'multiselect', required: true }],
+        [],
+      ),
+    )
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.getByLabelText(/Seed artists/)).toHaveProperty('tagName', 'INPUT')
   })
@@ -114,7 +141,7 @@ describe('critically-acclaimed advanced-mode field coverage (FIX 1)', () => {
     const minScores = screen.getAllByLabelText(/^Minimum score$/)
     fireEvent.change(minScores[0] as HTMLElement, { target: { value: '3.5' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run discovery' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
 
     await waitFor(() => expect(onRun).toHaveBeenCalled())
     const call = onRun.mock.calls[0]?.[0] as { normalizedSettings: Record<string, unknown> }

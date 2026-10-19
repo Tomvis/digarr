@@ -27,7 +27,7 @@ docker run -d \
   -e POSTGRES_PASSWORD=digarr \
   -e POSTGRES_DB=digarr \
   -p 5432:5432 \
-  postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+  postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
 ```
 
 Copy the env file and set your API keys:
@@ -80,17 +80,19 @@ bun run test:e2e:a11y # Accessibility checks
 
 Tests live in `tests/`. Keep them close to the code they cover. Route-contract coverage lives in `tests/api-routes/`; browser coverage lives in `tests/e2e/browser/`; accessibility coverage lives in `tests/e2e/a11y/`. Install browsers with `bunx playwright install --with-deps chromium firefox` first. With `DATABASE_URL` or complete `DB_HOST`/`DB_USER`/`DB_NAME` settings (including values in `.env`), Playwright derives a `<database>_playwright` database, terminates its connections, and drops and recreates it on every run. Use an isolated development server and an account with database create/drop permissions; never point this at a database you need to keep. Without an external database configuration, browser tests use temporary PGlite storage and need no PostgreSQL server. By default, Playwright starts an isolated backend on `:3000`, Vite on `:5173`, and the mock sign-in provider on `:3011`. Set `PLAYWRIGHT_SKIP_WEBSERVER=1` only when all required test servers are already running.
 
+A few unit suites (library sync, backup, rate limiter, and the PostgreSQL concurrency tests) run only when `DATABASE_URL` is set, and the backup suite truncates every table it touches. Point it at a throwaway database whose name contains `test`; it refuses other names unless `DIGARR_ALLOW_DESTRUCTIVE_TEST_DB=1` is set. CI sets `DIGARR_REQUIRE_TEST_DB=1` so these suites fail instead of skipping when PostgreSQL is unavailable.
+
 For route, workflow, or UI changes, run `bun run test:e2e` before opening a PR. CI also runs the smoke and browser suites, but the expectation is that branch diffs affecting those paths get a local pass first.
 
 ### Container compatibility checks
 
-The Compatibility workflow tests rootless Podman on Linux and Docker through Colima on hosted macOS Intel. The macOS job remains advisory. Its VM startup has a 15-minute limit and uses explicit guest DNS resolvers, following [Colima's DNS guidance](https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#colima-cannot-access-the-internet). Startup failures collect VM diagnostics; later failures also collect host and guest DNS diagnostics. Persistent failures still fail the job after the existing bounded Compose retries.
+The Compatibility workflow tests rootless Podman on Linux and Docker through Colima on hosted macOS Intel. The macOS job remains advisory and runs only on the weekly schedule and manual dispatch; pull requests, including release PRs, run the Podman job alone. Its VM startup has a 15-minute limit and uses explicit guest DNS resolvers, following [Colima's DNS guidance](https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#colima-cannot-access-the-internet). Startup failures collect VM diagnostics; later failures also collect host and guest DNS diagnostics. Persistent failures still fail the job after the existing bounded Compose retries.
 
-Changes to this bootstrap need an actual macOS workflow run: verify PostgreSQL, PGlite, and persistence after restart, plus the final assertion gate. A working Docker daemon alone does not establish application compatibility. The final gate runs even after failure and requires readiness and both backend assertions.
+Changes to this bootstrap need an actual macOS workflow run, started with `gh workflow run compatibility.yml --ref <branch>`: verify PostgreSQL, PGlite, and persistence after restart, plus the final assertion gate. A working Docker daemon alone does not establish application compatibility. The final gate runs even after failure and requires readiness and both backend assertions.
 
 ## Translations
 
-Edit the authored locale catalogs following the [translation workflow](src/core/i18n/messages/README.md). Add each new English key to every shipped locale and run `bun run i18n:check` before submitting. English fallback at runtime does not replace complete translations.
+Edit the authored locale catalogs following the [translation workflow](src/core/i18n/messages/README.md). Add each new English key to every shipped locale and run `bun run i18n:check` before submitting. English fallback at runtime does not replace complete translations. Changing an English value means updating its translations too, then running `bun run i18n:stamp`; the check fails until you do. Translations address the user informally and use a plain hyphen for dashes, never an em dash or `--`. The check applies the same dash rule to string literals and JSX text in `src/web`, so use `common.notAvailable` instead of a `'--'` placeholder.
 
 ## Recommendation quality
 
@@ -106,7 +108,7 @@ Run `bun run check:docs` with every change. Review affected guides and record so
 2. Make your changes, keeping commits focused
 3. Confirm `bun run lint`, `bun run typecheck`, `bun run test`, `bun run test:api-routes`, `bun run i18n:check`, `bun run check:docs` all pass
 4. Run `bun run test:e2e` if your change affects routes, workflows, or UI behavior
-5. Open a PR against `develop` and fill in the template. `main` receives release-promotion PRs from `develop`, not normal feature branches
+5. Open a PR against `develop` and fill in the template. `main` receives release PRs (a branch cut from `develop` carrying the `chore(release)` bump), not normal feature branches
 6. A maintainer will review; be ready to iterate
 
 ## Commit style

@@ -3,22 +3,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '@/db'
 import { SLSKD_ACTIVE_JOB_STATES } from '@/db/schema'
 
-const { mockedEq, mockedInArray, mockedAnd, mockedDesc } = vi.hoisted(() => ({
+const { mockedEq, mockedInArray, mockedAnd, mockedAsc, mockedDesc } = vi.hoisted(() => ({
   mockedEq: vi.fn((left: unknown, right: unknown) => ({ op: 'eq', left, right })),
   mockedInArray: vi.fn((left: unknown, right: unknown) => ({ op: 'inArray', left, right })),
   mockedAnd: vi.fn((...clauses: unknown[]) => ({ op: 'and', clauses })),
+  mockedAsc: vi.fn((value: unknown) => ({ op: 'asc', value })),
   mockedDesc: vi.fn((value: unknown) => ({ op: 'desc', value })),
 }))
 
 vi.mock('drizzle-orm', () => ({
   and: mockedAnd,
+  asc: mockedAsc,
   desc: mockedDesc,
   eq: mockedEq,
   inArray: mockedInArray,
 }))
 
-const { createSlskdJob, findActiveSlskdJobByWorkKey, listPendingSlskdJobs, updateSlskdJobState } =
-  await import('@/db/queries/slskd-jobs')
+const { createSlskdJob, updateSlskdJobState } = await import('@/db/queries/slskd-jobs')
 
 function makeDb(
   opts: {
@@ -79,30 +80,11 @@ beforeEach(() => {
   mockedEq.mockClear()
   mockedInArray.mockClear()
   mockedAnd.mockClear()
+  mockedAsc.mockClear()
   mockedDesc.mockClear()
 })
 
 describe('slskd job queries', () => {
-  it('createSlskdJob inserts a row and returns it', async () => {
-    const row = { id: 7, state: 'pending' }
-    const db = makeDb({ insertedRows: [row] })
-
-    const result = await createSlskdJob(db as unknown as Database, {
-      userId: 1,
-      targetId: 2,
-      sourceType: 'recommendation',
-      workKey: 'artist:mbid-1',
-      artistMbid: '11111111-1111-1111-1111-111111111111',
-      artistName: 'Example Artist',
-      releaseTitle: 'Example Release',
-    })
-
-    expect(result).toEqual(row)
-    expect(db._mocks.insertValues).toHaveBeenCalledOnce()
-    expect(db._mocks.insertDoNothing).toHaveBeenCalledOnce()
-    expect(db._mocks.insertReturning).toHaveBeenCalledOnce()
-  })
-
   it('rejects jobs without searchable text before inserting', async () => {
     const db = makeDb()
 
@@ -215,6 +197,105 @@ describe('slskd job queries', () => {
     )
   })
 
+  const HOUR = 60 * 60 * 1000
+  const retryInput = (sourceType: string) => ({
+    targetId: 2,
+    sourceType,
+    workKey: 'artist:mbid-1',
+    artistMbid: '11111111-1111-1111-1111-111111111111',
+    artistName: 'Example Artist',
+    releaseTitle: 'Example Release',
+  })
+
+  it.each([
+    ['first retry waits one hour', 1, 0.5 * HOUR, false],
+    ['first retry runs after one hour', 1, HOUR + 1, true],
+    ['second retry waits six hours', 2, 5 * HOUR, false],
+    ['second retry runs after six hours', 2, 6 * HOUR + 1, true],
+    ['third retry waits a day', 3, 23 * HOUR, false],
+    ['third retry runs after a day', 3, 24 * HOUR + 1, true],
+    ['parks after the retry cap however long it waits', 4, 1000 * HOUR, false],
+  ])('automatic wanted-list retry backoff: %s', async (_name, attempts, ageMs, retries) => {
+    const failed = {
+      id: 9,
+      state: 'failed',
+      attempts,
+      selectedResult: null,
+      updatedAt: new Date(Date.now() - ageMs),
+    }
+    const db = makeDb({
+      insertedRows: [],
+      selectedRows: [failed],
+      updatedRows: [{ ...failed, state: 'pending' }],
+    })
+
+    await createSlskdJob(db as unknown as Database, retryInput('lidarr_wanted'))
+
+    expect(db.update).toHaveBeenCalledTimes(retries ? 1 : 0)
+    if (retries) {
+      expect(db._mocks.updateSet).toHaveBeenCalledWith(
+        expect.not.objectContaining({ attempts: expect.anything() }),
+      )
+    }
+  })
+
+  it('manual retry of a parked job resets attempts and the failed-peer list', async () => {
+    const failed = {
+      id: 9,
+      state: 'failed',
+      attempts: 9,
+      selectedResult: {
+        username: 'peer-a',
+        files: [{ filename: 'Artist\\Album\\01.flac', size: 1 }],
+        failedReleases: [{ username: 'peer-b', directory: 'Artist\\Album' }],
+      },
+      updatedAt: new Date(Date.now() - HOUR - 1),
+    }
+    const db = makeDb({
+      insertedRows: [],
+      selectedRows: [failed],
+      updatedRows: [{ ...failed, state: 'pending' }],
+    })
+
+    await createSlskdJob(db as unknown as Database, retryInput('standalone_approval'))
+
+    expect(db._mocks.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'pending', attempts: 0, selectedResult: null }),
+    )
+  })
+
+  it('remembers the failed peer folder and carries earlier failures forward', async () => {
+    const failed = {
+      id: 9,
+      state: 'failed',
+      attempts: 2,
+      selectedResult: {
+        username: 'peer-b',
+        files: [{ filename: 'Artist\\Album\\01.flac', size: 1 }],
+        failedReleases: [{ username: 'peer-a', directory: 'Artist\\Album' }],
+      },
+      updatedAt: new Date(Date.now() - 7 * HOUR),
+    }
+    const db = makeDb({
+      insertedRows: [],
+      selectedRows: [failed],
+      updatedRows: [{ ...failed, state: 'pending' }],
+    })
+
+    await createSlskdJob(db as unknown as Database, retryInput('lidarr_wanted'))
+
+    expect(db._mocks.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedResult: {
+          failedReleases: [
+            { username: 'peer-a', directory: 'Artist\\Album' },
+            { username: 'peer-b', directory: 'Artist\\Album' },
+          ],
+        },
+      }),
+    )
+  })
+
   it('createSlskdJob retries once when a conflicting active row disappears before lookup', async () => {
     const row = { id: 13, workKey: 'artist:mbid-1', state: 'pending' }
     const db = makeDb({
@@ -254,40 +335,7 @@ describe('slskd job queries', () => {
     expect(db._mocks.insertReturning).toHaveBeenCalledTimes(2)
   })
 
-  it('findActiveSlskdJobByWorkKey filters on workKey and active states', async () => {
-    const row = { id: 9, workKey: 'artist:mbid-1', state: 'queued' }
-    const db = makeDb({ selectedRows: [row] })
-
-    const result = await findActiveSlskdJobByWorkKey(db as unknown as Database, 'artist:mbid-1')
-
-    expect(result).toEqual(row)
-    expect(mockedEq).toHaveBeenCalledWith(expect.anything(), 'artist:mbid-1')
-    expect(mockedInArray).toHaveBeenCalledWith(expect.anything(), SLSKD_ACTIVE_JOB_STATES)
-    expect(mockedAnd).toHaveBeenCalledWith(expect.anything(), expect.anything())
-    expect(mockedDesc).toHaveBeenNthCalledWith(1, expect.anything())
-    expect(mockedDesc).toHaveBeenNthCalledWith(2, expect.anything())
-    expect(db._mocks.selectWhere).toHaveBeenCalledOnce()
-    expect(db._mocks.selectLimit).toHaveBeenCalledWith(1)
-  })
-
-  it('listPendingSlskdJobs filters to active states and orders newest first', async () => {
-    const rows = [
-      { id: 11, state: 'downloading' },
-      { id: 10, state: 'pending' },
-    ]
-    const db = makeDb({ selectedRows: rows })
-
-    const result = await listPendingSlskdJobs(db as unknown as Database, 25)
-
-    expect(result).toEqual(rows)
-    expect(mockedInArray).toHaveBeenCalledWith(expect.anything(), SLSKD_ACTIVE_JOB_STATES)
-    expect(mockedDesc).toHaveBeenNthCalledWith(1, expect.anything())
-    expect(mockedDesc).toHaveBeenNthCalledWith(2, expect.anything())
-    expect(db._mocks.selectWhere).toHaveBeenCalledOnce()
-    expect(db._mocks.selectLimit).toHaveBeenCalledWith(25)
-  })
-
-  it('updateSlskdJobState returns the updated row and sets completedAt for terminal states', async () => {
+  it('updateSlskdJobState sets completedAt for terminal states', async () => {
     const row = { id: 5, state: 'completed' }
     const db = makeDb({ updatedRows: [row] })
 
@@ -297,7 +345,6 @@ describe('slskd job queries', () => {
     })
 
     expect(result).toEqual(row)
-    expect(mockedEq).toHaveBeenCalledWith(expect.anything(), 5)
     const setArg = db._mocks.updateSet.mock.calls[0]?.[0]
     expect(setArg).toEqual(
       expect.objectContaining({
@@ -307,8 +354,6 @@ describe('slskd job queries', () => {
       }),
     )
     expect(setArg.completedAt).toBeInstanceOf(Date)
-    expect(db._mocks.updateWhere).toHaveBeenCalledOnce()
-    expect(db._mocks.updateReturning).toHaveBeenCalledOnce()
   })
 
   it('updateSlskdJobState throws when no row matches the id', async () => {

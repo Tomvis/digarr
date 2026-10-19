@@ -51,9 +51,10 @@ export function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependenc
     completeSetup: vi.fn(),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -62,6 +63,7 @@ export function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependenc
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -225,19 +227,10 @@ export function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependenc
         subscriptions: { status: 'ok', healthy: 0, total: 0 },
         playlists: { status: 'ok', lastRun: null },
         sources: {},
+        integrations: [],
       })),
       getJobsForSubscription: vi.fn(async () => []),
     },
-    apiKeyStore: {
-      create: vi.fn(async () => {
-        throw new Error('apiKeyStore.create not stubbed')
-      }),
-      verify: vi.fn(async () => null),
-      listForUser: vi.fn(async () => []),
-      listAll: vi.fn(async () => []),
-      revoke: vi.fn(async () => false),
-      touchLastUsed: vi.fn(async () => {}),
-    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

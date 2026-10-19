@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { useDialogFocus } from '../hooks/use-dialog-focus'
 import { getLidarrApproveOptions } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { LidarrTags } from './lidarr-tags'
 import type { MonitorOption } from './monitoring-options'
 import { Button } from './ui/button'
+import { Disclosure } from './ui/disclosure'
 
 type Profile = { id: number; name: string }
 type RootFolder = { id: number; path: string }
 
 type Props = {
-  defaults: { qualityProfileId: number; metadataProfileId: number; rootFolderId: number }
+  // Database id of the Lidarr target being approved to. Lists and defaults
+  // load from the instance that target uses; omitted means the server connection.
+  lidarrTargetId?: number
   monitorOption: MonitorOption
   onConfirm: (overrides: {
+    tags: number[]
     monitorOption: MonitorOption
     qualityProfileId: number
     metadataProfileId: number
@@ -19,46 +25,58 @@ type Props = {
   onCancel: () => void
 }
 
-export function ApproveDialog({ defaults, monitorOption, onConfirm, onCancel }: Props) {
+// Keep the default when it exists among the loaded options; otherwise (unset,
+// or stale after profiles/folders were deleted) use the first real option so
+// a non-existent id is never sent.
+function pick(options: { id: number }[], preferred: number | null | undefined): string {
+  if (preferred != null && options.some((o) => o.id === preferred)) return String(preferred)
+  return options[0] ? String(options[0].id) : ''
+}
+
+export function ApproveDialog({ lidarrTargetId, monitorOption, onConfirm, onCancel }: Props) {
   const { t } = useI18n()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [metadataProfiles, setMetadataProfiles] = useState<Profile[]>([])
   const [rootFolders, setRootFolders] = useState<RootFolder[]>([])
   const [monitor, setMonitor] = useState<MonitorOption>(monitorOption)
-  const [qp, setQp] = useState(String(defaults.qualityProfileId))
-  const [mp, setMp] = useState(String(defaults.metadataProfileId))
-  const [rf, setRf] = useState(String(defaults.rootFolderId))
+  const [tags, setTags] = useState<number[]>([])
+  const [availableTags, setAvailableTags] = useState<Array<{ id: number; label: string }>>([])
+  const [qp, setQp] = useState('')
+  const [mp, setMp] = useState('')
+  const [rf, setRf] = useState('')
+  const [loadedTarget, setLoadedTarget] = useState<{ id?: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const titleId = useId()
+  const dialogRef = useDialogFocus(true, onCancel)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: snap runs once against the initial default
   useEffect(() => {
-    getLidarrApproveOptions()
+    let cancelled = false
+    setLoading(true)
+    setError(false)
+    getLidarrApproveOptions(lidarrTargetId)
       .then((opts) => {
+        if (cancelled) return
+        setLoadedTarget({ id: lidarrTargetId })
+        setAvailableTags(opts.tags ?? [])
+        setTags((opts.defaults?.tags ?? []).filter((id) => opts.tags?.some((tag) => tag.id === id)))
         setProfiles(opts.qualityProfiles)
         setMetadataProfiles(opts.metadataProfiles)
         setRootFolders(opts.rootFolders)
-        // If any pre-filled default isn't an actual Lidarr option (for example,
-        // stale id 1 after profiles/folders were deleted), snap to the first
-        // available option so we never send a non-existent id.
-        const firstProfile = opts.qualityProfiles[0]
-        if (firstProfile && !opts.qualityProfiles.some((p) => String(p.id) === qp)) {
-          setQp(String(firstProfile.id))
-        }
-
-        const firstMetadataProfile = opts.metadataProfiles[0]
-        if (firstMetadataProfile && !opts.metadataProfiles.some((p) => String(p.id) === mp)) {
-          setMp(String(firstMetadataProfile.id))
-        }
-
-        const firstFolder = opts.rootFolders[0]
-        if (firstFolder && !opts.rootFolders.some((f) => String(f.id) === rf)) {
-          setRf(String(firstFolder.id))
-        }
+        setQp(pick(opts.qualityProfiles, opts.defaults?.qualityProfileId))
+        setMp(pick(opts.metadataProfiles, opts.defaults?.metadataProfileId))
+        setRf(pick(opts.rootFolders, opts.defaults?.rootFolderId))
       })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false))
-  }, [])
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [lidarrTargetId])
 
   return (
     <>
@@ -71,21 +89,20 @@ export function ApproveDialog({ defaults, monitorOption, onConfirm, onCancel }: 
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
       >
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: dialog content wrapper prevents click-through */}
         <div
           className="bg-surface border border-border rounded-lg shadow-lg w-full max-w-sm p-4"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onCancel()
-          }}
+          ref={dialogRef}
         >
-          <h3 className="text-sm font-medium text-text mb-3">{t('approveDialog.title')}</h3>
+          <h3 id={titleId} className="text-sm font-medium text-text mb-3">
+            {t('approveDialog.title')}
+          </h3>
 
           {loading ? (
             <p className="text-sm text-muted">{t('approveDialog.loadingProfiles')}</p>
           ) : error ? (
-            <p className="text-sm text-red-400">{t('approveDialog.loadFailed')}</p>
+            <p className="text-sm text-reject">{t('approveDialog.loadFailed')}</p>
           ) : (
             <div className="space-y-3">
               <label className="block">
@@ -98,57 +115,87 @@ export function ApproveDialog({ defaults, monitorOption, onConfirm, onCancel }: 
                   <option value="none">{t('common.none')}</option>
                   <option value="new">{t('settings.monitorNew')}</option>
                   <option value="all">{t('settings.monitorAll')}</option>
+                  <option value="missing">{t('settings.monitorMissing')}</option>
+                  <option value="existing">{t('settings.monitorExisting')}</option>
+                  <option value="latest">{t('settings.monitorLatest')}</option>
+                  <option value="first">{t('settings.monitorFirst')}</option>
+
+                  {/* The approve menu only offers Popular when a source supports it. */}
+                  {monitorOption === 'popular' && (
+                    <option value="popular">{t('discover.monitorPopular')}</option>
+                  )}
                 </select>
                 <span className="block text-[11px] text-muted mt-1">
-                  {monitor === 'all'
-                    ? t('discover.monitorAllDescription')
-                    : monitor === 'new'
-                      ? t('discover.monitorNewDescription')
-                      : t('discover.monitorNoneDescription')}
+                  {monitor === 'missing'
+                    ? t('settings.monitorMissing')
+                    : monitor === 'existing'
+                      ? t('settings.monitorExisting')
+                      : monitor === 'latest'
+                        ? t('settings.monitorLatest')
+                        : monitor === 'first'
+                          ? t('settings.monitorFirst')
+                          : monitor === 'all'
+                            ? t('discover.monitorAllDescription')
+                            : monitor === 'new'
+                              ? t('discover.monitorNewDescription')
+                              : monitor === 'popular'
+                                ? t('discover.monitorPopularDescription')
+                                : t('discover.monitorNoneDescription')}
                 </span>
               </label>
-              <label className="block">
-                <span className="text-xs text-muted">{t('approveDialog.qualityProfile')}</span>
-                <select
-                  value={qp}
-                  onChange={(e) => setQp(e.target.value)}
-                  className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
-                >
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs text-muted">{t('approveDialog.metadataProfile')}</span>
-                <select
-                  value={mp}
-                  onChange={(e) => setMp(e.target.value)}
-                  className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
-                >
-                  {metadataProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs text-muted">{t('approveDialog.rootFolder')}</span>
-                <select
-                  value={rf}
-                  onChange={(e) => setRf(e.target.value)}
-                  className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
-                >
-                  {rootFolders.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.path}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Disclosure title={t('approveDialog.lidarrOptions')} className="bg-bg">
+                <div className="space-y-3">
+                  <LidarrTags
+                    key={lidarrTargetId ?? 'server'}
+                    targetId={lidarrTargetId}
+                    available={availableTags}
+                    value={tags}
+                    onChange={setTags}
+                  />
+                  <label className="block">
+                    <span className="text-xs text-muted">{t('approveDialog.qualityProfile')}</span>
+                    <select
+                      value={qp}
+                      onChange={(e) => setQp(e.target.value)}
+                      className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
+                    >
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted">{t('approveDialog.metadataProfile')}</span>
+                    <select
+                      value={mp}
+                      onChange={(e) => setMp(e.target.value)}
+                      className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
+                    >
+                      {metadataProfiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted">{t('approveDialog.rootFolder')}</span>
+                    <select
+                      value={rf}
+                      onChange={(e) => setRf(e.target.value)}
+                      className="mt-1 w-full bg-bg border border-border rounded text-sm text-text px-2 py-1.5"
+                    >
+                      {rootFolders.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.path}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </Disclosure>
             </div>
           )}
 
@@ -161,6 +208,8 @@ export function ApproveDialog({ defaults, monitorOption, onConfirm, onCancel }: 
               className="bg-approve text-bg hover:bg-approve/90"
               disabled={
                 loading ||
+                !loadedTarget ||
+                loadedTarget.id !== lidarrTargetId ||
                 error ||
                 profiles.length === 0 ||
                 metadataProfiles.length === 0 ||
@@ -168,6 +217,7 @@ export function ApproveDialog({ defaults, monitorOption, onConfirm, onCancel }: 
               }
               onClick={() =>
                 onConfirm({
+                  tags,
                   monitorOption: monitor,
                   qualityProfileId: parseInt(qp, 10),
                   metadataProfileId: parseInt(mp, 10),

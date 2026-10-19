@@ -1,21 +1,17 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 function createQueryWrapper() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const client = createTestQueryClient()
   return ({ children }: { children: ReactNode }) => (
     <I18nProvider>
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -44,6 +40,7 @@ vi.mock('@/web/lib/hooks', async (importOriginal) => {
 import { PipelineProgress } from '@/web/components/pipeline-progress'
 import { cancelPipeline, getPipelineStatus } from '@/web/lib/api'
 import { useSSE } from '@/web/lib/hooks'
+import { createTestQueryClient } from '../helpers/query'
 
 const mockGetPipelineStatus = vi.mocked(getPipelineStatus)
 const mockUseSSE = vi.mocked(useSSE)
@@ -137,6 +134,50 @@ describe('PipelineProgress', () => {
     vi.advanceTimersByTime(600)
     expect(onComplete).toHaveBeenCalledTimes(1)
   })
+  it('shows the stopped message and stops the timer when a stale stage outlives the server', async () => {
+    const onComplete = vi.fn()
+    const stale = { stage: 'resolve', current: 241, total: 412 }
+    mockGetPipelineStatus.mockResolvedValue({ running: false })
+    mockUseSSE.mockReturnValue({ data: stale, connected: true })
+
+    renderWithQuery(<PipelineProgress onComplete={onComplete} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Running for/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/server restarted/)).not.toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await waitFor(() => {
+      expect(screen.getByText(/the server restarted/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Running for/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Stop scan')).not.toBeInTheDocument()
+    vi.advanceTimersByTime(1000)
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+
+  it('does not show the stopped message when complete lands after one not-running poll', async () => {
+    const onComplete = vi.fn()
+    mockGetPipelineStatus.mockResolvedValue({ running: false })
+    mockUseSSE.mockReturnValue({ data: { stage: 'store' }, connected: true })
+
+    const { rerender } = render(<PipelineProgress onComplete={onComplete} />, {
+      wrapper: createQueryWrapper(),
+    })
+    await waitFor(() => expect(mockGetPipelineStatus).toHaveBeenCalledTimes(1))
+
+    mockUseSSE.mockReturnValue({ data: { stage: 'complete' }, connected: true })
+    rerender(<PipelineProgress onComplete={onComplete} />)
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(screen.getByText('Done')).toBeInTheDocument()
+    expect(screen.queryByText(/server restarted/)).not.toBeInTheDocument()
+    vi.advanceTimersByTime(600)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+  })
+
   it('reenables Stop when cancellation is declined during completion', async () => {
     mockGetPipelineStatus.mockResolvedValue({ running: true, stage: 'store' })
     mockUseSSE.mockReturnValue({ data: null, connected: false })

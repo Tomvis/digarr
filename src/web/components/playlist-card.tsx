@@ -3,12 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
-import {
-  deletePlaylistApi,
-  generatePlaylistApi,
-  type PlaylistRow,
-  updatePlaylistApi,
-} from '../lib/api'
+import { deletePlaylistApi, generatePlaylistApi, type PlaylistRow } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { formatShortDate } from '../lib/intl'
 import { ConfirmDialog } from './confirm-dialog'
@@ -54,43 +49,16 @@ const STRATEGY_BADGES: Record<string, { label: string; className: string }> = {
   rediscover: { label: 'playlist.strategyRediscover', className: 'bg-amber-500/15 text-amber-400' },
 }
 
-// Toggle (inline switch)
-
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean
-  onChange: (v: boolean) => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${
-        checked ? 'bg-approve' : 'bg-border'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg transition-transform ${
-          checked ? 'left-4' : 'left-0.5'
-        }`}
-      />
-    </button>
-  )
-}
-
 // PlaylistCard
 
 type PlaylistCardProps = {
   playlist: PlaylistRow
   onEdit: () => void
   onRefetch: () => void
+}
+
+function stopBubble(e: { stopPropagation: () => void }) {
+  e.stopPropagation()
 }
 
 export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps) {
@@ -101,7 +69,7 @@ export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps)
 
   const badge = STRATEGY_BADGES[playlist.strategy] ?? {
     label: playlist.strategy,
-    className: 'bg-accent/15 text-accent',
+    className: 'bg-accent/5 text-accent-text',
   }
 
   async function handleGenerate() {
@@ -114,15 +82,6 @@ export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps)
       toast.error(t('playlist.generateFailed'))
     } finally {
       setGenerating(false)
-    }
-  }
-
-  async function handleToggle(enabled: boolean) {
-    try {
-      await updatePlaylistApi(playlist.id, { enabled })
-      onRefetch()
-    } catch {
-      toast.error(t('playlists.updateFailed'))
     }
   }
 
@@ -153,7 +112,7 @@ export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps)
           {playlist.name}
         </p>
         <span
-          className={`shrink-0 text-micro-lg font-medium px-2 py-0.5 rounded-full ${badge.className}`}
+          className={`shrink-0 text-micro font-medium px-2 py-0.5 rounded-full ${badge.className}`}
         >
           {badge.label.startsWith('playlist.') ? t(badge.label as never) : badge.label}
         </span>
@@ -193,7 +152,7 @@ export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps)
             type="button"
             onClick={handleGenerate}
             disabled={generating}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent/15 text-accent rounded hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent/5 text-accent-text rounded hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             title={t('playlist.generateNow')}
           >
             {generating ? (
@@ -237,29 +196,22 @@ export function PlaylistCard({ playlist, onEdit, onRefetch }: PlaylistCardProps)
             <Trash2 size={14} aria-hidden="true" />
           </button>
         </div>
-
-        {/* Right: enabled toggle */}
-        <Toggle
-          checked={playlist.enabled}
-          onChange={handleToggle}
-          label={playlist.enabled ? t('playlist.disable') : t('playlist.enable')}
-        />
       </div>
 
-      {!playlist.enabled && (
-        <p className="text-micro-lg text-muted/60 text-center -mt-1">{t('common.disabled')}</p>
-      )}
       {showDeleteConfirm && (
-        <ConfirmDialog
-          title={t('playlist.delete')}
-          message={t('playlist.deleteWarning')}
-          confirmLabel={t('playlist.delete')}
-          onConfirm={() => {
-            setShowDeleteConfirm(false)
-            handleDelete()
-          }}
-          onCancel={() => setShowDeleteConfirm(false)}
-        />
+        // Dialog events bubble through the React tree to the card's navigate handlers
+        <div role="none" onClick={stopBubble} onKeyDown={stopBubble}>
+          <ConfirmDialog
+            title={t('playlist.delete')}
+            message={t('playlist.deleteWarning')}
+            confirmLabel={t('playlist.delete')}
+            onConfirm={() => {
+              setShowDeleteConfirm(false)
+              handleDelete()
+            }}
+            onCancel={() => setShowDeleteConfirm(false)}
+          />
+        </div>
       )}
     </div>
   )

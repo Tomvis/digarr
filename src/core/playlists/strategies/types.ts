@@ -1,3 +1,5 @@
+import type { SuggestedRecording } from '@/core/types'
+
 export const TRACKS_PER_ARTIST = 3
 
 export type StrategyArtist = {
@@ -5,6 +7,8 @@ export type StrategyArtist = {
   mbid?: string
   score: number
   genres?: string[]
+  /** When set, only this recording may represent the artist. */
+  recording?: SuggestedRecording
 }
 
 export type StrategyDeps = {
@@ -12,6 +16,8 @@ export type StrategyDeps = {
   getApprovedArtists: (opts: {
     since?: Date
     genre?: string
+    /** Normalized keywords, any of which may appear in a normalized genre. */
+    genreKeywords?: string[]
     limit?: number
   }) => Promise<StrategyArtist[]>
   getOlderApprovedArtists: (opts: { olderThan: Date; limit: number }) => Promise<StrategyArtist[]>

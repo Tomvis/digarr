@@ -1,12 +1,15 @@
 import { Hono } from 'hono'
 import { envConfig } from '@/config/env'
+import { createAudioMuseClient } from '@/core/clients/audiomuse'
 import { createLastFmClient } from '@/core/clients/lastfm'
 import { createLidarrClient } from '@/core/clients/lidarr'
 import { createListenBrainzClient } from '@/core/clients/listenbrainz'
 import { createTidalClient } from '@/core/clients/tidal'
 import {
   decryptChannelSecrets,
+  decryptField,
   encryptChannelSecrets,
+  encryptField,
   maskChannelSecrets,
   restoreMaskedChannelSecrets,
   SENSITIVE_PREFERENCES,
@@ -15,7 +18,9 @@ import { dispatch } from '@/core/notifications'
 import type { NotificationChannel, NotificationEvent } from '@/core/notifications/types'
 import { isConnectedToken } from '@/core/provider-auth'
 import { redactSecrets } from '@/core/providers/retry'
+import { usesServerConnection } from '@/core/targets/lidarr-connection'
 import { validateAiBaseUrl } from '@/core/url-safety'
+import { errMsg } from '@/core/validation'
 import { getUserConnections, type UserConnections, updateUserConnections } from '@/db/queries/users'
 import { mergePreferences, type Preferences } from '@/db/schema'
 import type { AppDependencies } from '@/server'
@@ -169,6 +174,8 @@ function stripForNonAdmin(settings: Record<string, unknown>): SettingsResponse {
   if (stripped.preferences && typeof stripped.preferences === 'object') {
     const prefs = { ...(stripped.preferences as Record<string, unknown>) }
     for (const field of SECRET_PREFERENCE_FIELDS) delete prefs[field]
+    delete prefs.audiomuseUrl
+    delete prefs.audiomuseSkipTlsVerify
     delete prefs.channels
     // Keep scheduleCron visible but not editable (frontend hides the tab)
     stripped.preferences = prefs
@@ -195,6 +202,9 @@ async function buildSettingsResponse(
 
   // Non-secret capability flag: the TIDAL connect button needs to know whether an
   // admin has registered the shared app, but must never see the credentials.
+  response._notificationsConfigured = Boolean(
+    row.preferences?.channels?.length || row.preferences?.webhookUrl,
+  )
   response._tidalAppConfigured = Boolean(row.tidalClientId && row.tidalClientSecret)
 
   if (userId) {
@@ -257,14 +267,7 @@ export function settingsRoutes(deps: AppDependencies) {
 
   router.get('/api/v1/settings', async (c) => {
     const userId = c.get('userId')
-    const isAdmin = await resolveAdmin(
-      userId,
-      deps.getUserById,
-      c.get('authSkipped'),
-      c.get('legacyTokenAuth'),
-      c.get('authMethod'),
-      c.get('apiKeyScopes'),
-    )
+    const isAdmin = await resolveAdmin(c, deps.getUserById)
     const response = await buildSettingsResponse(deps, userId, isAdmin)
     if (!response) {
       return c.json({ error: 'Settings not found' }, 404)
@@ -284,9 +287,7 @@ export function settingsRoutes(deps: AppDependencies) {
       const sections = await client.getMusicSections()
       return c.json({ sections: sections.map(({ key, title }) => ({ key, title })) })
     } catch (error: unknown) {
-      const message = (error instanceof Error ? error.message : String(error))
-        .split(connections.plexToken)
-        .join('[redacted]')
+      const message = errMsg(error).split(connections.plexToken).join('[redacted]')
       return probeResult(
         c,
         { success: false, message },
@@ -359,14 +360,7 @@ export function settingsRoutes(deps: AppDependencies) {
     }
 
     const userId = c.get('userId')
-    const isAdmin = await resolveAdmin(
-      userId,
-      deps.getUserById,
-      c.get('authSkipped'),
-      c.get('legacyTokenAuth'),
-      c.get('authMethod'),
-      c.get('apiKeyScopes'),
-    )
+    const isAdmin = await resolveAdmin(c, deps.getUserById)
     const storedSettings =
       Object.hasOwn(sanitized, 'preferences') || Object.hasOwn(sanitized, 'skipTlsVerify')
         ? await deps.getSettings()
@@ -405,11 +399,22 @@ export function settingsRoutes(deps: AppDependencies) {
       for (const field of SECRET_PREFERENCE_FIELDS) {
         if (incomingPrefs[field] === '***') delete incomingPrefs[field]
       }
+      if (typeof incomingPrefs.audiomuseToken === 'string') {
+        incomingPrefs.audiomuseToken = encryptField(incomingPrefs.audiomuseToken) ?? undefined
+      }
       globalFields.preferences = mergePreferenceUpdate(storedSettings?.preferences, incomingPrefs)
     }
 
     if (!isAdmin && Object.keys(globalFields).length > 0) {
       return c.json({ error: 'Admin access required to modify global settings' }, 403)
+    }
+
+    if (incomingPrefs?.audiomuseUrl) {
+      try {
+        createAudioMuseClient({ url: incomingPrefs.audiomuseUrl })
+      } catch {
+        return problem(c, 'invalid-audiomuse-url', 'Invalid AudioMuse-AI URL', 400)
+      }
     }
 
     if (typeof globalFields.aiBaseUrl === 'string' && globalFields.aiBaseUrl.length > 0) {
@@ -501,10 +506,7 @@ export function settingsRoutes(deps: AppDependencies) {
           userUpdate.plexAccountName = account.name
           userUpdate.plexMachineIdentifier = identity.machineIdentifier
         } catch (error: unknown) {
-          const detail = redactSecrets(error instanceof Error ? error.message : String(error))
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 300)
+          const detail = redactSecrets(errMsg(error)).replace(/\s+/g, ' ').trim().slice(0, 300)
           return problem(
             c,
             'invalid-plex-account',
@@ -521,6 +523,25 @@ export function settingsRoutes(deps: AppDependencies) {
     }
 
     if (Object.keys(globalFields).length > 0) {
+      if ('lidarrUrl' in globalFields || 'lidarrApiKey' in globalFields) {
+        const previous = storedSettings ?? (await deps.getSettings())
+        const changed =
+          ('lidarrUrl' in globalFields && globalFields.lidarrUrl !== previous?.lidarrUrl) ||
+          ('lidarrApiKey' in globalFields && globalFields.lidarrApiKey !== previous?.lidarrApiKey)
+        if (changed) {
+          for (const target of await deps.targetQueries.getAllTargets()) {
+            if (
+              target.type !== 'lidarr' ||
+              !usesServerConnection(target.config) ||
+              !target.config.tags
+            )
+              continue
+            const config = { ...target.config }
+            delete config.tags
+            await deps.targetQueries.updateTarget(target.id, { config })
+          }
+        }
+      }
       await deps.updateSettings(globalFields)
     }
 
@@ -577,14 +598,7 @@ export function settingsRoutes(deps: AppDependencies) {
       acceptLanguage: c.req.header('Accept-Language'),
     })
     const service = c.req.param('service')
-    const isAdmin = await resolveAdmin(
-      c.get('userId'),
-      deps.getUserById,
-      c.get('authSkipped'),
-      c.get('legacyTokenAuth'),
-      c.get('authMethod'),
-      c.get('apiKeyScopes'),
-    )
+    const isAdmin = await resolveAdmin(c, deps.getUserById)
     if (!isAdmin && service !== 'plex') {
       return problem(
         c,
@@ -602,7 +616,7 @@ export function settingsRoutes(deps: AppDependencies) {
       return problem(c, 'probe-invalid-input', 'Invalid probe input', 400, 'Expected a JSON object')
     }
     if (
-      service === 'lidarr' &&
+      (service === 'lidarr' || service === 'audiomuse') &&
       body.skipTlsVerify !== undefined &&
       typeof body.skipTlsVerify !== 'boolean'
     ) {
@@ -624,6 +638,35 @@ export function settingsRoutes(deps: AppDependencies) {
       problem(c, 'probe-missing-input', 'Missing probe input', 400, message)
 
     switch (service) {
+      case 'audiomuse': {
+        const prefs = stored?.preferences
+        const url = body.url ?? prefs?.audiomuseUrl ?? ''
+        let token: unknown
+        try {
+          token =
+            body.token === '***' || body.token === undefined
+              ? (decryptField(prefs?.audiomuseToken) ?? '')
+              : body.token
+        } catch {
+          return probeResult(
+            c,
+            { success: false, message: 'AudioMuse-AI token unreadable, re-enter it' },
+            messages['common.unknownError'],
+          )
+        }
+        if (typeof url !== 'string' || !url) return missingInput('Missing URL')
+        if (typeof token !== 'string') return missingInput('Token must be a string')
+        try {
+          const client = createAudioMuseClient({
+            url,
+            token,
+            skipTlsVerify: body.skipTlsVerify ?? prefs?.audiomuseSkipTlsVerify ?? false,
+          })
+          return runProbe(c, () => client.testConnection(), messages['common.unknownError'])
+        } catch {
+          return missingInput('Invalid AudioMuse-AI URL')
+        }
+      }
       case 'lidarr': {
         const url = body.url || (stored?.lidarrUrl as string) || ''
         const apiKey = body.apiKey || (stored?.lidarrApiKey as string) || ''
@@ -861,17 +904,7 @@ export function settingsRoutes(deps: AppDependencies) {
 
   // Test webhook by sending a test payload to the configured URL
   router.post('/api/v1/settings/test-webhook', async (c) => {
-    const userId = c.get('userId')
-    if (
-      !(await resolveAdmin(
-        userId,
-        deps.getUserById,
-        c.get('authSkipped'),
-        c.get('legacyTokenAuth'),
-        c.get('authMethod'),
-        c.get('apiKeyScopes'),
-      ))
-    ) {
+    if (!(await resolveAdmin(c, deps.getUserById))) {
       return problem(
         c,
         'admin-required',

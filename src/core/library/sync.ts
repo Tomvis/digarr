@@ -9,6 +9,7 @@ import type { LibrarySource } from './sources/types'
 import { emptyLibrarySyncCounts, type LibrarySyncStore } from './store'
 
 const LIBRARY_SYNC_JOB_TYPE: JobType = 'library_sync'
+const FRESH_FRACTION = 0.9
 
 /** Sentinel substring used by callers to detect "source not configured" failures
  *  and trigger fallback retry logic. Keep in sync with syncSpecificSource error msg. */
@@ -91,10 +92,12 @@ function deduplicateAlbums(
 export function createSyncOrchestrator(deps: SyncOrchestratorDeps) {
   const inFlight = new Map<string, Promise<SourceSyncResult>>()
 
-  function isStale(lastCompleted: Date | null): boolean {
-    if (!lastCompleted) return true
-    const ageMs = Date.now() - lastCompleted.getTime()
-    return ageMs > deps.staleHours * 60 * 60 * 1000
+  function isFresh(state: Awaited<ReturnType<LibrarySyncStore['getLibrarySyncState']>>): boolean {
+    if (state?.lastSyncStatus !== 'completed' || !state.lastSyncCompletedAt) return false
+    const since = state.lastSyncStartedAt ?? state.lastSyncCompletedAt
+    // The scheduler ticks once per staleHours; a full-period threshold would skip every
+    // other tick whenever a sync started a little after its tick.
+    return Date.now() - since.getTime() < deps.staleHours * 60 * 60 * 1000 * FRESH_FRACTION
   }
 
   async function syncSource(
@@ -120,7 +123,7 @@ export function createSyncOrchestrator(deps: SyncOrchestratorDeps) {
   ): Promise<SourceSyncResult> {
     if (!options?.force) {
       const state = await deps.store.getLibrarySyncState(userId, source.id)
-      if (state?.lastSyncCompletedAt && !isStale(state.lastSyncCompletedAt)) {
+      if (state && isFresh(state)) {
         return { source: source.id, status: 'skipped_fresh', counts: state.lastSyncCounts }
       }
     }
@@ -149,12 +152,21 @@ export function createSyncOrchestrator(deps: SyncOrchestratorDeps) {
       const overrides = userId != null ? await deps.store.getAllOverrides(userId) : new Map()
       const knownMbids =
         userId != null ? await deps.store.getKnownMbidsForUser(userId) : new Set<string>()
+      const previousMatches = await deps.store.listArtistMatches(userId, source.id)
       const counts = emptyLibrarySyncCounts()
+      const mbClient: MBClient = options?.force
+        ? {
+            searchArtist: (query) => deps.mbClient.searchArtist(query, { bypassCache: true }),
+            getReleaseGroups: (mbid, types) =>
+              deps.mbClient.getReleaseGroups(mbid, types, { bypassCache: true }),
+          }
+        : deps.mbClient
       const ctx: ReconcilerContext = {
         userId,
         overrides,
         knownMbids,
-        mbClient: deps.mbClient,
+        previousMatches,
+        mbClient,
         cacheLookup: (nameNormalized) =>
           userId != null
             ? deps.store.findReconciledByNormalizedName(userId, nameNormalized)
@@ -183,7 +195,7 @@ export function createSyncOrchestrator(deps: SyncOrchestratorDeps) {
             albumQueue.add(async () => {
               const rawAlbums = await listAlbums(artist.sourceArtistId)
               const reconciledAlbums = await reconcileAlbumsForArtist(artist.mbid, rawAlbums, {
-                mbClient: deps.mbClient,
+                mbClient,
                 onMbError: () => {
                   counts.mbApiCallsFailed = (counts.mbApiCallsFailed ?? 0) + 1
                 },
@@ -262,6 +274,24 @@ export function createSyncOrchestrator(deps: SyncOrchestratorDeps) {
   }
 
   return {
+    isRunning(userId: number | null, sourceId: string): boolean {
+      return inFlight.has(`${userId ?? 'global'}:${sourceId}`)
+    },
+
+    /** Which scope (per-user first, then global) has `sourceId` configured, or null. */
+    async resolveSourceScope(
+      userId: number,
+      sourceId: string,
+    ): Promise<{ userId: number | null } | null> {
+      if ((await deps.buildPerUserSources(userId)).some((s) => s.id === sourceId)) {
+        return { userId }
+      }
+      if ((await deps.buildGlobalSources()).some((s) => s.id === sourceId)) {
+        return { userId: null }
+      }
+      return null
+    },
+
     async syncGlobal(options?: SyncOptions): Promise<SyncSummary> {
       const sources = await deps.buildGlobalSources()
       const results = await runSourcesIsolated(sources, null, options)

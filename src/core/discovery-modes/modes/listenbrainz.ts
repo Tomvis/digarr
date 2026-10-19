@@ -3,6 +3,7 @@ import { createListenBrainzClient } from '@/core/clients/listenbrainz'
 import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
 import { resolveTagRadioRecordings } from '@/core/clients/tag-radio-resolver'
 import { createListenBrainzAdapter } from '@/core/subscriptions/adapters/listenbrainz'
+import type { DiscoveredArtist } from '@/core/types'
 import type {
   DiscoveryConfigField,
   DiscoveryModeDefinition,
@@ -11,15 +12,22 @@ import type {
 import { getDiscoveryModeConnections, getNormalizedLimit, normalizeDiscoveryName } from './runtime'
 
 function mapFeedArtists(
-  artists: Array<{ name: string; similarityScore?: number; source: string }>,
+  artists: Array<
+    Pick<DiscoveredArtist, 'name' | 'similarityScore' | 'source' | 'mbid'> &
+      Partial<Pick<DiscoveredArtist, 'recordingMbid' | 'recordingTitle'>>
+  >,
   limit: number,
 ) {
   return artists.slice(0, limit).map((artist) => ({
     candidateType: 'artist' as const,
     name: artist.name,
+    ...(artist.mbid ? { mbid: artist.mbid } : {}),
     provenanceProvider: artist.source,
     confidenceHint: artist.similarityScore,
     fallbackUsed: false,
+    ...(artist.recordingMbid && artist.recordingTitle
+      ? { recordingMbid: artist.recordingMbid, recordingTitle: artist.recordingTitle }
+      : {}),
   }))
 }
 
@@ -72,6 +80,12 @@ async function executeSimilarUsers(userId: number, limit: number) {
   return { candidates }
 }
 
+function readPopularity(raw: unknown, fallback: number): number {
+  if (raw === undefined || raw === null || raw === '') return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : fallback
+}
+
 export function createListenBrainzMode(): DiscoveryModeDefinition {
   return {
     id: 'listenbrainz',
@@ -84,7 +98,10 @@ export function createListenBrainzMode(): DiscoveryModeDefinition {
         label: 'Feed',
         type: 'select',
         required: true,
-        options: [{ value: 'weekly-jams', label: 'Weekly Jams' }],
+        options: [
+          { value: 'weekly-jams', label: 'Weekly Jams' },
+          { value: 'weekly-exploration', label: 'Weekly Exploration' },
+        ],
       },
     ],
     advancedFields: [
@@ -95,6 +112,7 @@ export function createListenBrainzMode(): DiscoveryModeDefinition {
         required: true,
         options: [
           { value: 'weekly-jams', label: 'Weekly Jams' },
+          { value: 'weekly-exploration', label: 'Weekly Exploration' },
           { value: 'similar-users-quick', label: 'Similar Users (Quick)' },
         ],
       },
@@ -108,9 +126,10 @@ export function createListenBrainzMode(): DiscoveryModeDefinition {
         throw new Error('Connect ListenBrainz to use this mode.')
       }
 
+      const requested = request.normalizedSettings.feedType
       const feedType =
-        request.normalizedSettings.feedType === 'similar-users-quick'
-          ? 'similar-users-quick'
+        requested === 'similar-users-quick' || requested === 'weekly-exploration'
+          ? requested
           : 'weekly-jams'
       const limit = getNormalizedLimit(request, 25)
 
@@ -409,8 +428,8 @@ export function createListenBrainzTagRadioMode(): DiscoveryModeDefinition {
       }
 
       const count = Number(request.normalizedSettings.count) || 25
-      const popBegin = Number(request.normalizedSettings.popBegin) || 0
-      const popEnd = Number(request.normalizedSettings.popEnd) || 100
+      const popBegin = readPopularity(request.normalizedSettings.popBegin, 0)
+      const popEnd = readPopularity(request.normalizedSettings.popEnd, 100)
 
       const recordings = await client.getTagRadio(tags, { count, popBegin, popEnd })
       const resolved = await resolveTagRadioRecordings(recordings, mbClient, db)
@@ -424,6 +443,9 @@ export function createListenBrainzTagRadioMode(): DiscoveryModeDefinition {
           provenanceProvider: 'listenbrainz:tag-radio',
           confidenceHint: a.score,
           fallbackUsed: false,
+          ...(a.recordingTitle && UUID_RE.test(a.recordingMbid)
+            ? { recordingMbid: a.recordingMbid.toLowerCase(), recordingTitle: a.recordingTitle }
+            : {}),
         })),
       }
     },

@@ -25,10 +25,10 @@ This dashboard capture predates v1.19.0; see [current behavior and screenshots](
 
 ## What you can do
 
-- **Find artists and albums.** Connect a listening source, scan, and review scored suggestions. Release Radar finds new releases; Library Gap-Fill finds missing albums. Mood and artist searches work without a listening history.
+- **Find artists and albums.** Connect a listening source, scan, and review scored suggestions. Release Radar finds new releases; Library Gap-Fill finds missing albums. Use **Get missing albums** on an artist to review and approve missing studio albums together. Mood and artist searches work without a listening history.
 - **Review before adding.** Preview, approve, reject, or permanently block suggestions. Individual and bulk album approval monitor and search only the recommended album in Lidarr. Automatic album approval also uses only the recommended release; its monitoring setting applies to artist recommendations.
-- **Keep discovery running.** Schedule scans and subscriptions, or generate playlists from your connected libraries and catalog searches for Spotify and supported media servers. Saved playlists refresh their bound remote playlists; [explicit recovery](docs/OPERATIONS.md#playlists-and-notifications) handles uncertain creation and changed destinations. Audition playlists use pending artists without approving them. You can also export M3U/XSPF files. Media-server exports use music already in that server's library.
-- **Share an instance.** Each user has their own queue, connections, and preferences; admins assign targets to each user. Local accounts and OIDC/SSO are supported, with 15 languages and light and dark themes.
+- **Keep discovery running.** Run or schedule a mode from one Discovery Modes page, review all schedules in Settings > Schedule, or generate playlists from your connected libraries and catalog searches for Spotify and supported media servers. Saved playlists refresh their bound remote playlists; [explicit recovery](docs/OPERATIONS.md#playlists-and-notifications) handles uncertain creation and changed destinations. Audition playlists use pending artists without approving them. You can also export M3U/XSPF files. Media-server exports use music already in that server's library.
+- **Share an instance.** Each user has their own queue, connections, and preferences; admins assign targets to each user. Optional [approval policies](docs/AUTHENTICATION.md#approval-policies) let members request additions for admin review, with score-based trust and open-request limits. Local accounts and OIDC/SSO are supported, with 15 languages and light and dark themes.
 
 Digarr calls your connected services. It doesn't include a downloader or a full music player.
 
@@ -44,11 +44,14 @@ AI suggestions and MusicBrainz matches can be wrong, so check the artist and rel
 | Approval and acquisition | Lidarr, slskd |
 | Playlist export | Spotify, Navidrome, Jellyfin, Emby, Plex |
 | Search | Spotify, Deezer, MusicBrainz; Bandcamp and TIDAL (both experimental) |
+| [Audio similarity](docs/OPERATIONS.md#audiomuse-ai-audio-similarity) | AudioMuse-AI (optional, experimental; v3.6.4+) |
 | AI recommendations | Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible endpoints |
 | Notifications | Webhooks, ntfy, Telegram, Apprise |
 | Critic ratings | music-rater (Critically Acclaimed discovery mode and album score adjustment) |
 
 A connection's capabilities differ by service. Release Radar requires ListenBrainz, Spotify, or Last.fm. Spotify Saved Albums and Followed Artists, Deezer Flow, and Subsonic Starred have focused discovery modes.
+
+In **Settings > Connections**, on the ListenBrainz and Last.fm cards, you can opt in separately to ListenBrainz track loves, ListenBrainz playlists from manual generation, and Last.fm track loves. Scheduled playlist regenerations never send to ListenBrainz. Only exact-track approvals from previews or Audition send loves; rejects and artist-only approvals stay local. Last.fm requires an encrypted per-user connection. See [scrobbler setup and privacy](docs/AUTHENTICATION.md#scrobbler-write-back).
 
 Critically Acclaimed can be narrowed by genre and by coverage type. `Only these genres` and `Never these genres` filter on the genre slugs already in your synced corpus (exclude wins when an album matches both); `Only these kinds of coverage` filters on which editorial columns covered an album -- Review, Album of the Year, Record of the Month, and so on. All three option lists come from your own synced corpus, not a hardcoded list and not fetched from music-rater live, so they only ever offer values that actually appear in your data. Things You Might Have Missed, Stuck in the Filter, Yer Metal Is Olde, and Lost in Time carry no numeric rating at all, so any score filter excludes them by definition -- the advanced, default-off `Include unscored recommendations` toggle is the only way to surface them.
 
@@ -85,21 +88,25 @@ For Compose, backend selection, and updates, follow the [Docker guide](deploy/do
 
 ## Your first recommendations
 
-1. Sign in, then choose Lidarr, Emby, or discovery-only in the setup wizard and configure your AI provider. Requested settings, connections, and targets save together; a failed save leaves setup retryable.
-2. Connect a listening source in Settings. Add library sources and targets when needed.
+1. Sign in, then choose Lidarr, Emby, or discovery-only in the setup wizard and configure your AI provider, or skip it and rely on the listening sources you connect later. Requested settings, connections, and targets save together; a failed save leaves setup retryable.
+2. Open Settings > Connections > Add connection, then search for a listening or library service. Saved connections appear under Your connections; add export targets under Targets when needed.
 3. Run a scan from Dashboard or Discover.
-4. Preview, approve, or reject suggestions. Adjust genre priorities in **Settings > Recommendations** if needed. Personal saves work for non-admins and global metadata controls are admin-only. Use Release Radar or Library Gap-Fill for albums. The net-new album toggle defaults to off and persists when saved.
+4. Preview, approve, or reject suggestions. Adjust genre priorities in **Settings > Recommendations** if needed. Personal saves work for non-admins. Image-source keys and switches live under Settings > Connections > Artist images; server rows are read-only for non-admins. Use Release Radar or Library Gap-Fill for albums. The net-new album toggle defaults to off and persists when saved.
 
-CSV and playlist imports process the listed artists into recommendations through separate subscription runs. Spotify's `Import Liked Songs` does the same for saved tracks. Imports do not become inputs to a normal scan. Spotify playlist imports honor the saved artist cap across pages; see [limits and playlist access](docs/API.md#subscriptions).
+Open Discovery Modes > Run a mode > Presets and imports for CSV, M3U, XSPF, and connected-service imports. File and playlist imports process the listed artists into recommendations through separate subscription runs. Spotify's `Import Liked Songs` does the same for saved tracks. Imports do not become inputs to a normal scan. Spotify playlist imports honor the saved artist cap across pages; see [limits and playlist access](docs/API.md#subscriptions).
 
 A scan can complete with a failed source. Admins can check Job History for partial results; other users can refresh Discover. Services without similar-artist lookup still contribute their supported listening and library data. See the [pipeline guide](docs/ARCHITECTURE.md#pipeline) for the details.
 
 ## Configuration
 
 <a id="connecting-plex-listeners"></a><a id="importing-slskd-downloads-into-lidarr"></a><a id="data-hygiene"></a>
-Use Settings for connections, scoring, schedules, preferences, and language. [Authentication](docs/AUTHENTICATION.md) covers origins, cookies, SSO, and proxies. [Operations](docs/OPERATIONS.md) covers Plex listeners, slskd imports, Data Hygiene, playlists, notifications, and local AI.
+Use Customize on the Dashboard to show or hide any card, drag or use the keyboard to reorder cards, and choose small, medium, or large sizes. Layouts follow your account across devices. Empty cards hide by default; enable Show empty cards to keep them visible. Reset to default restores Today's Pick, Your decisions, Listening, Genres, and Subscriptions. Genres, Subscriptions, Discover's pending and decision views, and Settings > Connections have a Show on dashboard switch for their card.
+
+Use Settings for connections, scoring, schedules, preferences, and language. For scripts, create a named, revocable credential in Settings > Account > API tokens with read, write, or admin scope and an optional expiry; [personal token setup](docs/AUTHENTICATION.md#personal-api-tokens) explains the one-time reveal and permissions. [Authentication](docs/AUTHENTICATION.md) covers origins, cookies, SSO, and proxies. [Operations](docs/OPERATIONS.md) covers Plex listeners, slskd imports, Data Hygiene, playlists, notifications, and local AI.
 
 ### Service apps
+
+Connections lists saved services, including incomplete setups. Add connection opens a searchable picker grouped by listening history, streaming accounts, media servers, and collections. Missing admin services are also available there. Disconnecting a service returns it to the picker. The admin-only Show experimental integrations switch at the bottom reveals AudioMuse-AI, TIDAL and Bandcamp in settings, search-source choices, and discovery-mode choices. New setups default to off; completed older setups retain their previously enabled Bandcamp search. Hiding a service does not disable stored connections or scheduled jobs.
 
 <a id="connecting-spotify"></a>**Spotify** needs your own OAuth app, a Premium app owner, and up to five allowlisted Development Mode users. Search needs a connected account. Local HTTP uses `127.0.0.1`, with the same `ALLOWED_ORIGIN` and browser address. Follow [Spotify setup](docs/AUTHENTICATION.md#spotify-app-setup) before changing the quick-start origin.
 
@@ -277,14 +284,18 @@ Selecting a backup in Settings > Administration opens a replacement confirmation
 | Synology NAS | [`docs/guides/synology.md`](docs/guides/synology.md) | DSM 7.1+ (Docker/Container Manager). SSH or GUI. |
 | Docker Desktop | [`docs/guides/docker-desktop.md`](docs/guides/docker-desktop.md) | macOS and Windows (WSL 2 or PowerShell). |
 
+Any PostgreSQL you supply yourself must be version 15 or newer: migrations create `NULLS NOT DISTINCT` unique indexes. The bundled stacks use PostgreSQL 17.
+
 Check [image signatures and SBOM coverage](deploy/docker/README.md#verifying-image-signatures) before running a release.
 
 ## Documentation
 
 - [Configuration and operations](docs/OPERATIONS.md)
 - [Authentication, SSO, and user management](docs/AUTHENTICATION.md)
-- [API reference](docs/API.md) and [architecture](docs/ARCHITECTURE.md)
+- [API reference](docs/API.md), [architecture](docs/ARCHITECTURE.md), and [name normalization](docs/NORMALIZATION.md)
+- [Connect an MCP client](docs/MCP.md) for recommendations, approvals, and scans
 - [Recommendation quality evaluation](docs/RECOMMENDATION-QUALITY.md)
+- [Discovery recipes](docs/guides/discovery-recipes.md) for discovery-only and existing-library setups, seasonal and decade tags, and familiar versus adventurous tuning
 - [Switching database backends](docs/guides/switching-backends.md) and [encryption-key rotation](docs/runbooks/encryption-key-rotation.md)
 - [Changelog](CHANGELOG.md), [roadmap](docs/ROADMAP.md), and [screenshots](docs/SCREENSHOTS.md)
 - [Other self-hosted music projects](docs/COMPARISON.md)

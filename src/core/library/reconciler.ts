@@ -1,5 +1,6 @@
 import type { createMusicBrainzClient } from '@/core/clients/musicbrainz'
-import { isValidMbid } from '@/core/validation'
+import { isSpecialPurposeArtist } from '@/core/clients/musicbrainz-special-purpose'
+import { errMsg, isValidMbid } from '@/core/validation'
 import type { LibrarySyncCounts } from '@/db/schema'
 import { normalizeArtistName } from './normalize'
 import type { LibraryArtist } from './sources/types'
@@ -9,10 +10,6 @@ type MBClient = Pick<
   ReturnType<typeof createMusicBrainzClient>,
   'searchArtist' | 'getReleaseGroups'
 >
-
-function mbErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
 
 function bumpMbFailed(counts: LibrarySyncCounts): void {
   counts.mbApiCallsFailed = (counts.mbApiCallsFailed ?? 0) + 1
@@ -49,8 +46,44 @@ export type ReconcilerContext = {
   cacheLookup: (
     nameNormalized: string,
   ) => Promise<Array<{ mbid: string; name: string; source: string }>>
+  /** This source's previous matches by sourceArtistId, kept when MusicBrainz is unavailable. */
+  previousMatches?: Map<string, PreviousArtistMatch>
   /** Mutable accumulator updated as the run progresses; surfaced to UI */
   counts: LibrarySyncCounts
+}
+
+export type PreviousArtistMatch = {
+  nameNormalized: string
+  mbid: string
+  matchMethod: NonNullable<ReconciledArtist['matchMethod']>
+  matchConfidence: number | null
+}
+
+const MATCH_COUNT_KEY = {
+  mbid: 'matchedMbid',
+  name_exact: 'matchedNameExact',
+  name_anchored: 'matchedNameAnchored',
+  name_disambiguated: 'matchedDisambiguated',
+} as const
+
+function lookupFailedRow(
+  artist: LibraryArtist,
+  nameNormalized: string,
+  ctx: ReconcilerContext,
+): ReconciledArtist {
+  const previous = ctx.previousMatches?.get(artist.sourceArtistId)
+  if (previous && previous.nameNormalized === nameNormalized) {
+    ctx.counts[MATCH_COUNT_KEY[previous.matchMethod]] += 1
+    return matchedRow(
+      artist,
+      nameNormalized,
+      previous.mbid,
+      previous.matchMethod,
+      previous.matchConfidence ?? 0,
+    )
+  }
+  bumpLookupFailed(ctx.counts)
+  return unreconciledRow(artist, nameNormalized, 'lookup_failed')
 }
 
 function matchedRow(
@@ -88,6 +121,23 @@ function unreconciledRow(
   }
 }
 
+type MBSearchArtist = Awaited<ReturnType<MBClient['searchArtist']>>['artists'][number]
+
+function matchesAliasOrSortName(candidate: MBSearchArtist, nameNormalized: string): boolean {
+  const names: unknown[] = [candidate['sort-name']]
+  if (Array.isArray(candidate.aliases)) {
+    for (const alias of candidate.aliases) {
+      names.push(alias?.name, alias?.['sort-name'])
+    }
+  }
+  return names.some(
+    (name) =>
+      typeof name === 'string' &&
+      name.trim() !== '' &&
+      normalizeArtistName(name) === nameNormalized,
+  )
+}
+
 /**
  * Reconcile a single source artist to a MusicBrainz MBID.
  *
@@ -95,6 +145,7 @@ function unreconciledRow(
  *  0. Override (user assertion beats everything)
  *  1. Source-provided MBID (trust the source)
  *  2. Cache short-circuit + MB API lookup with strict normalize-equal filter
+ *     (primary name first, then aliases and sort name)
  *  3. Anchor against already-known MBIDs (Task 9)
  *  4. Exact normalized name match (Task 9)
  *  5. Album-overlap disambiguation (Task 10)
@@ -124,32 +175,36 @@ export async function reconcileArtist(
   }
 
   // Step 2: cache short-circuit
-  const cached = await ctx.cacheLookup(nameNormalized)
-  if (cached.length === 1 && cached[0]) {
+  // The same artist cached from several sources is one match, not an ambiguity.
+  const cachedMbids = new Set((await ctx.cacheLookup(nameNormalized)).map((row) => row.mbid))
+  const [cachedMbid] = cachedMbids
+  if (cachedMbids.size === 1 && cachedMbid) {
     ctx.counts.cacheHits += 1
     ctx.counts.matchedNameAnchored += 1
-    return matchedRow(artist, nameNormalized, cached[0].mbid, 'name_anchored', 0.85)
+    return matchedRow(artist, nameNormalized, cachedMbid, 'name_anchored', 0.85)
   }
 
   // Cache miss or ambiguous: fall through to MB API.
   // MB errors (5xx, timeout, network) are soft-failed so one flaky upstream
-  // call doesn't abort the whole sync. The artist is left unreconciled and
-  // will retry on the next sync run.
+  // call doesn't abort the whole sync. The artist keeps its previous match, or
+  // is left unreconciled, and retries on the next sync run.
   ctx.counts.mbApiCalls += 1
   let mbResult: Awaited<ReturnType<MBClient['searchArtist']>>
   try {
     mbResult = await ctx.mbClient.searchArtist(nameNormalized)
   } catch (err) {
     bumpMbFailed(ctx.counts)
-    bumpLookupFailed(ctx.counts)
-    console.warn(
-      `[library-reconcile] MB searchArtist failed for "${artist.name}"; leaving unreconciled: ${mbErrorMessage(err)}`,
-    )
-    return unreconciledRow(artist, nameNormalized, 'lookup_failed')
+    console.warn(`[library-reconcile] MB searchArtist failed for "${artist.name}": ${errMsg(err)}`)
+    return lookupFailedRow(artist, nameNormalized, ctx)
   }
-  const candidates = (mbResult.artists ?? []).filter(
-    (c) => normalizeArtistName(c.name) === nameNormalized,
-  )
+  // A primary-name match outranks alias matches, so an alias shared with
+  // another artist cannot turn a clean primary match into an ambiguity.
+  const searchArtists = mbResult.artists ?? []
+  const primaryMatches = searchArtists.filter((c) => normalizeArtistName(c.name) === nameNormalized)
+  const candidates =
+    primaryMatches.length > 0
+      ? primaryMatches
+      : searchArtists.filter((c) => matchesAliasOrSortName(c, nameNormalized))
 
   if (candidates.length === 0) {
     ctx.counts.unreconciledNoCandidate += 1
@@ -175,6 +230,9 @@ export async function reconcileArtist(
     const normalizedSourceTitles = new Set(sourceAlbumTitles.map(normalizeArtistName))
     const scored = await Promise.all(
       candidates.map(async (c) => {
+        if (isSpecialPurposeArtist(c.id)) {
+          return { candidate: c, overlap: 0, lookupFailed: false }
+        }
         try {
           const releaseGroups = await ctx.mbClient.getReleaseGroups(c.id)
           const mbTitles = new Set(releaseGroups.map((rg) => normalizeArtistName(rg.title)))
@@ -186,15 +244,14 @@ export async function reconcileArtist(
         } catch (err) {
           bumpMbFailed(ctx.counts)
           console.warn(
-            `[library-reconcile] MB getReleaseGroups failed for candidate ${c.id} of "${artist.name}"; leaving artist unreconciled: ${mbErrorMessage(err)}`,
+            `[library-reconcile] MB getReleaseGroups failed for candidate ${c.id} of "${artist.name}": ${errMsg(err)}`,
           )
           return { candidate: c, overlap: 0, lookupFailed: true }
         }
       }),
     )
     if (scored.some((result) => result.lookupFailed)) {
-      bumpLookupFailed(ctx.counts)
-      return unreconciledRow(artist, nameNormalized, 'lookup_failed')
+      return lookupFailedRow(artist, nameNormalized, ctx)
     }
     scored.sort((a, b) => b.overlap - a.overlap)
     const winner = scored[0]

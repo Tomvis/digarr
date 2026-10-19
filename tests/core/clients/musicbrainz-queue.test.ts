@@ -27,6 +27,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   vi.useRealTimers()
   delete process.env.MUSICBRAINZ_MIN_INTERVAL_MS
+  vi.restoreAllMocks()
 })
 
 describe('MusicBrainz shared queue timing (real p-queue)', () => {
@@ -82,6 +83,39 @@ describe('MusicBrainz shared queue timing (real p-queue)', () => {
     await Promise.all(requests)
     expect(mockFetch).toHaveBeenCalledTimes(2)
     expect(Date.now()).toBe(0)
+  })
+
+  it('runs queued interactive requests before background ones, retries included', async () => {
+    // Fork: pin the governor to 1 req/s (default is 10s, 360 req/hr).
+    process.env.MUSICBRAINZ_MIN_INTERVAL_MS = '1000'
+    vi.resetModules()
+    const { createMusicBrainzClient } = await import('@/core/clients/musicbrainz')
+    const order: string[] = []
+    let failedOnce = false
+    mockFetch.mockImplementation(async (url: string) => {
+      const query = new URL(url).searchParams.get('query') ?? ''
+      order.push(query)
+      if (query === 'scan-1' && !failedOnce) {
+        failedOnce = true
+        return new Response('', { status: 503 })
+      }
+      return jsonOk({ artists: [] })
+    })
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const background = createMusicBrainzClient({ priority: 'background' })
+    const scan = createMusicBrainzClient()
+    const requests = [
+      background.searchArtist('bg-1'),
+      background.searchArtist('bg-2'),
+      background.searchArtist('bg-3'),
+      scan.searchArtist('scan-1'),
+      scan.searchArtist('scan-2'),
+    ]
+    await vi.advanceTimersByTimeAsync(30_000)
+    await Promise.all(requests)
+    // bg-2 takes the slot that frees up during scan-1's backoff; the retry then
+    // re-enters at interactive priority and goes ahead of the older bg-3.
+    expect(order).toEqual(['bg-1', 'scan-1', 'scan-2', 'bg-2', 'scan-1', 'bg-3'])
   })
 
   it('a retrying request does not block other queued traffic for its full backoff', async () => {

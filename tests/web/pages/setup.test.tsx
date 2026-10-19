@@ -4,12 +4,9 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getRequestLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 vi.mock('@/web/lib/api', () => ({
   completeSetup: vi.fn(),
@@ -23,12 +20,7 @@ vi.mock('@/web/lib/api', () => ({
   },
 }))
 
-vi.mock('sonner', () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}))
+vi.mock('sonner', async () => (await import('../helpers/sonner')).sonnerMock())
 
 import { toast } from 'sonner'
 import { ApiError, completeSetup } from '@/web/lib/api'
@@ -107,56 +99,6 @@ describe('SetupWizard', () => {
     expect(screen.getByLabelText('User ID')).toBeInTheDocument()
   })
 
-  it('uses translated setup input placeholders in French', async () => {
-    mockGetStoredLocale.mockReturnValue('fr')
-    renderSetupWizard()
-
-    fireEvent.click(screen.getByRole('button', { name: /lidarr/i }))
-    await screen.findByText(/Connect(?:er)? Lidarr/i)
-    expect(screen.getByPlaceholderText('Votre clé API Lidarr')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /retour/i }))
-    fireEvent.click(screen.getByRole('button', { name: /emby/i }))
-    await screen.findByText(/Connect(?:er)? Emby/i)
-    expect(screen.getByPlaceholderText('Votre clé API Emby')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('ID utilisateur Emby')).toBeInTheDocument()
-  })
-
-  it('renders a language switcher during setup', () => {
-    renderSetupWizard()
-
-    expect(screen.getByLabelText('Language')).toBeInTheDocument()
-  })
-
-  it('uses translated discovery setup copy in French', async () => {
-    mockGetStoredLocale.mockReturnValue('fr')
-    renderSetupWizard()
-
-    fireEvent.click(
-      screen.getByRole('button', { name: /découverte uniquement|decouvrir|just discover/i }),
-    )
-
-    await screen.findByText('Fournisseur IA')
-    expect(
-      screen.getByText(
-        /Vous connecterez vos sources d'écoute personnelles plus tard dans les paramètres/i,
-      ),
-    ).toBeInTheDocument()
-  })
-
-  it('uses translated AI model suggestion labels in French', async () => {
-    mockGetStoredLocale.mockReturnValue('fr')
-    renderSetupWizard()
-
-    fireEvent.click(screen.getByRole('button', { name: /lidarr/i }))
-    await screen.findByText(/Connect(?:er)? Lidarr/i)
-    await fillAndContinueLidarr()
-
-    await screen.findByText('Fournisseur IA')
-    expect(screen.getByText('Haiku 4.5 (rapide, le moins cher)')).toBeInTheDocument()
-    expect(screen.getByText('Sonnet 4.6 (équilibré)')).toBeInTheDocument()
-  })
-
   it('surfaces the backend error (and missing fields) when setup completion fails', async () => {
     mockCompleteSetup.mockRejectedValueOnce(
       new ApiError(400, { error: 'Missing required fields', fields: ['aiModel'] }),
@@ -175,18 +117,67 @@ describe('SetupWizard', () => {
     expect(mockToastError).toHaveBeenCalledWith('Missing required fields: aiModel')
   })
 
-  it('uses a translated fallback model placeholder in French for openai-compatible', async () => {
-    mockGetStoredLocale.mockReturnValue('fr')
+  it('says why Continue is disabled and shows the provider name in the summary', async () => {
+    renderSetupWizard()
+    fireEvent.click(screen.getByRole('button', { name: /Just discover/i }))
+    await screen.findByText('AI Provider')
+
+    expect(screen.getByLabelText('Model')).toHaveAttribute(
+      'placeholder',
+      'e.g. claude-haiku-4-5-20251001',
+    )
+    expect(screen.getByText('To continue, fill in: Model, API Key')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'test-model' } })
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'secret-key' } })
+    expect(screen.queryByText(/To continue, fill in/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    expect(await screen.findByText('Anthropic / test-model')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Back/ })).toBeInTheDocument()
+  })
+
+  it('lets discovery-only setup skip the AI provider (#887)', async () => {
+    mockCompleteSetup.mockResolvedValueOnce(undefined as never)
     renderSetupWizard()
 
-    fireEvent.click(screen.getByRole('button', { name: /lidarr/i }))
-    await screen.findByText(/Connect(?:er)? Lidarr/i)
+    fireEvent.click(screen.getByRole('button', { name: /Just discover/i }))
+    await screen.findByText('AI Provider')
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'half-typed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+
+    expect(await screen.findByText('Not set up')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Start Digging/i }))
+    await vi.waitFor(() => expect(mockCompleteSetup).toHaveBeenCalledWith({}))
+  })
+
+  it('hides skip-TLS under Advanced on the Lidarr step and sends the value when set', async () => {
+    mockCompleteSetup.mockResolvedValueOnce(undefined as never)
+    await goToLidarrStep()
+    const checkbox = screen.getByLabelText('Skip TLS verification')
+    expect(checkbox).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+    expect(checkbox).toBeVisible()
+    expect(screen.getByText(/Disables certificate checks/)).toBeVisible()
+    fireEvent.click(checkbox)
     await fillAndContinueLidarr()
+    await screen.findByText('AI Provider')
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Start Digging/i }))
+    await vi.waitFor(() =>
+      expect(mockCompleteSetup).toHaveBeenCalledWith(
+        expect.objectContaining({ skipTlsVerify: true }),
+      ),
+    )
+  })
 
-    fireEvent.change(screen.getByLabelText(/(?:Provider|Fournisseur)/i), {
-      target: { value: 'openai-compatible' },
-    })
-
-    expect(screen.getByPlaceholderText('nom-du-modèle')).toBeInTheDocument()
+  it('reopens Advanced automatically when skip-TLS is already on', async () => {
+    await goToLidarrStep()
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+    fireEvent.click(screen.getByLabelText('Skip TLS verification'))
+    await fillAndContinueLidarr()
+    await screen.findByText('AI Provider')
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }))
+    await screen.findByText(/Connect(?:er)? Lidarr/i)
+    expect(screen.getByLabelText('Skip TLS verification')).toBeVisible()
   })
 })

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LibrarySourcesPanel } from '@/web/components/library-sources-panel'
 import { I18nProvider } from '@/web/lib/i18n'
+import { createTestQueryClient } from '../helpers/query'
 
 vi.mock('@/web/lib/api', () => ({
   getLibrarySources: vi.fn(async () => ({
@@ -54,7 +55,7 @@ describe('LibrarySourcesPanel', () => {
   })
 
   it('renders the album count when albumsSynced is present', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = createTestQueryClient()
 
     render(
       <I18nProvider>
@@ -69,7 +70,7 @@ describe('LibrarySourcesPanel', () => {
   })
 
   it('renders a compact album progress bar when album counts exist', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = createTestQueryClient()
 
     render(
       <I18nProvider>
@@ -85,7 +86,7 @@ describe('LibrarySourcesPanel', () => {
   })
 
   it('counts failed lookups in the unreconciled summary', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = createTestQueryClient()
 
     render(
       <I18nProvider>
@@ -96,5 +97,34 @@ describe('LibrarySourcesPanel', () => {
     )
 
     expect(await screen.findByText(/9 unreconciled/i)).toBeInTheDocument()
+  })
+
+  it('shows a running source as syncing and disables the sync buttons', async () => {
+    const { getLibrarySources } = await import('@/web/lib/api')
+    vi.mocked(getLibrarySources).mockResolvedValueOnce({
+      sources: [
+        {
+          id: 1,
+          userId: 1,
+          source: 'lidarr',
+          lastSyncStartedAt: new Date().toISOString(),
+          lastSyncCompletedAt: null,
+          lastSyncStatus: 'running',
+          lastSyncError: null,
+          lastSyncCounts: null,
+        },
+      ],
+    })
+
+    render(
+      <I18nProvider>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <LibrarySourcesPanel />
+        </QueryClientProvider>
+      </I18nProvider>,
+    )
+
+    expect(await screen.findByRole('button', { name: /syncing/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /sync all/i })).toBeDisabled()
   })
 })

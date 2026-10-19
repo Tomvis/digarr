@@ -3,6 +3,7 @@
 // one pass.
 
 import { LIBRARY_BULK_IGNORE_LIMIT } from '@/core/library/types'
+import { buildCatalogPaths } from '@/server/helpers/openapi-routes'
 import { VERSION } from '@/version'
 
 const json = 'application/json'
@@ -59,13 +60,13 @@ function sessionResponse(description: string) {
   }
 }
 
-export const openapiDoc = {
+const baseDoc = {
   openapi: '3.1.0',
   info: {
     title: 'digarr API',
     version: VERSION,
     description:
-      'Backend API for Digarr. Central errors use RFC 9457 problem+json; route-specific JSON errors are documented per operation. Authentication is session-cookie OR `Authorization: Bearer <token>` per request.',
+      'Backend API for Digarr. This specification lists every route operation; docs/API.md remains the detailed contract where a response schema here is a loose object. REST error responses use RFC 9457 problem+json (`application/problem+json`); MCP protocol and tool errors keep their MCP shapes. Errors from routes that used to return `{error}` keep a deprecated `error` member with the same text as `detail`. Operations that need an admin account say "Admin only" in their description. Authentication is session-cookie OR `Authorization: Bearer <token>` per request; /api/v1/mcp accepts personal API tokens only.',
   },
   servers: [{ url: '/', description: 'Current deployment' }],
   components: {
@@ -103,31 +104,45 @@ export const openapiDoc = {
           title: { type: 'string' },
           status: { type: 'integer' },
           detail: { type: 'string' },
+          code: {
+            type: 'string',
+            description: 'Stable identifier: an i18n message key or a machine code.',
+          },
+          error: {
+            type: 'string',
+            deprecated: true,
+            description: 'Same text as detail, kept for clients written against {error} bodies.',
+          },
         },
         additionalProperties: true,
       },
       ValidationError: {
-        type: 'object',
-        required: ['error', 'code', 'details'],
-        properties: {
-          error: { type: 'string' },
-          code: { type: 'string', const: 'validation_failed' },
-          details: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['path', 'code', 'message'],
-              properties: {
-                path: {
-                  type: 'array',
-                  items: { oneOf: [{ type: 'string' }, { type: 'integer' }] },
+        allOf: [
+          { $ref: '#/components/schemas/Problem' },
+          {
+            type: 'object',
+            required: ['detail', 'code', 'details'],
+            properties: {
+              type: { type: 'string', const: '/problems/validation-failed' },
+              code: { type: 'string', const: 'validation_failed' },
+              details: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['path', 'code', 'message'],
+                  properties: {
+                    path: {
+                      type: 'array',
+                      items: { oneOf: [{ type: 'string' }, { type: 'integer' }] },
+                    },
+                    code: { type: 'string' },
+                    message: { type: 'string' },
+                  },
                 },
-                code: { type: 'string' },
-                message: { type: 'string' },
               },
             },
           },
-        },
+        ],
       },
       User: {
         type: 'object',
@@ -137,6 +152,13 @@ export const openapiDoc = {
           username: { type: 'string' },
           isAdmin: { type: 'boolean' },
           preferredLocale: { type: ['string', 'null'] },
+          approvalPolicy: {
+            type: 'string',
+            enum: ['direct', 'request_only', 'auto_approve'],
+            default: 'direct',
+          },
+          approvalThreshold: { type: ['number', 'null'], minimum: 0, maximum: 1 },
+          maxOpenRequests: { type: ['integer', 'null'], minimum: 0 },
         },
         additionalProperties: true,
       },
@@ -167,14 +189,6 @@ export const openapiDoc = {
         required: ['user'],
         properties: {
           user: { $ref: '#/components/schemas/User' },
-        },
-        additionalProperties: false,
-      },
-      ErrorResponse: {
-        type: 'object',
-        required: ['error'],
-        properties: {
-          error: { type: 'string' },
         },
         additionalProperties: false,
       },
@@ -236,6 +250,10 @@ export const openapiDoc = {
             },
           },
           lidarrError: { type: 'string' },
+          blockCreated: {
+            type: 'boolean',
+            description: 'Rejections only: true when this request created the permanent block.',
+          },
         },
         additionalProperties: true,
       },
@@ -285,15 +303,78 @@ export const openapiDoc = {
       },
       JobHealth: {
         type: 'object',
-        required: ['pipeline', 'subscriptions', 'playlists', 'librarySync', 'sources'],
+        required: [
+          'pipeline',
+          'subscriptions',
+          'playlists',
+          'librarySync',
+          'sources',
+          'integrations',
+        ],
         properties: {
           pipeline: { type: 'object', additionalProperties: true },
           subscriptions: { type: 'object', additionalProperties: true },
           playlists: { type: 'object', additionalProperties: true },
           librarySync: { type: 'object', additionalProperties: true },
           sources: { type: 'object', additionalProperties: true },
+          integrations: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/IntegrationHealth' },
+          },
         },
         additionalProperties: true,
+      },
+      IntegrationHealth: {
+        type: 'object',
+        required: [
+          'id',
+          'kind',
+          'name',
+          'label',
+          'owner',
+          'status',
+          'lastSuccess',
+          'lastError',
+          'itemFailures',
+        ],
+        properties: {
+          id: { type: 'string' },
+          label: { type: ['string', 'null'] },
+          owner: {
+            oneOf: [
+              { type: 'null' },
+              {
+                type: 'object',
+                required: ['id', 'username'],
+                properties: { id: { type: 'integer' }, username: { type: 'string' } },
+                additionalProperties: false,
+              },
+            ],
+          },
+          itemFailures: { type: 'integer', minimum: 0 },
+          kind: {
+            type: 'string',
+            enum: ['target', 'library', 'source', 'subscription', 'scrobbler'],
+          },
+          name: { type: 'string' },
+          status: { type: 'string', enum: ['ok', 'failing'] },
+          lastSuccess: { type: ['string', 'null'], format: 'date-time' },
+          lastError: {
+            oneOf: [
+              { type: 'null' },
+              {
+                type: 'object',
+                required: ['at', 'message'],
+                properties: {
+                  at: { type: 'string', format: 'date-time' },
+                  message: { type: ['string', 'null'] },
+                },
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+        additionalProperties: false,
       },
       ProbeSuccess: {
         type: 'object',
@@ -324,6 +405,21 @@ export const openapiDoc = {
           accountName: { type: 'string' },
         },
         additionalProperties: false,
+      },
+      CursorPage: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          meta: {
+            type: 'object',
+            required: ['limit', 'nextCursor'],
+            properties: {
+              limit: { type: 'integer' },
+              nextCursor: { type: ['string', 'null'] },
+            },
+          },
+        },
       },
       LibraryArtistIdentity: {
         type: 'object',
@@ -375,40 +471,18 @@ export const openapiDoc = {
       },
       LibraryUnreconciledArtistRow: {
         type: 'object',
-        required: [
-          'id',
-          'userId',
-          'source',
-          'sourceArtistId',
-          'name',
-          'nameNormalized',
-          'mbid',
-          'matchMethod',
-          'matchConfidence',
-          'unreconciledReason',
-          'genres',
-          'syncedAt',
-          'lastGapCheckAt',
-        ],
+        required: ['id', 'source', 'sourceArtistId', 'name', 'unreconciledReason'],
         properties: {
           id: { type: 'integer' },
-          userId: { type: ['integer', 'null'] },
           source: { type: 'string' },
           sourceArtistId: { type: 'string' },
           name: { type: 'string' },
-          nameNormalized: { type: 'string' },
-          mbid: { type: ['string', 'null'] },
-          matchMethod: { type: ['string', 'null'] },
-          matchConfidence: { type: ['number', 'null'] },
           unreconciledReason: {
             oneOf: [
               { type: 'string', enum: ['no_candidate', 'ambiguous', 'lookup_failed'] },
               { type: 'null' },
             ],
           },
-          genres: { type: ['array', 'null'], items: { type: 'string' } },
-          syncedAt: { type: 'string', format: 'date-time' },
-          lastGapCheckAt: { type: ['string', 'null'], format: 'date-time' },
         },
         additionalProperties: false,
       },
@@ -416,49 +490,34 @@ export const openapiDoc = {
         type: 'object',
         required: [
           'id',
-          'userId',
           'source',
-          'sourceArtistId',
           'sourceAlbumId',
           'title',
-          'titleNormalized',
-          'albumMbid',
-          'artistMbid',
           'primaryType',
           'releaseYear',
-          'matchMethod',
-          'matchConfidence',
           'unreconciledReason',
-          'syncedAt',
         ],
         properties: {
           id: { type: 'integer' },
-          userId: { type: ['integer', 'null'] },
           source: { type: 'string' },
-          sourceArtistId: { type: 'string' },
           sourceAlbumId: { type: 'string' },
           title: { type: 'string' },
-          titleNormalized: { type: 'string' },
-          albumMbid: { type: ['string', 'null'] },
-          artistMbid: { type: ['string', 'null'] },
           primaryType: { type: ['string', 'null'] },
           releaseYear: { type: ['integer', 'null'] },
-          matchMethod: { type: ['string', 'null'] },
-          matchConfidence: { type: ['number', 'null'] },
           unreconciledReason: {
             oneOf: [
               { type: 'string', enum: ['no_candidate', 'ambiguous', 'lookup_failed'] },
               { type: 'null' },
             ],
           },
-          syncedAt: { type: 'string', format: 'date-time' },
         },
         additionalProperties: false,
       },
       LibraryUnreconciledArtistList: {
         type: 'object',
-        required: ['items'],
+        required: ['items', 'total'],
         properties: {
+          total: { type: 'integer' },
           items: {
             type: 'array',
             items: { $ref: '#/components/schemas/LibraryUnreconciledArtistRow' },
@@ -468,8 +527,9 @@ export const openapiDoc = {
       },
       LibraryUnreconciledAlbumList: {
         type: 'object',
-        required: ['items'],
+        required: ['items', 'total'],
         properties: {
+          total: { type: 'integer' },
           items: {
             type: 'array',
             items: { $ref: '#/components/schemas/LibraryUnreconciledAlbumRow' },
@@ -513,7 +573,7 @@ export const openapiDoc = {
       ValidationFailed: {
         description: 'Request body or query failed schema validation.',
         content: {
-          'application/json': { schema: { $ref: '#/components/schemas/ValidationError' } },
+          [problemJson]: { schema: { $ref: '#/components/schemas/ValidationError' } },
         },
       },
       RateLimited: {
@@ -550,7 +610,6 @@ export const openapiDoc = {
         security: [],
         responses: {
           '200': { description: 'Auth status.', ...jsonSchema('#/components/schemas/AuthStatus') },
-          '400': problemResponse,
         },
       },
     },
@@ -580,7 +639,7 @@ export const openapiDoc = {
           '200': sessionResponse('Authenticated session.'),
           '400': {
             description: 'Missing credentials.',
-            ...jsonSchema('#/components/schemas/ErrorResponse'),
+            content: { [problemJson]: { schema: { $ref: '#/components/schemas/Problem' } } },
           },
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
@@ -621,7 +680,6 @@ export const openapiDoc = {
             description:
               'Registration is disabled after the first user by default; DIGARR_DISABLE_REGISTRATION=false reopens it. Browser CSRF rejection instead returns a Problem with type /problems/csrf-validation-failed.',
             content: {
-              [json]: { schema: { $ref: '#/components/schemas/ErrorResponse' } },
               [problemJson]: { schema: { $ref: '#/components/schemas/Problem' } },
             },
           },
@@ -651,7 +709,6 @@ export const openapiDoc = {
               },
             },
           },
-          '400': problemResponse,
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
           '409': {
@@ -743,27 +800,51 @@ export const openapiDoc = {
             description: 'Updated recommendation status.',
             ...jsonSchema('#/components/schemas/RecommendationUpdateResult'),
           },
+          '202': {
+            description: 'Approval queued for admin review without contacting targets.',
+            content: {
+              [json]: {
+                schema: {
+                  type: 'object',
+                  required: ['status', 'requestId', 'approvalRequest'],
+                  properties: {
+                    status: { type: 'string', const: 'requested' },
+                    requestId: { type: 'integer' },
+                    approvalRequest: { type: 'object' },
+                  },
+                },
+              },
+            },
+          },
+          '409': {
+            description: 'The user has reached their admin-set open-request limit.',
+            content: {
+              [problemJson]: { schema: { $ref: '#/components/schemas/Problem' } },
+            },
+          },
           '400': {
             description:
               'Invalid input, target selection, popularity lookup, or rejection payload.',
             content: {
-              [json]: {
+              [problemJson]: {
                 schema: {
                   anyOf: [
                     { $ref: '#/components/schemas/ValidationError' },
                     {
-                      type: 'object',
-                      required: ['error'],
-                      properties: {
-                        error: { type: 'string' },
-                        code: { type: 'string', enum: ['no_source', 'no_match'] },
-                      },
-                      additionalProperties: false,
+                      allOf: [
+                        { $ref: '#/components/schemas/Problem' },
+                        {
+                          type: 'object',
+                          properties: {
+                            code: { type: 'string', enum: ['no_source', 'no_match'] },
+                          },
+                        },
+                      ],
                     },
+                    { $ref: '#/components/schemas/Problem' },
                   ],
                 },
               },
-              [problemJson]: { schema: { $ref: '#/components/schemas/Problem' } },
             },
           },
           '401': unauthenticatedResponse,
@@ -831,6 +912,7 @@ export const openapiDoc = {
         tags: ['Jobs'],
         operationId: 'listJobs',
         summary: 'List job runs with offset pagination',
+        description: 'Admin only.',
         security: authSecurity,
         parameters: [
           {
@@ -859,7 +941,11 @@ export const openapiDoc = {
           { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
         ],
         responses: {
-          '200': { description: 'Job page.', ...jsonSchema('#/components/schemas/JobList') },
+          '200': {
+            description:
+              'Job summary page ordered by startedAt DESC, id DESC. Metadata contains description/counter fields only; sourceResults contain statuses only. Fetch job detail for full diagnostics.',
+            ...jsonSchema('#/components/schemas/JobList'),
+          },
           '400': validationResponse,
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
@@ -871,6 +957,7 @@ export const openapiDoc = {
         tags: ['Jobs'],
         operationId: 'getJob',
         summary: 'Get one job run',
+        description: 'Admin only.',
         security: authSecurity,
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
         responses: {
@@ -878,10 +965,7 @@ export const openapiDoc = {
           '400': validationResponse,
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
-          '404': {
-            description: 'Job not found.',
-            ...jsonSchema('#/components/schemas/ErrorResponse'),
-          },
+          '404': notFoundResponse,
         },
       },
     },
@@ -890,13 +974,13 @@ export const openapiDoc = {
         tags: ['Jobs'],
         operationId: 'getJobHealth',
         summary: 'Get job system health',
+        description: 'Admin only.',
         security: authSecurity,
         responses: {
           '200': {
             description: 'Job health summary.',
             ...jsonSchema('#/components/schemas/JobHealth'),
           },
-          '400': problemResponse,
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
         },
@@ -907,8 +991,22 @@ export const openapiDoc = {
         tags: ['Library'],
         operationId: 'listUnreconciledLibraryArtists',
         summary: 'List unreconciled library artists',
+        description: 'Admin only.',
         security: authSecurity,
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 500, default: 20 },
+          },
+          {
+            name: 'offset',
+            in: 'query',
+            schema: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER, default: 0 },
+          },
+        ],
         responses: {
+          '400': validationResponse,
           '200': {
             description: 'Unreconciled artist rows.',
             ...jsonSchema('#/components/schemas/LibraryUnreconciledArtistList'),
@@ -923,8 +1021,22 @@ export const openapiDoc = {
         tags: ['Library'],
         operationId: 'listUnreconciledLibraryAlbums',
         summary: 'List unreconciled library albums',
+        description: 'Admin only.',
         security: authSecurity,
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 500, default: 20 },
+          },
+          {
+            name: 'offset',
+            in: 'query',
+            schema: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER, default: 0 },
+          },
+        ],
         responses: {
+          '400': validationResponse,
           '200': {
             description: 'Unreconciled album rows.',
             ...jsonSchema('#/components/schemas/LibraryUnreconciledAlbumList'),
@@ -939,6 +1051,7 @@ export const openapiDoc = {
         tags: ['Library'],
         operationId: 'bulkIgnoreLibraryArtists',
         summary: 'Ignore unreconciled library artists',
+        description: 'Admin only.',
         security: unsafeAuthSecurity,
         requestBody: {
           required: true,
@@ -959,6 +1072,7 @@ export const openapiDoc = {
         tags: ['Library'],
         operationId: 'bulkIgnoreLibraryAlbums',
         summary: 'Ignore unreconciled library albums',
+        description: 'Admin only.',
         security: unsafeAuthSecurity,
         requestBody: {
           required: true,
@@ -1015,7 +1129,7 @@ export const openapiDoc = {
         operationId: 'testServiceConnection',
         summary: 'Test an external service connection',
         description:
-          'Send a JSON object ({} for saved credentials where supported). An absent payload currently returns 500. Where supported, non-empty connection and credential strings override saved values; empty strings reuse saved values, so probe success may validate the previous configuration. Plex sectionId and Jellyfin/Emby libraryId clear with an empty string (null falls back), while Plex accountId clears with null; Lidarr skipTlsVerify defaults to false rather than the saved setting, so send it explicitly when required. The TIDAL probe tests catalog credentials only; it does not validate experimental per-user authorization, token refresh, or favorite-artist retrieval, which remain unverified against a live account.',
+          'Admin only, except probing your own Plex connection. Send a JSON object ({} for saved credentials where supported); a missing, malformed, or non-object payload returns 400 problem+json before saved credentials are read. Where supported, non-empty connection and credential strings override saved values; empty strings reuse saved values, so probe success may validate the previous configuration. Plex sectionId and Jellyfin/Emby libraryId clear with an empty string (null falls back), while Plex accountId clears with null. AudioMuse-AI accepts url, optional token, and skipTlsVerify; omitted fields use saved values, a masked token preserves the saved token, an empty token sends no Bearer header, and an empty URL is rejected. It probes /api/version for authentication and reachability, not index readiness. Lidarr skipTlsVerify uses the saved setting when omitted (false when none is saved); send it explicitly to override, and send a boolean. The TIDAL probe tests catalog credentials only; it does not validate experimental per-user authorization, token refresh, or favorite-artist retrieval, which remain unverified against a live account.',
         security: unsafeAuthSecurity,
         parameters: [{ name: 'service', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: { required: true, content: { [json]: { schema: { type: 'object' } } } },
@@ -1028,7 +1142,7 @@ export const openapiDoc = {
           '401': unauthenticatedResponse,
           '403': forbiddenResponse,
           '500': {
-            description: 'Missing JSON payload or an unexpected probe failure.',
+            description: 'Unexpected probe failure.',
             content: { [problemJson]: { schema: { $ref: '#/components/schemas/Problem' } } },
           },
           '502': { $ref: '#/components/responses/ProbeFailed' },
@@ -1037,3 +1151,8 @@ export const openapiDoc = {
     },
   },
 } as const
+
+export const openapiDoc = {
+  ...baseDoc,
+  paths: { ...buildCatalogPaths(baseDoc.paths), ...baseDoc.paths },
+}

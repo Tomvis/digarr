@@ -14,13 +14,37 @@ const FIX_HINT_KEYS: Record<string, MessageKey> = {
   'missing-wikidata': 'libraryHealth.fixHint.missingWikidata',
 }
 
-// Per-check i18n keys used by the (future) localised overrides of the backend's
-// hardcoded English CHECK_META.name/description strings. Referenced here so the
-// i18n-check orphan detector sees them.
-export const HEALTH_CHECK_I18N_KEYS = [
-  'libraryHealth.artistsMissingWikidata.title',
-  'libraryHealth.artistsMissingWikidata.description',
-] as const
+// The server sends English CHECK_META text; translate by check id and fall back to it.
+const CHECK_TEXT_KEYS: Record<string, { name: MessageKey; description: MessageKey }> = {
+  'missing-metadata': {
+    name: 'libraryHealth.check.missingMetadata.name',
+    description: 'libraryHealth.check.missingMetadata.description',
+  },
+  unmonitored: {
+    name: 'libraryHealth.check.unmonitored.name',
+    description: 'libraryHealth.check.unmonitored.description',
+  },
+  'missing-albums': {
+    name: 'libraryHealth.check.missingAlbums.name',
+    description: 'libraryHealth.check.missingAlbums.description',
+  },
+  'duplicate-artists': {
+    name: 'libraryHealth.check.duplicateArtists.name',
+    description: 'libraryHealth.check.duplicateArtists.description',
+  },
+  'genre-gaps': {
+    name: 'libraryHealth.check.genreGaps.name',
+    description: 'libraryHealth.check.genreGaps.description',
+  },
+  'image-gaps': {
+    name: 'libraryHealth.check.imageGaps.name',
+    description: 'libraryHealth.check.imageGaps.description',
+  },
+  'missing-wikidata': {
+    name: 'libraryHealth.artistsMissingWikidata.title',
+    description: 'libraryHealth.artistsMissingWikidata.description',
+  },
+}
 
 const CHECK_ICONS: Record<string, React.ReactNode> = {
   'missing-metadata': <Search size={16} className="text-muted shrink-0" />,
@@ -32,8 +56,12 @@ const CHECK_ICONS: Record<string, React.ReactNode> = {
   'missing-wikidata': <BookOpen size={16} className="text-muted shrink-0" />,
 }
 
-function severitySurfaceClass(severity: HealthCheckResult['severity']): string {
+type Tone = HealthCheckResult['severity'] | 'healthy'
+
+function severitySurfaceClass(severity: Tone): string {
   switch (severity) {
+    case 'healthy':
+      return 'border-approve/30 bg-approve/5'
     case 'error':
       return 'border-reject/30 bg-reject/5'
     case 'warning':
@@ -43,8 +71,10 @@ function severitySurfaceClass(severity: HealthCheckResult['severity']): string {
   }
 }
 
-function severityDotClass(severity: HealthCheckResult['severity']): string {
+function severityDotClass(severity: Tone): string {
   switch (severity) {
+    case 'healthy':
+      return 'bg-approve'
     case 'error':
       return 'bg-reject'
     case 'warning':
@@ -54,14 +84,16 @@ function severityDotClass(severity: HealthCheckResult['severity']): string {
   }
 }
 
-function severityBadgeClass(severity: HealthCheckResult['severity']): string {
+function severityBadgeClass(severity: Tone): string {
   switch (severity) {
+    case 'healthy':
+      return 'bg-approve/15 text-approve'
     case 'error':
-      return 'bg-reject/15 text-reject'
+      return 'bg-reject/5 text-reject'
     case 'warning':
       return 'bg-warning/15 text-warning'
     case 'info':
-      return 'bg-accent/15 text-accent'
+      return 'bg-accent/5 text-accent-text'
   }
 }
 
@@ -82,28 +114,31 @@ export function HealthCheckCard({ check, onFix, fixing, lidarrBaseUrl }: Props) 
     ? check.items
     : check.items.slice(0, PREVIEW_COUNT)
   const hasMore = check.items.length > PREVIEW_COUNT
-  const fixDisabled = fixing || check.count === 0 || !check.fixable
+  const healthy = check.count === 0
+  const tone: Tone = healthy ? 'healthy' : check.severity
+  const fixDisabled = fixing || !check.fixable
   const fixHintKey = FIX_HINT_KEYS[check.id]
+  const textKeys = CHECK_TEXT_KEYS[check.id]
 
   return (
-    <div
-      className={`border ${severitySurfaceClass(check.severity)} rounded-lg p-4 flex flex-col gap-3`}
-    >
+    <div className={`border ${severitySurfaceClass(tone)} rounded-lg p-4 flex flex-col gap-3`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-text flex items-center gap-1.5">
             <span
               aria-hidden="true"
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${severityDotClass(check.severity)}`}
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${severityDotClass(tone)}`}
             />
             {CHECK_ICONS[check.id]}
-            {check.name}
+            {textKeys ? t(textKeys.name) : check.name}
           </p>
-          <p className="text-xs text-muted mt-0.5">{check.description}</p>
+          <p className="text-xs text-muted mt-0.5">
+            {textKeys ? t(textKeys.description) : check.description}
+          </p>
         </div>
         <span
-          className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${severityBadgeClass(check.severity)}`}
+          className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${severityBadgeClass(tone)}`}
         >
           {check.count}
         </span>
@@ -122,7 +157,7 @@ export function HealthCheckCard({ check, onFix, fixing, lidarrBaseUrl }: Props) 
                   href={`${lidarrBaseUrl.replace(/\/$/, '')}/artist/${item.mbid}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-medium text-accent underline truncate"
+                  className="font-medium text-accent-text underline truncate"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {item.artistName}
@@ -142,7 +177,7 @@ export function HealthCheckCard({ check, onFix, fixing, lidarrBaseUrl }: Props) 
       {hasMore && (
         <button
           type="button"
-          className="text-xs text-accent underline text-left w-fit"
+          className="text-xs text-accent-text underline text-left w-fit"
           onClick={() => setExpanded((v) => !v)}
         >
           {expanded
@@ -152,7 +187,7 @@ export function HealthCheckCard({ check, onFix, fixing, lidarrBaseUrl }: Props) 
       )}
 
       {/* Fix button + hint */}
-      {check.fixable && (
+      {check.fixable && !healthy && (
         <div className="pt-1 space-y-1.5">
           {fixHintKey && <p className="text-xs text-muted italic">{t(fixHintKey)}</p>}
           <Button

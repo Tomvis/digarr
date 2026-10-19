@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { remoteDirectory, splitRemotePath } from '@/core/slskd/shared'
 import type { ServiceTestResult } from '@/core/types'
 import { errMsg } from '@/core/validation'
 import { createHttpClient } from './http'
@@ -20,6 +21,9 @@ export type SlskdSearchResult = {
   size: number
   bitrate?: number
   extension?: string
+  hasFreeUploadSlot?: boolean
+  queueLength?: number
+  uploadSpeed?: number
 }
 
 export type SlskdTransferFile = {
@@ -53,6 +57,9 @@ export type SlskdEnqueueResponse = {
 type SlskdSearchResponse = {
   username?: unknown
   files?: unknown
+  hasFreeUploadSlot?: unknown
+  queueLength?: unknown
+  uploadSpeed?: unknown
 }
 
 export const SLSKD_MAX_RELEASE_FILES = 500
@@ -81,14 +88,6 @@ function asSearchFile(value: unknown): SlskdSearchFile | null {
   }
 }
 
-function splitRemotePath(filename: string): string[] {
-  return filename.split(/[\\/]+/).filter(Boolean)
-}
-
-function remoteDirectory(filename: string): string {
-  return splitRemotePath(filename).slice(0, -1).join('\\')
-}
-
 function isDiscDirectory(name: string): boolean {
   return /^(?:cd|disc|disk|part)\s*[-_.]?\s*\d+$/i.test(name.trim())
 }
@@ -111,6 +110,20 @@ function releaseLabel(directory: string): string {
   if (/\s[-–—]\s/.test(title)) return title
   const artist = parts.at(-2)
   return artist ? `${artist} - ${title}` : title
+}
+
+function asPeerStats(
+  response: SlskdSearchResponse,
+): Pick<SlskdSearchResult, 'hasFreeUploadSlot' | 'queueLength' | 'uploadSpeed'> {
+  const finite = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+  return {
+    ...(typeof response.hasFreeUploadSlot === 'boolean'
+      ? { hasFreeUploadSlot: response.hasFreeUploadSlot }
+      : {}),
+    ...(finite(response.queueLength) ? { queueLength: response.queueLength } : {}),
+    ...(finite(response.uploadSpeed) ? { uploadSpeed: response.uploadSpeed } : {}),
+  }
 }
 
 function mapSearchResponses(raw: unknown): SlskdSearchResult[] {
@@ -171,6 +184,7 @@ function mapSearchResponses(raw: unknown): SlskdSearchResult[] {
         directories: sourceDirectory ? [sourceDirectory] : [],
         files: [file],
         size: file.size,
+        ...asPeerStats(response),
       })
     }
   }
@@ -254,6 +268,12 @@ export function createSlskdClient(url: string, apiKey: string, skipTlsVerify = f
     return http.post('/api/v0/searches', { searchText: queryText })
   }
 
+  async function isSearchComplete(searchId: string): Promise<boolean> {
+    const search = await http.get<Record<string, unknown>>(`/api/v0/searches/${searchId}`)
+    if (typeof search.isComplete === 'boolean') return search.isComplete
+    return typeof search.state === 'string' && search.state.includes('Completed')
+  }
+
   async function getSearchResults(searchId: string): Promise<SlskdSearchResult[]> {
     const raw = await http.get<unknown>(`/api/v0/searches/${searchId}/responses`)
     return mapSearchResponses(raw)
@@ -283,6 +303,7 @@ export function createSlskdClient(url: string, apiKey: string, skipTlsVerify = f
   return {
     testConnection,
     createSearch,
+    isSearchComplete,
     getSearchResults,
     enqueueResult,
     getDownloads,

@@ -6,6 +6,9 @@ vi.mock('@/core/clients/lidarr', () => ({
 }))
 
 const { createLidarrClient } = await import('@/core/clients/lidarr')
+const { resolveLidarrTargetDefaults, normalizeLidarrTargetConfig } = await import(
+  '@/core/targets/lidarr-connection'
+)
 const { createLidarrTarget } = await import('@/core/targets/lidarr')
 
 function mockLidarrClient() {
@@ -22,16 +25,41 @@ function mockLidarrClient() {
 }
 
 describe('createLidarrTarget()', () => {
-  it('has correct id, type, and capabilities', () => {
-    mockLidarrClient()
-    const target = createLidarrTarget(1, {
-      url: 'http://lidarr:8686',
-      apiKey: 'abc',
-    })
-    expect(target.type).toBe('lidarr')
-    expect(target.capabilities).toContain('addArtist')
-    expect(target.id).toBe('lidarr-1')
-  })
+  it.each([true, false])(
+    'keeps target tag defaults and scopes overrides (reference=%s)',
+    async (reference) => {
+      const client = mockLidarrClient()
+      const stored = normalizeLidarrTargetConfig({
+        ...(reference ? { useServerConnection: true } : { url: 'http://other', apiKey: 'k' }),
+        tags: [3],
+      })
+      expect(stored.tags).toEqual([3])
+      const target = createLidarrTarget(1, {
+        url: 'http://instance',
+        apiKey: 'k',
+        ...resolveLidarrTargetDefaults(stored, {}),
+      })
+      for (const [options, tags] of [
+        [undefined, [3]],
+        [{ tags: [7], lidarrOptionsTargetId: 'lidarr-1' }, [7]],
+        [{ tags: [], lidarrOptionsTargetId: 'lidarr-1' }, []],
+        [{ tags: [7], lidarrOptionsTargetId: 'lidarr-2' }, [3]],
+      ] as const) {
+        await target.addArtist?.(
+          { mbid: 'mbid', name: 'Artist' },
+          options ? { ...options, tags: [...options.tags] } : undefined,
+        )
+        expect(client.addArtist).toHaveBeenLastCalledWith(
+          'mbid',
+          'Artist',
+          undefined,
+          undefined,
+          undefined,
+          { monitorOption: 'none', tags },
+        )
+      }
+    },
+  )
 
   it('addArtist calls lidarr.addArtist with correct params', async () => {
     const client = mockLidarrClient()
@@ -87,9 +115,16 @@ describe('createLidarrTarget()', () => {
     )
 
     expect(result?.success).toBe(true)
-    expect(client.addArtist).toHaveBeenCalledWith('mbid-rh', 'Radiohead', 1, 1, undefined, {
-      monitorOption: 'none',
-    })
+    expect(client.addArtist).toHaveBeenCalledWith(
+      'mbid-rh',
+      'Radiohead',
+      undefined,
+      undefined,
+      undefined,
+      {
+        monitorOption: 'none',
+      },
+    )
     expect(client.setAlbumsMonitored).toHaveBeenCalledWith([10], true)
     // The monitored album must also be searched, otherwise it is never grabbed.
     expect(client.triggerCommand).toHaveBeenCalledWith('AlbumSearch', { albumIds: [10] })
@@ -192,13 +227,85 @@ describe('createLidarrTarget()', () => {
     }
   })
 
-  it('testConnection delegates to lidarr client', async () => {
-    mockLidarrClient()
+  it('ignores profile picks scoped to a different Lidarr target', async () => {
+    const client = mockLidarrClient()
     const target = createLidarrTarget(1, {
       url: 'http://lidarr:8686',
       apiKey: 'abc',
+      qualityProfileId: 2,
     })
-    const result = await target.testConnection()
-    expect(result.success).toBe(true)
+
+    await target.addArtist?.(
+      { mbid: 'mbid-rh', name: 'Radiohead' },
+      {
+        qualityProfileId: 9,
+        metadataProfileId: 9,
+        rootFolderId: 9,
+        lidarrOptionsTargetId: 'lidarr-5',
+      },
+    )
+    expect(client.addArtist).toHaveBeenLastCalledWith(
+      'mbid-rh',
+      'Radiohead',
+      2,
+      undefined,
+      undefined,
+      {
+        monitorOption: 'none',
+      },
+    )
+
+    await target.addArtist?.(
+      { mbid: 'mbid-rh', name: 'Radiohead' },
+      {
+        qualityProfileId: 9,
+        metadataProfileId: 8,
+        rootFolderId: 7,
+        lidarrOptionsTargetId: 'lidarr-1',
+      },
+    )
+    expect(client.addArtist).toHaveBeenLastCalledWith('mbid-rh', 'Radiohead', 9, 8, 7, {
+      monitorOption: 'none',
+    })
   })
+
+  it('fails loudly when the server connection it references is not configured', async () => {
+    vi.mocked(createLidarrClient).mockClear()
+    const target = createLidarrTarget(1, {})
+    const result = await target.addArtist?.({ mbid: 'mbid-rh', name: 'Radiohead' })
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/not configured/) })
+    expect((await target.testConnection()).success).toBe(false)
+    expect(createLidarrClient).not.toHaveBeenCalled()
+  })
+})
+
+it('reuses an artist accepted before a disconnected response', async () => {
+  const client = { ...mockLidarrClient(), findArtistByMbid: vi.fn().mockResolvedValue({ id: 42 }) }
+  vi.mocked(createLidarrClient).mockReturnValue(client as never)
+  const target = createLidarrTarget(1, { url: 'http://lidarr', apiKey: 'key' })
+  expect(
+    await target.addArtist?.({ mbid: 'mbid', name: 'Artist' }, { retryExisting: true }),
+  ).toMatchObject({ success: true, externalId: 42 })
+  expect(client.findArtistByMbid).toHaveBeenCalledWith('mbid')
+  expect(client.addArtist).not.toHaveBeenCalled()
+})
+
+it('retries a failed album search at job level while reusing the existing artist and album', async () => {
+  const client = { ...mockLidarrClient(), findArtistByMbid: vi.fn().mockResolvedValue({ id: 42 }) }
+  client.getAlbums.mockResolvedValue([{ id: 80, foreignAlbumId: 'rg-1', monitored: true }] as never)
+  vi.mocked(createLidarrClient).mockReturnValue(client as never)
+  const target = createLidarrTarget(1, { url: 'http://lidarr', apiKey: 'key' })
+  client.triggerCommand.mockRejectedValueOnce(new Error('HTTP 503: unavailable'))
+  expect(
+    await target.addAlbum?.({ artistMbid: 'mbid', artistName: 'Artist', releaseGroupMbid: 'rg-1' }),
+  ).toMatchObject({ success: false, error: 'HTTP 503: unavailable' })
+  expect(
+    await target.addAlbum?.(
+      { artistMbid: 'mbid', artistName: 'Artist', releaseGroupMbid: 'rg-1' },
+      { retryExisting: true },
+    ),
+  ).toMatchObject({ success: true, externalId: 80 })
+  expect(client.addArtist).not.toHaveBeenCalled()
+  expect(client.triggerCommand).toHaveBeenCalledTimes(2)
+  expect(client.setAlbumsMonitored).toHaveBeenCalledWith([80], true)
 })

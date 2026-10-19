@@ -214,6 +214,16 @@ describe('buildDatabaseUrl', () => {
     expect(buildDatabaseUrl()).toBe('postgresql://a:b@host:5432/mydb')
   })
 
+  it.each([
+    ['::1', '[::1]'],
+    ['[::1]', '[::1]'],
+    ['db.local', 'db.local'],
+  ])('brackets only bare IPv6 DB_HOST (%s)', async (host, expected) => {
+    setEnv({ DB_HOST: host, DB_USER: 'u', DB_NAME: 'd' })
+    const { buildDatabaseUrl } = await import('@/config/env')
+    expect(buildDatabaseUrl()).toBe(`postgresql://u@${expected}:5432/d`)
+  })
+
   it('builds URL from individual DB_* vars', async () => {
     setEnv({ DB_HOST: 'myhost', DB_USER: 'usr', DB_PASS: 'pw', DB_NAME: 'testdb', DB_PORT: '5433' })
     const { buildDatabaseUrl } = await import('@/config/env')
@@ -404,5 +414,33 @@ describe('canAutoSetup', () => {
   it('returns false when nothing is set', async () => {
     const { canAutoSetup } = await import('@/config/env')
     expect(canAutoSetup()).toBe(false)
+  })
+})
+
+describe('boolean env parsing', () => {
+  beforeEach(() => vi.resetModules())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it.each([
+    ['TRUE', true],
+    ['True', true],
+    ['1', true],
+    [' true ', true],
+    ['FALSE', false],
+    ['0', false],
+  ])('parses %j as %s', async (raw, expected) => {
+    vi.stubEnv('DIGARR_DISABLE_REGISTRATION', raw)
+    const { envConfig } = await import('@/config/env')
+    expect(envConfig.disableRegistration).toBe(expected)
+  })
+
+  it.each(['yes', 'off', 'enabled'])('fails boot on %j', async (raw) => {
+    vi.stubEnv('DIGARR_DISABLE_REGISTRATION', raw)
+    await expect(import('@/config/env')).rejects.toThrow(
+      /^DIGARR_DISABLE_REGISTRATION must be true, false, 1, or 0$/,
+    )
   })
 })

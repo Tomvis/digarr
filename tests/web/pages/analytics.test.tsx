@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
 function renderWithQuery(ui: ReactElement) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const client = createTestQueryClient()
   return render(
     <I18nProvider>
       <QueryClientProvider client={client}>{ui}</QueryClientProvider>
@@ -33,39 +31,15 @@ vi.mock('@/web/lib/api', () => ({
   getTimeToAct: vi.fn().mockResolvedValue([]),
 }))
 
-import { getAnalyticsBatches } from '@/web/lib/api'
+import { getAnalyticsBatches, getAnalyticsOverview } from '@/web/lib/api'
 import { AnalyticsPage } from '@/web/pages/analytics'
+import { createTestQueryClient } from '../helpers/query'
+import { installMemoryLocalStorage } from '../helpers/storage'
 
 describe('AnalyticsPage', () => {
   beforeEach(() => {
     vi.mocked(getAnalyticsBatches).mockResolvedValue([])
-    const storage = new Map<string, string>()
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: vi.fn((key: string) => storage.get(key) ?? null),
-        setItem: vi.fn((key: string, value: string) => {
-          storage.set(key, value)
-        }),
-        removeItem: vi.fn((key: string) => {
-          storage.delete(key)
-        }),
-        clear: vi.fn(() => {
-          storage.clear()
-        }),
-      },
-    })
-  })
-
-  it('renders translated analytics intro copy in French', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    renderWithQuery(<AnalyticsPage />)
-
-    expect(
-      await screen.findByText(
-        'Suivez les performances de votre pipeline de découverte au fil du temps. Des taux d’approbation plus élevés signifient que Digarr apprend bien vos goûts.',
-      ),
-    ).toBeInTheDocument()
+    installMemoryLocalStorage()
   })
 
   it('gives each discovery chart column the full chart height', async () => {
@@ -87,5 +61,33 @@ describe('AnalyticsPage', () => {
     const column = await screen.findByTitle(/10 recs \(4 approved\)/)
     expect(column).toHaveClass('h-full')
     expect(column.querySelectorAll('[style*="height"]')).toHaveLength(2)
+  })
+
+  it('keeps the diagnostic charts in a collapsed More charts section and remembers it opened', async () => {
+    const first = renderWithQuery(<AnalyticsPage />)
+    const toggle = await screen.findByRole('button', { name: 'More charts' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('Discovery Over Time')).toBeVisible()
+    expect(screen.getByText('Score Distribution')).not.toBeVisible()
+
+    fireEvent.click(toggle)
+    expect(screen.getByText('Score Distribution')).toBeVisible()
+    first.unmount()
+
+    renderWithQuery(<AnalyticsPage />)
+    expect(await screen.findByRole('button', { name: 'More charts' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+  })
+})
+
+describe('AnalyticsPage load errors', () => {
+  it('shows an error notice and no fabricated zeros when the overview fails', async () => {
+    vi.mocked(getAnalyticsOverview).mockRejectedValueOnce(new Error('403'))
+    renderWithQuery(<AnalyticsPage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Some analytics couldn't be loaded.")
+    expect(screen.getAllByText('N/A').length).toBeGreaterThanOrEqual(4)
   })
 })

@@ -19,19 +19,27 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(2)}s`
 }
 
+const STATIC_PREFIXES = ['/assets/', '/icon', '/theme-init.js', '/theme-boot.js', '/fonts/']
+const STATIC_FILE = /\.(?:js|css|map|woff2?|ttf|otf|png|jpe?g|svg|ico|webp|webmanifest)$/
+
+function isStaticPath(path: string): boolean {
+  return (
+    !path.startsWith('/api/') &&
+    (STATIC_PREFIXES.some((p) => path.startsWith(p)) || STATIC_FILE.test(path))
+  )
+}
+
 export function requestLogger(): MiddlewareHandler {
   return async (c, next) => {
     const path = c.req.path
-    // Skip health check noise from k8s/container probes
-    if (path === '/health') {
+    // Skip health probes and static file noise
+    if (path === '/health' || isStaticPath(path)) {
       await next()
       return
     }
 
     const start = Date.now()
     const method = c.req.method
-    // Strip token query params from logged path to avoid leaking session tokens
-    const logPath = path.replace(/([?&])token=[^&]*/g, '$1token=***')
 
     await next()
 
@@ -47,7 +55,7 @@ export function requestLogger(): MiddlewareHandler {
     const contentLength = c.res.headers.get('content-length')
     const size = contentLength ? ` ${DIM}${contentLength}b${RESET}` : ''
 
-    const msg = `${DIM}${timestamp()}${RESET} ${method} ${logPath} ${statusStr} ${durationStr}${size}`
+    const msg = `${DIM}${timestamp()}${RESET} ${method} ${path} ${statusStr} ${durationStr}${size}`
 
     if (level === 'error') {
       console.error(msg)

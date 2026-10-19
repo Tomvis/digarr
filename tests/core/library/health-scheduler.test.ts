@@ -56,13 +56,18 @@ describe('startLibraryHealthScheduler', () => {
       cron = startLibraryHealthScheduler({
         intervalHours: 6,
         libraryHealth: health,
+        isConfigured: async () => true,
       })
     }).not.toThrow()
   })
 
   it('runs the scan when MusicBrainz has headroom', async () => {
     const health = makeMockHealth()
-    cron = startLibraryHealthScheduler({ intervalHours: 6, libraryHealth: health })
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => true,
+    })
 
     await cron.trigger()
 
@@ -72,7 +77,11 @@ describe('startLibraryHealthScheduler', () => {
   it('skips the tick while the MusicBrainz circuit breaker is armed', async () => {
     deferral.value = 'MusicBrainz circuit breaker armed for another 9m'
     const health = makeMockHealth()
-    cron = startLibraryHealthScheduler({ intervalHours: 6, libraryHealth: health })
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => true,
+    })
 
     await cron.trigger()
 
@@ -84,7 +93,11 @@ describe('startLibraryHealthScheduler', () => {
   it('skips the tick while the MusicBrainz budget is depleted', async () => {
     deferral.value = 'MusicBrainz budget depleted (33/1200), window resets in 45s'
     const health = makeMockHealth()
-    cron = startLibraryHealthScheduler({ intervalHours: 6, libraryHealth: health })
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => true,
+    })
 
     await cron.trigger()
 
@@ -95,7 +108,11 @@ describe('startLibraryHealthScheduler', () => {
   it('still skips for maintenance, and says so', async () => {
     setMaintenance(true)
     const health = makeMockHealth()
-    cron = startLibraryHealthScheduler({ intervalHours: 6, libraryHealth: health })
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => true,
+    })
 
     await cron.trigger()
 
@@ -106,7 +123,11 @@ describe('startLibraryHealthScheduler', () => {
   it('resumes scanning once the deferral clears', async () => {
     deferral.value = 'MusicBrainz circuit breaker armed for another 9m'
     const health = makeMockHealth()
-    cron = startLibraryHealthScheduler({ intervalHours: 6, libraryHealth: health })
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => true,
+    })
 
     await cron.trigger()
     expect(health.startScan).not.toHaveBeenCalled()
@@ -114,5 +135,19 @@ describe('startLibraryHealthScheduler', () => {
     deferral.value = null
     await cron.trigger()
     expect(health.startScan).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [true, 1],
+    [false, 0],
+  ])('scans on a tick only when Lidarr is configured (%s)', async (configured, scans) => {
+    const health = makeMockHealth()
+    cron = startLibraryHealthScheduler({
+      intervalHours: 6,
+      libraryHealth: health,
+      isConfigured: async () => configured,
+    })
+    await cron.trigger()
+    expect(health.startScan).toHaveBeenCalledTimes(scans)
   })
 })

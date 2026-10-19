@@ -38,5 +38,31 @@ export function useHints() {
     [dismissedHints, queryClient],
   )
 
-  return { isHintDismissed, dismissHint, loaded: isSuccess }
+  const resetHints = useCallback(async () => {
+    const previous = dismissedHints
+    queryClient.setQueryData(['user-preferences'], (old: Record<string, unknown> | undefined) => ({
+      ...(old ?? {}),
+      dismissedHints: [],
+    }))
+    try {
+      await updateUserPreferences({ dismissedHints: [] })
+    } catch (error) {
+      queryClient.setQueryData(
+        ['user-preferences'],
+        (old: Record<string, unknown> | undefined) => ({
+          ...(old ?? {}),
+          dismissedHints: previous,
+        }),
+      )
+      throw error
+    }
+  }, [dismissedHints, queryClient])
+
+  return {
+    isHintDismissed,
+    dismissHint,
+    resetHints,
+    dismissedCount: dismissedHints.length,
+    loaded: isSuccess,
+  }
 }

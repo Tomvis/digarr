@@ -1,12 +1,5 @@
-import * as dns from 'node:dns/promises'
-import { isIP } from 'node:net'
-import {
-  formatUrlHostname,
-  getLookupHostname,
-  isPrivateIp,
-  isPrivateUrl,
-  normalizeIp,
-} from '@/core/validation'
+import { BlockedTargetError, type GuardedInit, guardedFetch } from '@/core/net/guarded-fetch'
+import { sleep } from '@/core/sleep'
 
 const REDACTED_QUERY_VALUE = '[REDACTED]'
 const SENSITIVE_QUERY_KEYS = new Set([
@@ -21,6 +14,8 @@ const SENSITIVE_QUERY_KEYS = new Set([
   'auth_token',
   'signature',
   'sig',
+  'api_sig',
+  'sk',
   // Subsonic auth params: 't' is md5(password+salt), 's' is the salt.
   // Logging both would expose an offline-brute-forceable credential.
   't',
@@ -45,7 +40,6 @@ export type HttpRequestOptions = {
 
 export function createHttpClient(config: HttpClientConfig) {
   const {
-    baseUrl,
     headers = {},
     timeout = 10_000,
     retries = 3,
@@ -54,45 +48,55 @@ export function createHttpClient(config: HttpClientConfig) {
     followRedirects = false,
     onRequest,
   } = config
+  const baseUrl = config.baseUrl.replace(/\/+$/, '')
 
   async function send(
     method: string,
     path: string,
     body?: unknown,
     options: HttpRequestOptions = {},
-  ): Promise<Response> {
+  ): Promise<{ status: number; text: string }> {
     const url = `${baseUrl}${path}`
-    const maxRetries = options.retries ?? retries
+    // Retrying a non-idempotent call (command, enqueue, add) can run it twice.
+    const maxRetries = options.retries ?? (RETRYABLE_METHODS.has(method) ? retries : 0)
     const requestTimeout = options.timeout ?? timeout
     onRequest?.(method, url)
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), requestTimeout)
+      let delayMs: number
 
       try {
-        const prepared = await prepareRequest(
-          url,
-          {
-            method,
-            headers: {
-              'Content-Type': 'application/json',
-              ...headers,
-            },
-            body: body ? JSON.stringify(body) : undefined,
-            signal: controller.signal,
-          },
-          {
-            publicIpOnly,
-            followRedirects,
-            skipTlsVerify,
-          },
-        )
+        const init: GuardedInit = {
+          method,
+          headers: new Headers({
+            'Content-Type':
+              body instanceof URLSearchParams
+                ? 'application/x-www-form-urlencoded'
+                : 'application/json',
+            ...headers,
+          }),
+          body:
+            body instanceof URLSearchParams
+              ? body.toString()
+              : body
+                ? JSON.stringify(body)
+                : undefined,
+          signal: controller.signal,
+          ...(skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
+        }
+        // Private-network services (Lidarr, media servers on the LAN) are reached unguarded;
+        // publicIpOnly clients get the resolve-and-pin guard on every hop.
+        const res = publicIpOnly
+          ? await guardedFetch(url, init, { maxRedirects: followRedirects ? MAX_REDIRECTS : 0 })
+          : await fetch(url, {
+              ...init,
+              redirect: followRedirects ? 'follow' : 'manual',
+            } as RequestInit)
 
-        const res = await fetch(prepared.url, prepared.init)
-
-        clearTimeout(timer)
-        if (res.ok) return res
+        // The timer stays armed through the body read so a stalled body cannot hang the caller.
+        if (res.ok) return { status: res.status, text: await res.text() }
 
         if (!followRedirects && res.status >= 300 && res.status < 400) {
           const location = res.headers.get('location')
@@ -104,21 +108,16 @@ export function createHttpClient(config: HttpClientConfig) {
         }
 
         const errorBody = await readResponseText(res)
-        if (res.status >= 400 && res.status < 500) {
+        const retryable = res.status === 429 || res.status >= 500
+        if (!retryable || attempt >= maxRetries) {
           throw new HttpError(res.status, errorBody, url)
         }
-        if (attempt >= maxRetries) {
-          throw new HttpError(res.status, errorBody, url)
-        }
+        delayMs =
+          (res.status === 429 ? parseRetryAfterMs(res.headers.get('retry-after')) : null) ??
+          backoffMs(attempt)
       } catch (err: unknown) {
-        clearTimeout(timer)
-        if (err instanceof HttpError) {
-          if (err.status >= 500 && attempt < maxRetries) {
-            await sleep(2 ** attempt * 500)
-            continue
-          }
-          throw err
-        }
+        // A blocked target fails the same way on every attempt.
+        if (err instanceof HttpError || err instanceof BlockedTargetError) throw err
         if (attempt >= maxRetries) {
           // A bare AbortError reads as "This operation was aborted", which tells
           // the user nothing about which budget they blew or that it is tunable.
@@ -127,8 +126,12 @@ export function createHttpClient(config: HttpClientConfig) {
           }
           throw err
         }
-        await sleep(2 ** attempt * 500)
+        delayMs = backoffMs(attempt)
+      } finally {
+        clearTimeout(timer)
       }
+
+      await sleep(delayMs)
     }
 
     throw new Error(`Request failed after ${maxRetries} retries: ${method} ${redactUrlForLog(url)}`)
@@ -141,15 +144,14 @@ export function createHttpClient(config: HttpClientConfig) {
     options: HttpRequestOptions = {},
   ): Promise<T> {
     const url = `${baseUrl}${path}`
-    const res = await send(method, path, body, options)
-    const text = await res.text()
+    const { status, text } = await send(method, path, body, options)
     if (!text) {
-      throw new HttpError(res.status, 'Expected JSON response body', url)
+      throw new HttpError(status, 'Expected JSON response body', url)
     }
     try {
       return JSON.parse(text) as T
     } catch {
-      throw new HttpError(res.status, `Invalid JSON: ${text.slice(0, 200)}`, url)
+      throw new HttpError(status, `Invalid JSON: ${text.slice(0, 200)}`, url)
     }
   }
 
@@ -167,6 +169,8 @@ export function createHttpClient(config: HttpClientConfig) {
       request<T>('GET', path, undefined, options),
     post: <T>(path: string, body?: unknown, options?: HttpRequestOptions) =>
       request<T>('POST', path, body, options),
+    postForm: <T>(path: string, body: URLSearchParams, options?: HttpRequestOptions) =>
+      request<T>('POST', path, body, options),
     postVoid: (path: string, body?: unknown, options?: HttpRequestOptions) =>
       requestVoid('POST', path, body, options),
     put: <T>(path: string, body?: unknown, options?: HttpRequestOptions) =>
@@ -175,58 +179,6 @@ export function createHttpClient(config: HttpClientConfig) {
       requestVoid('PUT', path, body, options),
     delete: (path: string, options?: HttpRequestOptions) =>
       requestVoid('DELETE', path, undefined, options),
-  }
-}
-
-async function prepareRequest(
-  url: string,
-  init: RequestInit,
-  options: { publicIpOnly: boolean; followRedirects: boolean; skipTlsVerify: boolean },
-): Promise<{ url: string; init: RequestInit }> {
-  const headers = new Headers(init.headers)
-  let fetchUrl = url
-  let serverName: string | null = null
-
-  if (options.publicIpOnly) {
-    if (isPrivateUrl(url)) {
-      throw new Error('URL points to a private/internal address')
-    }
-
-    const parsedUrl = new URL(url)
-    const hostname = getLookupHostname(parsedUrl)
-    const { address } = await dns.lookup(hostname)
-    if (isPrivateIp(address)) {
-      throw new Error('URL resolves to a private/internal IP')
-    }
-
-    // Pin the resolved IP for both http: and https: so a second DNS lookup
-    // during fetch() cannot rebind to a private address (TOCTOU). For HTTPS,
-    // preserve the original hostname for SNI and cert verification.
-    if (address !== hostname) {
-      const pinnedUrl = new URL(url)
-      pinnedUrl.hostname = formatUrlHostname(address)
-      fetchUrl = pinnedUrl.toString()
-      headers.set('Host', parsedUrl.host)
-      const normalizedHostname = normalizeIp(parsedUrl.hostname)
-      if (parsedUrl.protocol === 'https:' && isIP(normalizedHostname) === 0) {
-        serverName = normalizedHostname
-      }
-    }
-  }
-
-  const tls: { serverName?: string; rejectUnauthorized?: boolean } = {}
-  if (serverName) tls.serverName = serverName
-  if (options.skipTlsVerify) tls.rejectUnauthorized = false
-  const tlsInit = Object.keys(tls).length > 0 ? { tls } : {}
-
-  return {
-    url: fetchUrl,
-    init: {
-      ...init,
-      headers,
-      redirect: options.followRedirects ? 'follow' : 'manual',
-      ...tlsInit,
-    } as RequestInit,
   }
 }
 
@@ -260,8 +212,26 @@ export class HttpTimeoutError extends Error {
   public url: string
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+const RETRYABLE_METHODS = new Set(['GET', 'HEAD'])
+const MAX_REDIRECTS = 5
+const MAX_RETRY_AFTER_MS = 30_000
+
+function backoffMs(attempt: number): number {
+  return 2 ** attempt * 500
+}
+
+/** Retry-After as seconds or an HTTP-date, capped; null when absent or unparseable. */
+function parseRetryAfterMs(raw: string | null): number | null {
+  if (!raw) return null
+  const value = raw.trim()
+  let ms: number
+  if (/^\d+$/.test(value)) ms = Number(value) * 1000
+  else {
+    const date = Date.parse(value)
+    if (Number.isNaN(date)) return null
+    ms = Math.max(0, date - Date.now())
+  }
+  return Math.min(ms, MAX_RETRY_AFTER_MS)
 }
 
 async function readResponseText(res: Response): Promise<string> {

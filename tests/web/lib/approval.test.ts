@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reportApprovalOutcome, reportBulkApproval, undoOutcomeMessage } from '@/web/lib/approval'
 
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}))
+vi.mock('sonner', async () => (await import('../helpers/sonner')).sonnerMock())
 
 const { toast } = await import('sonner')
 
@@ -18,6 +16,12 @@ const t = ((key: string) => {
 
 describe('reportApprovalOutcome', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('reports a queued request without presenting it as a completed approval', () => {
+    expect(reportApprovalOutcome({ status: 'requested', requestId: 1 }, t)).toBe(false)
+    expect(toast.success).toHaveBeenCalledWith('approvalRequests.created')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
 
   it('returns true and shows nothing when every target succeeds', () => {
     const clean = reportApprovalOutcome(
@@ -253,4 +257,17 @@ describe('reportBulkApproval', () => {
     reportBulkApproval({ results: [{ id: 2, status: 'add_failed', error: 'boom' }] }, name, t)
     expect(toast.error).toHaveBeenCalledExactlyOnceWith('All failed: Song 2 (boom)')
   })
+})
+
+it('reports deferred approval as waiting without a failure or success toast', () => {
+  vi.clearAllMocks()
+  expect(
+    reportApprovalOutcome(
+      { status: 'waiting', targetSummary: { total: 1, succeeded: 0, failed: 0, failures: [] } },
+      t,
+    ),
+  ).toBe(false)
+  expect(toast.info).toHaveBeenCalledWith('recommendation.waitingForLidarr')
+  expect(toast.error).not.toHaveBeenCalled()
+  expect(toast.success).not.toHaveBeenCalled()
 })

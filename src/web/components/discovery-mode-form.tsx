@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { DiscoveryConfigField } from '@/core/discovery-modes/types'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import { errMsg } from '@/core/validation'
@@ -32,6 +33,9 @@ function serializeValue(field: DiscoveryConfigField, value: unknown): DiscoveryM
   if (field.type === 'multiselect') {
     if (Array.isArray(value)) return value.map((item) => String(item)).join(', ')
     return String(value ?? '')
+  }
+  if (field.type === 'tags') {
+    return Array.isArray(value) ? JSON.stringify(value) : getDefaultValue(field)
   }
   return String(value ?? '')
 }
@@ -216,7 +220,7 @@ function TagBuilderField({
         </div>
       ))}
       {rows.length < 10 && (
-        <button type="button" onClick={addRow} className="text-sm text-accent underline">
+        <button type="button" onClick={addRow} className="text-sm text-accent-text underline">
           {tFn('discoveryMode.addTag')}
         </button>
       )}
@@ -356,6 +360,36 @@ function DiscoveryModeFields({
   )
 }
 
+function SettingsModeToggle({
+  value,
+  onChange,
+}: {
+  value: DiscoverySettingsMode
+  onChange: (next: DiscoverySettingsMode) => void
+}) {
+  const { t } = useI18n()
+  return (
+    <fieldset
+      aria-label={t('discoveryMode.settingsView')}
+      className="m-0 inline-flex min-w-0 shrink-0 rounded-full border border-border bg-surface p-0.5"
+    >
+      {(['easy', 'advanced'] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+            value === option ? 'bg-border text-text' : 'text-muted hover:text-text'
+          }`}
+        >
+          {option === 'easy' ? t('discoveryMode.easy') : t('discoveryMode.advanced')}
+        </button>
+      ))}
+    </fieldset>
+  )
+}
+
 export function DiscoveryModeForm({
   mode,
   onRun,
@@ -363,6 +397,8 @@ export function DiscoveryModeForm({
   intent = 'run',
   initialSettingsMode,
   initialSettings,
+  onSchedule,
+  toggleSlot,
 }: {
   mode: DiscoveryModeResponse
   onRun: (body: Record<string, unknown>) => Promise<void>
@@ -370,6 +406,9 @@ export function DiscoveryModeForm({
   intent?: DiscoveryModeIntent
   initialSettingsMode?: DiscoverySettingsMode
   initialSettings?: Record<string, unknown>
+  onSchedule?: (config: Record<string, unknown>) => void
+  // undefined: render the toggle inline at the top; null: header slot not mounted yet
+  toggleSlot?: HTMLElement | null
 }) {
   const { t } = useI18n()
   const [settingsMode, setSettingsMode] = useState<DiscoverySettingsMode>(
@@ -450,27 +489,23 @@ export function DiscoveryModeForm({
     }
   }
 
+  const easyKeys = mode.easyFields.map((field) => field.key).join(',')
+  const hasBothModes =
+    mode.advancedFields.length > 0 &&
+    mode.advancedFields.map((field) => field.key).join(',') !== easyKeys
+  const toggleNode = <SettingsModeToggle value={settingsMode} onChange={setSettingsMode} />
+  const toggle = !hasBothModes ? null : toggleSlot === undefined ? (
+    <div className="flex justify-end">{toggleNode}</div>
+  ) : toggleSlot ? (
+    createPortal(toggleNode, toggleSlot)
+  ) : null
+
   const content = (
     <>
-      <div className="flex items-center gap-2">
-        {(['easy', 'advanced'] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setSettingsMode(option)}
-            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-              settingsMode === option
-                ? 'border-accent bg-accent text-accent-fg'
-                : 'border-border bg-surface text-muted hover:text-text'
-            }`}
-          >
-            {option === 'easy' ? t('discoveryMode.easy') : t('discoveryMode.advanced')}
-          </button>
-        ))}
-      </div>
+      {toggle}
 
       {error && (
-        <div className="rounded-md border border-reject/20 bg-reject/10 px-3 py-2 text-sm text-reject">
+        <div className="rounded-md border border-reject/20 bg-reject/5 px-3 py-2 text-sm text-reject">
           {error}
         </div>
       )}
@@ -478,13 +513,31 @@ export function DiscoveryModeForm({
       <DiscoveryModeFields fields={fields} values={values} setValues={setValues} tFn={t} />
 
       {intent === 'run' && (
-        <button
-          type="submit"
-          disabled={!mode.availability.enabled || submitting}
-          className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {submitting ? t('discoveryMode.starting') : t('discoveryMode.runDiscovery')}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="submit"
+            disabled={!mode.availability.enabled || submitting}
+            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? t('discoveryMode.starting') : t('subscriptions.runNow')}
+          </button>
+          {onSchedule && (
+            <button
+              type="button"
+              disabled={!mode.availability.enabled || submitting}
+              onClick={() => {
+                if (!submission.payload) {
+                  setError(submission.error)
+                  return
+                }
+                onSchedule(submission.payload)
+              }}
+              className="rounded-md border border-border px-3 py-2 text-sm font-medium text-text hover:border-accent disabled:opacity-50"
+            >
+              {t('common.schedule')}
+            </button>
+          )}
+        </div>
       )}
     </>
   )

@@ -30,9 +30,10 @@ function makeDeps(
     completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -41,6 +42,7 @@ function makeDeps(
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -77,7 +79,6 @@ function makeDeps(
       markStuck: vi.fn().mockResolvedValue(0),
     },
     jobQueries: {} as unknown as AppDependencies['jobQueries'],
-    apiKeyStore: {} as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }
@@ -103,6 +104,24 @@ describe('GET /api/v1/media/image-proxy', () => {
     const app = createApp(makeDeps({}, { audiodbProxyImages: true }))
     const res = await authedReq(app, '/api/v1/media/image-proxy?src=https://evil.example.com/x.jpg')
     expect(res.status).toBe(400)
+  })
+
+  it('proxies r2.theaudiodb.com images', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('img', { status: 200, headers: { 'content-type': 'image/jpeg' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const app = createApp(makeDeps({}, { audiodbProxyImages: true }))
+      const res = await authedReq(
+        app,
+        '/api/v1/media/image-proxy?src=https://r2.theaudiodb.com/images/media/artist/thumb/x.jpg',
+      )
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('image/jpeg')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('rejects private IP target', async () => {

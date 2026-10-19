@@ -4,8 +4,10 @@ import type { Preferences } from '@/db/schema'
 
 /**
  * Resolve per-user preferences with fallback to global.
- * Returns the user's preferences layered over the global ones if the user
- * has any, otherwise the global preferences unchanged.
+ * Returns the user's preferences layered over the global discovery settings
+ * if the user has any, otherwise the global preferences.
+ * Personal notification channels do not replace discovery settings.
+ * Shared scan notification channels are reserved for administrators.
  *
  * Accepts either a Database instance (calls getUserById internally)
  * or a pre-bound lookup function (for routes using AppDependencies).
@@ -20,11 +22,22 @@ export async function resolveUserPreferences(
     typeof dbOrLookup === 'function'
       ? await dbOrLookup(userId)
       : await getUserById(dbOrLookup, userId)
-  // Layer the user's keys over the global ones. Returning the user object
-  // alone silently dropped every global key the user never set (e.g.
-  // netNewAlbumDiscovery) the moment they set any preference at all.
-  if (user?.preferences && Object.keys(user.preferences).length > 0) {
-    return { ...(globalPrefs ?? {}), ...user.preferences }
+  const { channels: _globalChannels, ...globalDiscovery } = globalPrefs ?? {}
+  const fallback = user?.isAdmin ? globalPrefs : globalPrefs ? globalDiscovery : null
+  if (user?.preferences) {
+    const { channels: _personalChannels, ...preferences } = user.preferences
+    if (Object.keys(preferences).length > 0) {
+      // Layer the user's keys over the global ones. Returning the user object
+      // alone silently dropped every global key the user never set (e.g.
+      // netNewAlbumDiscovery) the moment they set any preference at all.
+      return {
+        ...globalDiscovery,
+        ...preferences,
+        ...(user.isAdmin && globalPrefs?.channels !== undefined
+          ? { channels: globalPrefs.channels }
+          : {}),
+      }
+    }
   }
-  return globalPrefs
+  return fallback
 }

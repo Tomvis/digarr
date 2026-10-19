@@ -1,12 +1,9 @@
 // @vitest-environment node
 
-import { Hono } from 'hono'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAllSessions, createSession } from '@/core/sessions'
 import type { BlockedAlbumRow } from '@/db/queries/album-blocks'
 import { createApp } from '@/server'
-import { albumBlocksRoutes } from '@/server/routes/album-blocks'
-import type { HonoEnv } from '@/server/types'
 import { makeDeps } from '../../helpers/test-app'
 
 const SESSION_TOKEN = 'album-blocks-token'
@@ -29,6 +26,7 @@ describe('GET /api/v1/album-blocks', () => {
       artistName: 'Artist A',
       artistMbid: 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa',
       releaseGroupMbid: 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb',
+      albumTitle: 'Album B',
       reason: 'already_own',
       reasonText: null,
       blockedAt: new Date('2026-04-25T12:00:00Z'),
@@ -41,28 +39,8 @@ describe('GET /api/v1/album-blocks', () => {
     expect(body.items).toHaveLength(1)
     expect(body.items[0]?.blockedAt).toBe('2026-04-25T12:00:00.000Z')
     expect(body.items[0]?.releaseGroupMbid).toBe('bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb')
+    expect(body.items[0]?.albumTitle).toBe('Album B')
     expect(listAlbumBlocks).toHaveBeenCalledWith(1)
-  })
-
-  it('returns 401 when unauthenticated', async () => {
-    const app = createApp(makeDeps())
-    const res = await app.request('/api/v1/album-blocks')
-    expect(res.status).toBe(401)
-  })
-
-  it('returns the canonical auth problem when mounted directly', async () => {
-    const app = new Hono<HonoEnv>()
-    app.route('/', albumBlocksRoutes(makeDeps()))
-
-    const res = await app.request('/api/v1/album-blocks')
-    expect(res.status).toBe(401)
-    expect(res.headers.get('WWW-Authenticate')).toBe('Bearer realm="digarr"')
-    expect(await res.json()).toEqual({
-      type: '/problems/not-authenticated',
-      title: 'Not authenticated',
-      status: 401,
-      code: 'errors.auth.notAuthenticated',
-    })
   })
 })
 

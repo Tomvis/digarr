@@ -6,6 +6,60 @@ and supports a PostgreSQL server via `DATABASE_URL` or the `DB_HOST` / `DB_USER`
 Settings lets admins copy the application restore registry between the two backends in one
 operation, without touching or modifying the source.
 
+## MusicBrainz cache migration
+
+Migration 0063 creates the `musicbrainz_cache` table and its `expires_at` index
+with `IF NOT EXISTS`, so it is safe to re-run; PostgreSQL and PGlite both apply
+it at startup. The table only holds MusicBrainz responses Digarr can fetch
+again. JSON backups and backend copies leave it out, and it is safe to
+truncate at any time. Take a normal backup before upgrading. Rollback: the
+previous image ignores the table, so it is left unused and harmless; drop it
+by hand if you want the space back. Validation used isolated in-memory PGlite:
+the migration was re-run and the cache served lookups from a fresh client. No
+live PostgreSQL run is claimed.
+
+## Recommended recording migration
+
+Migration 0062 adds nullable `recommendations.recommended_recording_mbid` and
+`recommended_recording_title` and `recording_artist_cache.recording_title`
+with `ADD COLUMN IF NOT EXISTS`. PostgreSQL and PGlite both apply it at startup.
+Backend copies migrate the destination first, so the columns copy through.
+Older JSON backups without these fields restore with null values. Take a
+complete database backup before upgrading. Rollback is safe in two ways: the
+previous image ignores the nullable columns, or a pre-upgrade backup restores
+the earlier state. Validation used isolated in-memory PGlite: the migration was
+re-run, a backup round-trip kept the recording, and an older-format backup
+restored. No live PostgreSQL restore is claimed.
+
+## Artist image https migration
+
+Migration 0061 rewrites `http://` prefixes to `https://` in `artists.image_url` and
+`artists.logo_url` for `assets.fanart.tv` and `theaudiodb.com` hosts only. It is a
+plain `UPDATE` that is safe to re-run on both PostgreSQL and PGlite, and no schema
+changes. Take a complete database backup before upgrading as usual. The previous
+image can use the same database, because both hosts serve the same paths over
+https. A full restore of a pre-upgrade backup only brings the old `http://` values
+back. Backend copies migrate the destination first, and restoring an older JSON
+backup can reintroduce `http://` URLs until the next image refresh. No live restore
+is claimed for this change.
+
+## Job history ordering index
+
+Migration 0060 adds `job_runs_started_at_id_idx` on `(started_at DESC, id DESC)`
+with `IF NOT EXISTS` on both PostgreSQL and PGlite. It is additive and backward
+compatible: no rows or columns change, and the previous application can use the
+same database. Allow disk space and startup time for building the history index.
+Take a complete database backup before upgrading, then let startup migrations
+finish before serving requests. Backend copies continue to migrate the destination
+before restoring rows, so the index is created there too.
+
+Rollback can use the previous image while leaving the index in place. If a full
+restore is needed, stop the application and restore the complete pre-upgrade
+backup with the previous image using the recovery procedure in this guide.
+No live restore is claimed for this change. API clients must account for the
+paginated reconciliation lists and summary job metadata described in
+[the API reference](../API.md).
+
 ## When to use this
 
 - **Managed or larger database**: embedded PGlite is single-writer and shares
@@ -17,7 +71,7 @@ operation, without touching or modifying the source.
 - **Rolling back**: if you want to return to embedded PGlite after running on
   a PostgreSQL server, the same tool runs in reverse.
 
-The migration tool is for backend changes only. For selected application-data exports, use Backup & Restore (Settings > Administration). For complete disaster recovery, take a consistent database backup as described below.
+The migration tool is for backend changes only. For selected application-data exports, use Backup & Restore (Settings > Administration). For complete disaster recovery, take a consistent database backup as described below. The copy reads the running database, which has already applied migration 0057, so copied playlists keep the schedules that migration cleared on disabled playlists.
 
 ---
 
@@ -79,8 +133,8 @@ checks this without creating any files.
 
 The data root defaults to the parent directory of the currently active PGlite
 data directory (for Docker deployments that is `/app`, since the default
-`DB_PATH` is `/app/data`). To allow migration targets elsewhere -- for example
-a second mounted volume -- set `DIGARR_MIGRATE_DATA_ROOT` to that directory
+`DB_PATH` is `/app/data`). To allow migration targets elsewhere - for example
+a second mounted volume - set `DIGARR_MIGRATE_DATA_ROOT` to that directory
 before starting Digarr. Paths outside the root are rejected to keep the
 migration panel from writing to arbitrary container locations.
 
@@ -139,7 +193,7 @@ When switching backends, follow the complete list below, including file-backed s
   password, and database-name components percent-encoded as needed. Alternatively,
   set `DB_HOST`, `DB_USER`, `DB_NAME`, and `DB_PASS` individually with raw usernames, database names and passwords, as described above. For TLS,
   `DB_SSL_MODE` accepts `disable`, `require`, or `no-verify`. Note that
-  Digarr's `require` performs full certificate verification -- stricter than
+  Digarr's `require` performs full certificate verification - stricter than
   libpq's `require`, which encrypts without verifying. Use `no-verify` for
   self-signed certificates.
 - **Switching to PGlite**: unset `DATABASE_URL`, `DATABASE_URL_FILE`, and `DB_HOST`, then set `DB_PATH`
@@ -181,6 +235,7 @@ The copy follows the application restore registry, not every database table. The
 | `sessions` | All users are logged out and must log in again after the restart. |
 | Rate-limit counters | Login and register rate limits reset. |
 | `oauth_pending_auths` | Unfinished Spotify, Deezer, and TIDAL connect attempts must be restarted. |
+| `musicbrainz_cache` | The first scans on the new backend fetch MusicBrainz again and refill the cache. |
 
 The registry includes users, artists, recommendations, targets, saved connections, settings, preferences, jobs, playlists and their remote export bindings, artist/album blocks, and library state. It does not preserve unfinished provider authorization transactions.
 
@@ -216,6 +271,10 @@ Migration 0053 in v2.0.0 adds the binding table. An existing schema without it c
 
 Migration 0054 in v2.0.0 binds OIDC accounts to exact issuer/subject pairs. Backend copies and new JSON exports preserve both; older JSON restores retain the subject with a null issuer and require [verified operator recovery](../AUTHENTICATION.md#recovering-legacy-oidc-bindings). Migration never infers the historical issuer. The old schema's missing column stops automatic snapshots; use the verified native-backup override below only for this understood upgrade. Retain the key and previous image. For rollback, restore the previous image's matching native backup into a separate database; a subject-only image cannot safely read migrated identities.
 
+Migration 0055 assigns recommendations without an owner to the first admin. It changes data only, so backend copies and JSON exports carry the assigned owner. Restoring an older JSON backup applies the same rule to its ownerless rows inside the restore transaction, using the restored users. For rollback, restore the previous image's matching native backup into a separate database.
+
+Migration 0056 adds the nullable `album_blocks.album_title` column. Full JSON exports and backend copies carry it; restoring an older backup leaves it null, so those blocks show their release-group ID.
+
 Legacy v1.19.0 JSON files remain partial, including those named `-full`. Restore checks dependencies before replacing tables. If clearing included parents would alter populated omitted tables, or artist references cannot resolve, it returns `422 partial_backup_conflict` without changing the destination; `force=true` only handles encryption mismatch and cannot bypass this check. Use a complete new export, or a fresh compatible database when the legacy file has the required dependencies. Restore does not invent missing artists or merge account identities. Back up the destination before any restore.
 
 Automatic pre-migration snapshots include optional metadata and must succeed before migrations run. v2.0.1 and later read only the tables and columns the old schema already has and list the omitted ones in the file, so a missing column no longer blocks the upgrade; v2.0.0 itself does not, see the override below. Any other snapshot failure stops the upgrade before migrations: take and verify the native consistent database backup below first, and treat `DIGARR_AUTO_BACKUP=false` as a one-upgrade override for a failure you understand. No database migration is introduced by this backup change. To roll back application behavior, keep the previous image; after any later schema migration, restore that image's matching native backup into a separate database instead of feeding it a newer schema.
@@ -227,6 +286,8 @@ For complete recovery, retain a database backup and the matching encryption key 
 
 The [Docker backup procedure](../../deploy/docker/README.md#back-up-and-update) includes complete Compose commands for both database-backup methods. Protect backups as credentials, copy them off the host, and preserve the original database until the recovered instance is verified.
 
+The Lidarr "Only count albums with files" setting lives in the preferences JSON, so exports and backend copies carry it with no schema change. An image from before this setting ignores the key and counts every album Lidarr tracks again after the next library sync.
+
 ## Digest delivery migration
 
 Migration 0052 in v2.0.0 adds nullable `settings.digest_delivery_positions`. Existing databases lack this column before the migration, so the v2.0.0 automatic snapshot fails closed before DDL; v2.0.1 and later back it up without an override. For v2.0.0 only, stop app writers, take and verify the native consistent database backup described above, and retain the exact encryption key and previous image. Then explicitly set `DIGARR_AUTO_BACKUP=false` for the upgrade and re-enable it after startup succeeds. Do not bypass an unexplained backup failure. Fresh databases need no override.
@@ -234,3 +295,19 @@ Migration 0052 in v2.0.0 adds nullable `settings.digest_delivery_positions`. Exi
 Current channel IDs inherit the legacy shared timestamp once, including when the digest schedule is disabled. New IDs use the current cadence; old windows already skipped by the legacy bookmark cannot be recovered. Application backups and backend copies preserve the new map. An older application backup without the field leaves it uninitialized and uses its legacy timestamp at startup or on the next live tick after restore.
 
 For rollback, restore the previous image's verified native backup into a separate database and use that image with its matching key. Do not feed a migrated database or newer JSON backup to an older image. Verify recovery before replacing the original database; delivery after the backup may repeat, because remote sends are not rolled back.
+
+## Personal API token migration
+
+Migration 0057 creates `api_tokens`, including its cascading user foreign key and unique SHA-256 token hash. No raw token values enter the database, JSON exports, or backend copies. Existing sessions and `DIGARR_AUTH_TOKEN` keep their behavior. Personal API tokens are excluded from JSON backups and backend copies between PostgreSQL and PGlite. Restore ignores any saved `apiTokens` key. Replacing or removing users deletes their tokens by cascade; tokens remain valid when their users are left unchanged. Use a fresh destination database and recreate tokens after recovery or switching backends.
+
+Before upgrading, stop application writes and take a complete consistent native database backup with the matching encryption key. Start the new image to apply migration 0057 automatically, sign in, and create a short-lived token in Settings > Account. Verify a GET request with its bearer header, then revoke it and check for `401`.
+
+Rolling back the image leaves an unused `api_tokens` table; older images cannot authenticate personal tokens. Use browser sessions or the existing legacy credential during rollback. Upgrading again can make the saved tokens usable, so revoke unwanted tokens before rollback. For exact schema rollback restore the native pre-upgrade backup with its previous image and encryption key into a separate database. Do not delete the table from a live database. JSON recovery never restores token hashes or metadata, so revoked tokens stay revoked. Native database snapshots include tokens and can reactivate tokens revoked after the snapshot; review and revoke them after native recovery. Lost token values cannot be recovered from hashes.
+
+## Approval-request migration
+
+Migration 0059 adds `approval_requests` and per-user policy, trusted-score threshold, and open-request-limit fields. The recommendation-reference index supports pending lookups and foreign-key cleanup. Temporary missing-album recommendations are removed on decline or request-creation failure; retained request history stores the album identity and permits a null recommendation reference. Existing users retain direct approval. Startup applies the migration on PostgreSQL and PGlite without contacting targets. Before upgrading, stop app writers, verify a native database backup by restoring it separately, and retain the matching encryption key and previous image. The automatic snapshot reads the old schema without requiring the new table or columns.
+
+Complete JSON exports and backend copies preserve policies, request options, pending/approved/declined states, notes, target-add errors, saved album identities, nullable recommendation references, and decision timestamps. Requests use stable tokens for identity; user and recommendation references are remapped rather than reused as source numeric IDs. Old exports without requests remain readable but cannot replace parents when that would erase populated omitted request state. Prefer a complete export and a fresh compatible destination. Check the admin queue and a requester's Approved history after switching backends.
+
+An older image ignores policies and can let request-only users approve directly. Restrict member access before rolling back. For exact schema recovery, restore the verified native pre-upgrade backup into a separate database with its matching old image and encryption key. Keep the original until recovery is verified. Restoring local data cannot reverse remote library additions or delivered notifications. Do not delete request tables from a live database. See [the operator checks](../OPERATIONS.md#approval-request-migration).

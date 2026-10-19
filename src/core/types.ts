@@ -1,4 +1,5 @@
 import type { SupportedLocale } from '@/core/i18n/locales'
+import type { ReleaseGroupTypes } from '@/core/targets/lidarr-metadata-profile'
 
 export type LibraryTrack = {
   name: string
@@ -72,7 +73,14 @@ export type DiscoveredArtist = {
   releaseGroupMbid?: string
   /** ISO release date (firstReleaseDate) for album candidates; feeds recency. */
   releaseDate?: string
+  releaseGroupTypes?: ReleaseGroupTypes
+  /** MusicBrainz recording MBID when the source recommended a specific track. */
+  recordingMbid?: string
+  recordingTitle?: string
 }
+
+/** A source-recommended recording. Provider IDs (Spotify URI, Deezer id) never go here. */
+export type SuggestedRecording = { mbid: string; title?: string }
 
 export type ResolvedArtist = {
   mbid: string
@@ -85,6 +93,7 @@ export type ResolvedArtist = {
   imageFailed?: boolean
   streamingUrls: Record<string, string>
   suggestedAlbum?: { releaseGroupId?: string; title: string; type?: string }
+  suggestedRecording?: SuggestedRecording
   discoveries: DiscoveredArtist[]
   beginYear?: number
   endYear?: number
@@ -94,6 +103,8 @@ export type ResolvedArtist = {
   releaseGroupMbid?: string
   /** ISO release date for album-kind; feeds the recency signal. */
   releaseDate?: string
+  /** MusicBrainz types for album-kind; lets the filter drop albums Lidarr cannot add. */
+  releaseGroupTypes?: ReleaseGroupTypes
 }
 
 export type RecommendationKind = 'artist' | 'album' | 'track'

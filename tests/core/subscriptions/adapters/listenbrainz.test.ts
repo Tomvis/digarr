@@ -19,67 +19,135 @@ const freshReleasesFixture = {
   },
 }
 
-const PL = 'https://listenbrainz.org/playlist/'
-const MBID_OLD_JAMS = '11111111-1111-1111-1111-111111111111'
-const MBID_NEW_JAMS = '22222222-2222-2222-2222-222222222222'
-const MBID_EXPLORE = '33333333-3333-3333-3333-333333333333'
+const NEW_JAMS = '80d61d95-61b0-4a22-8556-443c0fb26078'
+const OLD_JAMS = '11111111-2222-4333-8444-555555555555'
+const EXPLORATION = 'c99f9e8d-77ab-446e-bf95-248bbc0ab535'
 
-const createdForFixture = {
-  playlist_count: 3,
-  playlists: [
-    {
-      playlist: {
-        title: 'Weekly Exploration for testuser, week of 2026-10-05 Mon',
-        date: '2026-10-05T00:05:00+00:00',
-        identifier: `${PL}${MBID_EXPLORE}`,
-        track: [],
-      },
-    },
-    {
-      playlist: {
-        title: 'Weekly Jams for testuser, week of 2026-09-28 Mon',
-        date: '2026-09-28T00:04:00+00:00',
-        identifier: `${PL}${MBID_OLD_JAMS}`,
-        track: [],
-      },
-    },
-    {
-      playlist: {
-        title: 'Weekly Jams for testuser, week of 2026-10-05 Mon',
-        date: '2026-10-05T00:04:00+00:00',
-        identifier: `${PL}${MBID_NEW_JAMS}`,
-        track: [],
-      },
-    },
-  ],
-}
-
-const hakenTrack = {
-  creator: 'Haken',
-  title: 'Sempiternal Beings',
-  album: 'Fauna',
-  identifier: ['https://musicbrainz.org/recording/06ee307a-4d83-4d5d-8cb8-64e379346d8c'],
+const jspfTrack = (creator: string, title: string, artistMbid: string, recordingMbid: string) => ({
+  creator,
+  title,
+  identifier: [`https://musicbrainz.org/recording/${recordingMbid}`],
   extension: {
     'https://musicbrainz.org/doc/jspf#track': {
       additional_metadata: {
-        artists: [{ artist_mbid: '0246a3fd-a254-416d-8cd2-e31da4ac6f59' }],
+        artists: [{ artist_credit_name: creator, artist_mbid: artistMbid, join_phrase: '' }],
+      },
+      artist_identifiers: [`https://musicbrainz.org/artist/${artistMbid}`],
+    },
+  },
+})
+
+// Fork (MUSIC-114): album and cover-art release ride along onto the song rec.
+const hakenTrack = {
+  ...jspfTrack(
+    'Haken',
+    'Sempiternal Beings',
+    '0246a3fd-a254-416d-8cd2-e31da4ac6f59',
+    '06ee307a-4d83-4d5d-8cb8-64e379346d8c',
+  ),
+  album: 'Fauna',
+  extension: {
+    'https://musicbrainz.org/doc/jspf#track': {
+      additional_metadata: {
+        artists: [
+          { artist_credit_name: 'Haken', artist_mbid: '0246a3fd-a254-416d-8cd2-e31da4ac6f59' },
+        ],
         caa_release_mbid: 'd7fae1b8-fdfb-4c26-b230-6a3dd7b68d6d',
       },
     },
   },
 }
 
-const playlistFixtures: Record<string, unknown> = {
-  [MBID_OLD_JAMS]: { playlist: { track: [{ creator: 'Old Artist', title: 'Old Song' }] } },
-  [MBID_NEW_JAMS]: {
-    playlist: { track: [hakenTrack, { creator: 'Plain Artist', title: 'Plain Song' }] },
+const createdForEntry = (mbid: string, title: string, date: string) => ({
+  playlist: {
+    title,
+    date,
+    identifier: `https://listenbrainz.org/playlist/${mbid}`,
+    track: [], // the list endpoints never include tracks
   },
-  [MBID_EXPLORE]: { playlist: { track: [{ creator: 'Explorer', title: 'Fresh Song' }] } },
+})
+
+// Oldest first on purpose: the newest Weekly Jams must win by date, not list order.
+const createdForFixture = {
+  playlist_count: 3,
+  playlists: [
+    createdForEntry(
+      OLD_JAMS,
+      'Weekly Jams for testuser, week of 2026-09-28 Mon',
+      '2026-09-28T05:00:00+00:00',
+    ),
+    createdForEntry(
+      EXPLORATION,
+      'Weekly Exploration for testuser, week of 2026-10-05 Mon',
+      '2026-10-05T05:49:10+00:00',
+    ),
+    createdForEntry(
+      NEW_JAMS,
+      'Weekly Jams for testuser, week of 2026-10-05 Mon',
+      '2026-10-05T05:43:41+00:00',
+    ),
+  ],
 }
 
-let requestLog: Array<{ path: string; headers: http.IncomingHttpHeaders }> = []
+const playlistFixtures: Record<string, unknown> = {
+  [NEW_JAMS]: {
+    playlist: {
+      title: 'Weekly Jams for testuser, week of 2026-10-05 Mon',
+      track: [
+        jspfTrack(
+          'Jam Artist X',
+          'Track 1',
+          'aaaaaaaa-0000-4000-8000-000000000001',
+          'bbbbbbbb-0000-4000-8000-000000000001',
+        ),
+        jspfTrack(
+          'Jam Artist Y',
+          'Track 2',
+          'aaaaaaaa-0000-4000-8000-000000000002',
+          'bbbbbbbb-0000-4000-8000-000000000002',
+        ),
+        jspfTrack(
+          'jam artist x',
+          'Track 3',
+          'aaaaaaaa-0000-4000-8000-000000000001',
+          'bbbbbbbb-0000-4000-8000-000000000003',
+        ),
+        { creator: 'Name Only', title: 'Track 4' },
+        { title: 'Track 5' }, // missing creator
+        hakenTrack,
+      ],
+    },
+  },
+  [EXPLORATION]: {
+    playlist: {
+      title: 'Weekly Exploration for testuser, week of 2026-10-05 Mon',
+      track: [
+        jspfTrack(
+          'Explore Artist',
+          'New To You',
+          'aaaaaaaa-0000-4000-8000-000000000005',
+          'bbbbbbbb-0000-4000-8000-000000000005',
+        ),
+      ],
+    },
+  },
+  [OLD_JAMS]: {
+    playlist: {
+      title: 'old',
+      track: [
+        jspfTrack(
+          'Stale Artist',
+          'Old',
+          'aaaaaaaa-0000-4000-8000-000000000009',
+          'bbbbbbbb-0000-4000-8000-000000000009',
+        ),
+      ],
+    },
+  },
+}
 
 const originalFetch = global.fetch
+let requestLog: Array<{ path: string; headers: http.IncomingHttpHeaders }> = []
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -98,10 +166,10 @@ beforeAll(async () => {
       return
     }
 
-    const pl = /\/1\/playlist\/([^/?]+)/.exec(url)
-    if (pl?.[1] && playlistFixtures[pl[1]]) {
+    const playlistId = /\/playlist\/([0-9a-f-]+)/.exec(url)?.[1]
+    if (playlistId && playlistFixtures[playlistId]) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(playlistFixtures[pl[1]]))
+      res.end(JSON.stringify(playlistFixtures[playlistId]))
       return
     }
 
@@ -137,25 +205,6 @@ describe('createListenBrainzAdapter', () => {
     return value
   }
 
-  it('has correct type and label', () => {
-    const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-    expect(adapter.type).toBe('listenbrainz')
-    expect(adapter.label).toBeTruthy()
-  })
-
-  it('has feedType configField as select', () => {
-    const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-    const feedTypeField = adapter.configFields.find((f) => f.key === 'feedType')
-    expect(feedTypeField).toBeTruthy()
-    if (!feedTypeField) {
-      throw new Error('Expected feedType config field')
-    }
-    expect(feedTypeField.type).toBe('select')
-    const values = feedTypeField.options?.map((o) => o.value) ?? []
-    expect(values).toContain('fresh-releases')
-    expect(values).toContain('weekly-jams')
-  })
-
   describe('fresh-releases', () => {
     it('fetches artists and deduplicates by lowercase name', async () => {
       const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
@@ -186,14 +235,14 @@ describe('createListenBrainzAdapter', () => {
   })
 
   describe('weekly-jams', () => {
-    it('fetches createdfor, then the newest Weekly Jams playlist', async () => {
+    it('fetches createdfor, then the newest Weekly Jams playlist, with a Chrome User-Agent', async () => {
       requestLog = []
       const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
       await adapter.fetch({ feedType: 'weekly-jams' })
 
       expect(requestLog.map((r) => r.path)).toEqual([
         '/1/user/testuser/playlists/createdfor',
-        `/1/playlist/${MBID_NEW_JAMS}`,
+        `/1/playlist/${NEW_JAMS}`,
       ])
       for (const r of requestLog) {
         expect(r.headers.authorization).toBe('Token testtoken')
@@ -201,56 +250,98 @@ describe('createListenBrainzAdapter', () => {
       }
     })
 
-    it('throws when the playlist fetch is non-OK', async () => {
-      const saved = global.fetch
-      global.fetch = (async (input: RequestInfo | URL) =>
-        String(input).includes('/playlists/createdfor')
-          ? new Response(JSON.stringify(createdForFixture), { status: 200 })
-          : new Response('nope', { status: 503, statusText: 'Down' })) as typeof fetch
-      try {
-        const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-        await expect(adapter.fetch({ feedType: 'weekly-jams' })).rejects.toThrow(
-          'ListenBrainz weekly-jams fetch failed: 503',
-        )
-      } finally {
-        global.fetch = saved
-      }
-    })
-
-    it('maps JSPF tracks to DiscoveredTrack', async () => {
+    it('maps the newest Weekly Jams to song recs, not artist recs (fork, MUSIC-114)', async () => {
       const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
       const result = await adapter.fetch({ feedType: 'weekly-jams' })
 
+      // newest playlist wins over list order and Weekly Exploration is ignored;
+      // the track without a creator is dropped
       expect(result.artists).toEqual([])
-      expect(result.tracks).toHaveLength(2)
+      expect(result.tracks?.map((t) => t.title)).toEqual([
+        'Track 1',
+        'Track 2',
+        'Track 3',
+        'Track 4',
+        'Sempiternal Beings',
+      ])
       expect(result.tracks?.[0]).toEqual({
+        artistName: 'Jam Artist X',
+        artistMbid: 'aaaaaaaa-0000-4000-8000-000000000001',
+        title: 'Track 1',
+        recordingMbid: 'bbbbbbbb-0000-4000-8000-000000000001',
+        position: 0,
+        total: 5,
+        source: 'listenbrainz:weekly-jams',
+      })
+      expect(result.tracks?.[3]).toEqual({
+        artistName: 'Name Only',
+        title: 'Track 4',
+        position: 3,
+        total: 5,
+        source: 'listenbrainz:weekly-jams',
+      })
+      expect(result.tracks?.[4]).toMatchObject({
         artistName: 'Haken',
         artistMbid: '0246a3fd-a254-416d-8cd2-e31da4ac6f59',
-        title: 'Sempiternal Beings',
         recordingMbid: '06ee307a-4d83-4d5d-8cb8-64e379346d8c',
         album: 'Fauna',
         coverReleaseMbid: 'd7fae1b8-fdfb-4c26-b230-6a3dd7b68d6d',
-        position: 0,
-        total: 2,
-        source: 'listenbrainz:weekly-jams',
       })
-      expect(result.tracks?.[1]).toMatchObject({
-        artistName: 'Plain Artist',
-        title: 'Plain Song',
-        position: 1,
-        total: 2,
-      })
-      expect(result.tracks?.[1]?.recordingMbid).toBeUndefined()
     })
 
-    it('throws on a non-OK createdfor response', async () => {
+    it('returns empty with a message when no Weekly Jams playlist exists', async () => {
+      const noJamsServer = http.createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            playlists: [
+              createdForEntry(
+                EXPLORATION,
+                'Weekly Exploration for testuser',
+                '2026-10-05T05:49:10+00:00',
+              ),
+            ],
+          }),
+        )
+      })
+      await new Promise<void>((r) => noJamsServer.listen(0, '127.0.0.1', r))
+      const noJamsBase = `http://127.0.0.1:${(noJamsServer.address() as AddressInfo).port}`
+
+      const savedFetch = global.fetch
+      global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('api.listenbrainz.org')) {
+          const parsed = new URL(url)
+          return originalFetch(`${noJamsBase}${parsed.pathname}${parsed.search}`, init)
+        }
+        return originalFetch(input, init)
+      }) as typeof fetch
+
+      try {
+        const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
+        const result = await adapter.fetch({ feedType: 'weekly-jams' })
+        expect(result.artists).toHaveLength(0)
+        expect(result.tracks).toEqual([])
+        expect(result.message).toMatch(/Weekly Jams/)
+      } finally {
+        global.fetch = savedFetch
+        noJamsServer.close()
+      }
+    })
+
+    it.each([
+      ['createdfor', 500],
+      ['playlist', 503],
+    ])('throws on a non-OK %s response', async (failing, status) => {
       const saved = global.fetch
-      global.fetch = (async () =>
-        new Response('nope', { status: 500, statusText: 'Boom' })) as typeof fetch
+      global.fetch = (async (input: RequestInfo | URL) =>
+        failing === 'playlist' && String(input).includes('/playlists/createdfor')
+          ? new Response(JSON.stringify(createdForFixture), { status: 200 })
+          : new Response('nope', { status, statusText: 'Down' })) as typeof fetch
       try {
         const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
         await expect(adapter.fetch({ feedType: 'weekly-jams' })).rejects.toThrow(
-          'ListenBrainz weekly-jams fetch failed: 500',
+          `ListenBrainz weekly-jams fetch failed: ${status}`,
         )
       } finally {
         global.fetch = saved
@@ -258,33 +349,22 @@ describe('createListenBrainzAdapter', () => {
     })
   })
 
-  describe('weekly-exploration', () => {
-    it('picks the Weekly Exploration playlist', async () => {
-      requestLog = []
-      const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-      const result = await adapter.fetch({ feedType: 'weekly-exploration' })
+  it('reads the Weekly Exploration playlist for the weekly-exploration feed', async () => {
+    const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
+    const result = await adapter.fetch({ feedType: 'weekly-exploration' })
 
-      expect(requestLog[1]?.path).toBe(`/1/playlist/${MBID_EXPLORE}`)
-      expect(result.artists).toEqual([])
-      expect(result.tracks).toEqual([
-        {
-          artistName: 'Explorer',
-          title: 'Fresh Song',
-          position: 0,
-          total: 1,
-          source: 'listenbrainz:weekly-exploration',
-        },
-      ])
-    })
-
-    it('is offered as a feedType option', () => {
-      const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-      const field = adapter.configFields.find((f) => f.key === 'feedType')
-      expect(field?.options).toContainEqual({
-        value: 'weekly-exploration',
-        label: 'Weekly Exploration',
-      })
-    })
+    expect(result.artists).toEqual([])
+    expect(result.tracks).toEqual([
+      {
+        artistName: 'Explore Artist',
+        artistMbid: 'aaaaaaaa-0000-4000-8000-000000000005',
+        title: 'New To You',
+        recordingMbid: 'bbbbbbbb-0000-4000-8000-000000000005',
+        position: 0,
+        total: 1,
+        source: 'listenbrainz:weekly-exploration',
+      },
+    ])
   })
 
   it('returns empty for unknown feedType', async () => {
@@ -320,41 +400,9 @@ describe('createListenBrainzAdapter', () => {
     emptyServer.close()
   })
 
-  it('returns empty when no Weekly Jams playlist found', async () => {
-    const noJamsServer = http.createServer((_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(
-        JSON.stringify({
-          playlists: [
-            {
-              playlist: {
-                title: 'Some Other Playlist',
-                track: [{ creator: 'Some Artist', title: 'Track' }],
-              },
-            },
-          ],
-        }),
-      )
-    })
-    await new Promise<void>((r) => noJamsServer.listen(0, '127.0.0.1', r))
-    const noJamsAddr = noJamsServer.address() as AddressInfo
-    const noJamsBase = `http://127.0.0.1:${noJamsAddr.port}`
-
-    const savedFetch = global.fetch
-    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('api.listenbrainz.org')) {
-        const parsed = new URL(url)
-        return originalFetch(`${noJamsBase}${parsed.pathname}${parsed.search}`, init)
-      }
-      return originalFetch(input, init)
-    }) as typeof fetch
-
+  it('applies the per-run limit option', async () => {
     const adapter = createListenBrainzAdapter({ username: 'testuser', token: 'testtoken' })
-    const result = await adapter.fetch({ feedType: 'weekly-jams' })
-    expect(result).toEqual({ artists: [], tracks: [] })
-
-    global.fetch = savedFetch
-    noJamsServer.close()
+    const result = await adapter.fetch({ feedType: 'fresh-releases' }, { limit: 2 })
+    expect(result.artists.map((a) => a.name)).toEqual(['Artist One', 'Artist Two'])
   })
 })

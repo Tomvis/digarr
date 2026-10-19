@@ -1,16 +1,14 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 vi.mock('@/web/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/web/lib/api')>()
@@ -24,6 +22,7 @@ vi.mock('@/web/lib/api', async (importOriginal) => {
 import { type Recommendation, RecommendationCard } from '@/web/components/recommendation-card'
 import { getArtistTopTracks, getLibraryAlbumCoverage } from '@/web/lib/api'
 import { PreviewContext } from '@/web/lib/preview-context'
+import { createTestQueryClient } from '../helpers/query'
 
 // ---------------------------------------------------------------------------
 // Preview context stub
@@ -54,7 +53,7 @@ const noopPreview = {
 }
 
 function withPreview(ui: ReactElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = createTestQueryClient()
   return render(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
@@ -112,14 +111,6 @@ describe('RecommendationCard', () => {
       missing: [{ albumMbid: 'missing-b', title: 'Missing B', releaseYear: 2004 }],
     })
     mockGetArtistTopTracks.mockResolvedValue({ tracks: [] })
-  })
-
-  it('renders artist name and score badge', () => {
-    withPreview(
-      <RecommendationCard recommendation={makeRec()} onApprove={onApprove} onReject={onReject} />,
-    )
-    expect(screen.getByText('Radiohead')).toBeInTheDocument()
-    expect(screen.getByText('82%')).toBeInTheDocument()
   })
 
   describe('kind=track', () => {
@@ -188,40 +179,37 @@ describe('RecommendationCard', () => {
     expect(screen.getByText('Kid A')).toBeInTheDocument()
   })
 
-  it('renders genre pills', () => {
-    withPreview(
-      <RecommendationCard recommendation={makeRec()} onApprove={onApprove} onReject={onReject} />,
-    )
-    // Default compact: max 3 genres shown
-    expect(screen.getByText('rock')).toBeInTheDocument()
-    expect(screen.getByText('alternative')).toBeInTheDocument()
-    expect(screen.getByText('art rock')).toBeInTheDocument()
-    // The remaining 2 are collapsed
-    expect(screen.getByText('+2')).toBeInTheDocument()
-  })
-
-  it('approve button calls onApprove with correct id', () => {
+  it.each([
+    [false, ['rock', 'alternative'], 'art rock', '+3'],
+    [true, ['rock', 'alternative', 'art rock', 'electronic', 'experimental'], null, null],
+  ])('limits genre pills (expanded=%s)', (expanded, shown, hidden, overflow) => {
     withPreview(
       <RecommendationCard
-        recommendation={makeRec({ id: 42 })}
+        recommendation={makeRec()}
+        onApprove={onApprove}
+        onReject={onReject}
+        expanded={expanded}
+      />,
+    )
+    for (const genre of shown) expect(screen.getByText(genre)).toBeInTheDocument()
+    if (hidden) expect(screen.queryByText(hidden)).toBeNull()
+    if (overflow) expect(screen.getByText(overflow)).toBeInTheDocument()
+    else expect(screen.queryByText(/^\+\d+$/)).toBeNull()
+  })
+
+  it.each([
+    ['Approve', 42, onApprove],
+    ['Reject', 7, onReject],
+  ])('%s button passes the recommendation id', (label, id, handler) => {
+    withPreview(
+      <RecommendationCard
+        recommendation={makeRec({ id })}
         onApprove={onApprove}
         onReject={onReject}
       />,
     )
-    fireEvent.click(screen.getByText('Approve'))
-    expect(onApprove).toHaveBeenCalledWith(42, 'pending')
-  })
-
-  it('reject button calls onReject with correct id', () => {
-    withPreview(
-      <RecommendationCard
-        recommendation={makeRec({ id: 7 })}
-        onApprove={onApprove}
-        onReject={onReject}
-      />,
-    )
-    fireEvent.click(screen.getByText('Reject'))
-    expect(onReject).toHaveBeenCalledWith(7, 'pending')
+    fireEvent.click(screen.getByText(label))
+    expect(handler).toHaveBeenCalledWith(id, 'pending')
   })
 
   // The approve/reject controls render for 'approved' rows too, not only
@@ -255,7 +243,7 @@ describe('RecommendationCard', () => {
     expect(onApprove).toHaveBeenCalledWith(9, 'rejected')
   })
 
-  it('click handler calls onClick with correct id', () => {
+  it('clicking the card calls onClick with the id', () => {
     withPreview(
       <RecommendationCard
         recommendation={makeRec({ id: 5 })}
@@ -264,9 +252,22 @@ describe('RecommendationCard', () => {
         onClick={onClick}
       />,
     )
-    // Click on the card itself (the artist name text)
     fireEvent.click(screen.getByText('Radiohead'))
     expect(onClick).toHaveBeenCalledWith(5)
+  })
+
+  it('clicking a link inside the expanded card does not toggle it', () => {
+    withPreview(
+      <RecommendationCard
+        recommendation={makeRec({ id: 5 })}
+        onApprove={onApprove}
+        onReject={onReject}
+        onClick={onClick}
+        expanded
+      />,
+    )
+    fireEvent.click(screen.getByTitle('YT Music'))
+    expect(onClick).not.toHaveBeenCalled()
   })
 
   it('expanded state shows AI reasoning and source scores', () => {
@@ -283,35 +284,6 @@ describe('RecommendationCard', () => {
     expect(screen.getByText('Source Scores')).toBeInTheDocument()
     expect(screen.getByText('LB')).toBeInTheDocument()
     expect(screen.getByText('90%')).toBeInTheDocument()
-  })
-
-  it('expanded state shows more genre pills', () => {
-    withPreview(
-      <RecommendationCard
-        recommendation={makeRec()}
-        onApprove={onApprove}
-        onReject={onReject}
-        expanded
-      />,
-    )
-    // Expanded: max 8, we have 5 genres so all should show
-    expect(screen.getByText('electronic')).toBeInTheDocument()
-    expect(screen.getByText('experimental')).toBeInTheDocument()
-    expect(screen.queryByText('+2')).not.toBeInTheDocument()
-  })
-
-  it('selected state applies border highlight', () => {
-    const { container } = withPreview(
-      <RecommendationCard
-        recommendation={makeRec()}
-        onApprove={onApprove}
-        onReject={onReject}
-        isSelected
-      />,
-    )
-    const wrapper = container.firstElementChild as HTMLElement
-    const card = wrapper.querySelector('[data-testid="rec-card-button"]') as HTMLElement
-    expect(card.className).toContain('border-accent')
   })
 
   it('handles missing optional fields gracefully', () => {
@@ -549,4 +521,103 @@ describe('RecommendationCard', () => {
     expect(String(MockAudio.mock.calls[0]?.[0])).not.toContain('token=')
     expect(play).toHaveBeenCalledTimes(1)
   })
+})
+
+describe('RecommendationCard expand control', () => {
+  it('exposes a named expand button with sibling actions', () => {
+    const onClick = vi.fn()
+    const onApprove = vi.fn()
+    withPreview(
+      <RecommendationCard
+        recommendation={makeRec()}
+        onApprove={onApprove}
+        onReject={vi.fn()}
+        onClick={onClick}
+      />,
+    )
+
+    const card = screen.getByTestId('rec-card-button')
+    expect(card).not.toHaveAttribute('role')
+    expect(card).not.toHaveAttribute('tabindex')
+    const expand = screen.getByTestId('rec-card-expand')
+    expect(expand.tagName).toBe('BUTTON')
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(expand.querySelector('button')).toBeNull()
+
+    fireEvent.click(expand)
+    expect(onClick).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    expect(onClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives two albums by one artist distinct accessible names', () => {
+    const album = (id: number, title: string) =>
+      makeRec({
+        id,
+        kind: 'album',
+        recommendedReleaseGroupId: `rg-${id}`,
+        recommendedReleaseGroupTitle: title,
+      })
+    withPreview(
+      <>
+        <RecommendationCard
+          recommendation={album(1, 'Souvlaki')}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+        />
+        <RecommendationCard
+          recommendation={album(2, 'Pygmalion')}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+        />
+      </>,
+    )
+
+    const names = screen.getAllByTestId('rec-card-expand').map((b) => b.getAttribute('aria-label'))
+    expect(names[0]).toContain('Souvlaki')
+    expect(names[1]).toContain('Pygmalion')
+    expect(names[0]).not.toBe(names[1])
+  })
+})
+
+it('shows waiting with its next retry time and keeps immediate Retry available', () => {
+  const onRetry = vi.fn()
+  const date = new Date('2026-10-18T12:05:00Z')
+  withPreview(
+    <RecommendationCard
+      recommendation={makeRec({
+        status: 'waiting',
+        targetActions: {
+          'lidarr-1': { status: 'waiting', retry: { nextAttemptAt: date.toISOString() } },
+        },
+      })}
+      onApprove={vi.fn()}
+      onReject={vi.fn()}
+      onRetry={onRetry}
+    />,
+  )
+  expect(screen.getByText('Waiting for Lidarr')).toBeTruthy()
+  expect(screen.getByText(`Next retry: ${date.toLocaleString()}`)).toBeTruthy()
+  fireEvent.click(screen.getByText('Retry'))
+  expect(onRetry).toHaveBeenCalledWith(1)
+  expect(screen.queryByText('Add failed')).toBeNull()
+})
+
+it('does not show a historical waiting action after rejection', () => {
+  withPreview(
+    <RecommendationCard
+      recommendation={makeRec({
+        status: 'rejected',
+        targetActions: {
+          'lidarr-1': { status: 'waiting', retry: { nextAttemptAt: '2026-10-18T12:05:00Z' } },
+        },
+      })}
+      onApprove={vi.fn()}
+      onReject={vi.fn()}
+      onRetry={vi.fn()}
+    />,
+  )
+  expect(screen.queryByText('Waiting for Lidarr')).toBeNull()
+  expect(screen.getByText('Rejected')).toBeTruthy()
 })

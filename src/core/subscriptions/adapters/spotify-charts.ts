@@ -1,8 +1,4 @@
-import type {
-  AdapterConfigField,
-  AdapterResult,
-  SubscriptionAdapter,
-} from '@/core/subscriptions/types'
+import type { AdapterResult, SubscriptionAdapter } from '@/core/subscriptions/types'
 import { extractArtistsFromPlaylist } from './spotify-shared'
 
 // Viral 50 playlists only have a reliable global ID - regional viral playlists
@@ -32,35 +28,29 @@ const CHART_PLAYLIST_IDS: Record<string, Record<string, string>> = {
   },
 }
 
-const CONFIG_FIELDS: AdapterConfigField[] = [
-  {
-    key: 'region',
-    label: 'Region',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'global', label: 'Global' },
-      { value: 'us', label: 'United States' },
-      { value: 'gb', label: 'United Kingdom' },
-      { value: 'de', label: 'Germany' },
-      { value: 'fr', label: 'France' },
-      { value: 'au', label: 'Australia' },
-      { value: 'br', label: 'Brazil' },
-    ],
-  },
-  {
-    key: 'chartType',
-    label: 'Chart Type',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'top50', label: 'Top 50' },
-      { value: 'viral50', label: 'Viral 50 (Global only)' },
-    ],
-    helpText:
-      'Viral 50 is only available for the Global region. Other regions fall back to Top 50.',
-  },
-]
+const UNAVAILABLE_HINT =
+  'Spotify no longer serves its own editorial chart playlists to newer or development-mode apps (Web API change of 2024-11-27), so Spotify Charts may not work for this app.'
+
+export function validateSpotifyChartsConfig(
+  config: Record<string, unknown>,
+): { ok: true; region: string; chartType: string } | { ok: false; error: string } {
+  const region = String(config.region ?? 'global').toLowerCase()
+  const chartType = String(config.chartType ?? 'top50').toLowerCase()
+  const regionCharts = CHART_PLAYLIST_IDS[region]
+  if (!regionCharts) {
+    return {
+      ok: false,
+      error: `Unknown Spotify charts region "${region}". Supported: ${Object.keys(CHART_PLAYLIST_IDS).join(', ')}.`,
+    }
+  }
+  if (!regionCharts[chartType]) {
+    return {
+      ok: false,
+      error: `Chart type "${chartType}" is not available for region "${region}". Available: ${Object.keys(regionCharts).join(', ')}.`,
+    }
+  }
+  return { ok: true, region, chartType }
+}
 
 export function createSpotifyChartsAdapter(deps: {
   getToken: () => Promise<string>
@@ -70,19 +60,14 @@ export function createSpotifyChartsAdapter(deps: {
 
   return {
     type: 'spotify-charts',
-    label: 'Spotify Charts',
-    configFields: CONFIG_FIELDS,
-
     async fetch(
       config: Record<string, unknown>,
       _options?: { limit?: number },
     ): Promise<AdapterResult> {
-      const region = String(config.region ?? 'global').toLowerCase()
-      const chartType = String(config.chartType ?? 'top50').toLowerCase()
-
-      const globalCharts = CHART_PLAYLIST_IDS.global ?? {}
-      const regionCharts = CHART_PLAYLIST_IDS[region] ?? globalCharts
-      const playlistId = regionCharts[chartType] ?? regionCharts.top50 ?? globalCharts.top50 ?? ''
+      const valid = validateSpotifyChartsConfig(config)
+      if (!valid.ok) throw new Error(valid.error)
+      const { region, chartType } = valid
+      const playlistId = CHART_PLAYLIST_IDS[region]?.[chartType] ?? ''
 
       const token = await deps.getToken()
       const url = `${baseUrl}/playlists/${playlistId}?fields=tracks.items(track(artists(name,id)))`
@@ -98,6 +83,9 @@ export function createSpotifyChartsAdapter(deps: {
         clearTimeout(timer)
       }
 
+      if (res.status === 403 || res.status === 404) {
+        throw new Error(`Spotify charts fetch failed: ${res.status}. ${UNAVAILABLE_HINT}`)
+      }
       if (!res.ok) {
         throw new Error(`Spotify charts fetch failed: ${res.status} ${res.statusText}`)
       }

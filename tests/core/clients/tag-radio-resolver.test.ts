@@ -38,19 +38,37 @@ describe('resolveTagRadioRecordings', () => {
         recordingMbid: 'rec-1',
         artistMbid: 'artist-A',
         artistName: 'Artist A',
+        title: 'Song 1',
       })
       .mockResolvedValueOnce({
         recordingMbid: 'rec-2',
         artistMbid: 'artist-B',
         artistName: 'Artist B',
+        title: 'Song 2',
       })
 
     const result = await resolveTagRadioRecordings(recordings, mockMbClient, mockDb)
 
     expect(result).toEqual([
-      { artistMbid: 'artist-A', artistName: 'Artist A', score: 1.0 },
-      { artistMbid: 'artist-B', artistName: 'Artist B', score: 0.6 },
+      {
+        artistMbid: 'artist-A',
+        artistName: 'Artist A',
+        score: 1.0,
+        recordingMbid: 'rec-1',
+        recordingTitle: 'Song 1',
+      },
+      {
+        artistMbid: 'artist-B',
+        artistName: 'Artist B',
+        score: 0.6,
+        recordingMbid: 'rec-2',
+        recordingTitle: 'Song 2',
+      },
     ])
+    expect(mockInsertCached).toHaveBeenCalledWith(
+      mockDb,
+      expect.arrayContaining([expect.objectContaining({ recordingTitle: 'Song 1' })]),
+    )
     expect(mockInsertCached).toHaveBeenCalledOnce()
   })
 
@@ -60,6 +78,14 @@ describe('resolveTagRadioRecordings', () => {
         recordingMbid: 'rec-1',
         artistMbid: 'artist-A',
         artistName: 'Artist A',
+        recordingTitle: 'Song 1',
+        cachedAt: new Date(),
+      },
+      {
+        recordingMbid: 'rec-2',
+        artistMbid: 'artist-B',
+        artistName: 'Artist B',
+        recordingTitle: null,
         cachedAt: new Date(),
       },
     ])
@@ -77,10 +103,34 @@ describe('resolveTagRadioRecordings', () => {
 
     const result = await resolveTagRadioRecordings(recordings, mockMbClient, mockDb)
 
-    // Only 1 MB lookup (rec-2), rec-1 was cached
+    // Only rec-2 is looked up: it was cached before titles were stored.
     expect(mockLookupRecording).toHaveBeenCalledTimes(1)
     expect(mockLookupRecording).toHaveBeenCalledWith('rec-2')
     expect(result).toHaveLength(2)
+  })
+
+  it('marks looked-up recordings so they are not refetched', async () => {
+    mockGetCached.mockResolvedValue([
+      { recordingMbid: 'rec-1', artistMbid: 'artist-A', artistName: 'A', recordingTitle: '' },
+      { recordingMbid: 'rec-2', artistMbid: 'artist-B', artistName: 'B', recordingTitle: null },
+    ])
+    mockLookupRecording.mockResolvedValueOnce(null)
+    const recordings: TagRadioRecording[] = [
+      { recordingMbid: 'rec-1', percent: 90, source: 'artist', tagCount: 1 },
+      { recordingMbid: 'rec-2', percent: 80, source: 'artist', tagCount: 1 },
+    ]
+
+    const result = await resolveTagRadioRecordings(recordings, mockMbClient, mockDb)
+
+    expect(mockLookupRecording).toHaveBeenCalledExactlyOnceWith('rec-2')
+    expect(mockInsertCached).toHaveBeenCalledWith(mockDb, [
+      expect.objectContaining({
+        recordingMbid: 'rec-2',
+        artistMbid: 'artist-B',
+        recordingTitle: '',
+      }),
+    ])
+    expect(result.map((r) => r.recordingTitle)).toEqual([undefined, undefined])
   })
 
   it('groups multiple recordings by artist and takes max percent', async () => {
@@ -111,8 +161,9 @@ describe('resolveTagRadioRecordings', () => {
     const result = await resolveTagRadioRecordings(recordings, mockMbClient, mockDb)
 
     expect(result).toEqual([
-      { artistMbid: 'artist-A', artistName: 'Artist A', score: 0.9 }, // max(40, 90) / 100
-      { artistMbid: 'artist-B', artistName: 'Artist B', score: 0.7 },
+      // max(40, 90) / 100, and the recording that earned it
+      { artistMbid: 'artist-A', artistName: 'Artist A', score: 0.9, recordingMbid: 'rec-2' },
+      { artistMbid: 'artist-B', artistName: 'Artist B', score: 0.7, recordingMbid: 'rec-3' },
     ])
   })
 
@@ -158,6 +209,24 @@ describe('resolveTagRadioRecordings', () => {
     expect(result[0]?.score).toBe(0.9)
     expect(result[1]?.score).toBe(0.6)
     expect(result[2]?.score).toBe(0.3)
+  })
+
+  it('still returns resolved artists when the cache insert throws', async () => {
+    mockLookupRecording.mockResolvedValueOnce({
+      recordingMbid: 'rec-1',
+      artistMbid: 'artist-A',
+      artistName: 'Artist A',
+    })
+    mockInsertCached.mockRejectedValueOnce(new Error('db down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await resolveTagRadioRecordings(
+      [{ recordingMbid: 'rec-1', percent: 90, source: 'artist', tagCount: 5 }],
+      mockMbClient,
+      mockDb,
+    )
+
+    expect(result.map((r) => r.artistMbid)).toEqual(['artist-A'])
   })
 
   it('continues resolving remaining recordings when one lookup throws', async () => {

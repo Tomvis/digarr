@@ -29,9 +29,10 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -40,6 +41,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -144,16 +146,6 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       }),
       getJobsForSubscription: vi.fn().mockResolvedValue([]),
     },
-    apiKeyStore: {
-      create: vi.fn(async () => {
-        throw new Error('apiKeyStore.create not stubbed')
-      }),
-      verify: vi.fn(async () => null),
-      listForUser: vi.fn(async () => []),
-      listAll: vi.fn(async () => []),
-      revoke: vi.fn(async () => false),
-      touchLastUsed: vi.fn(async () => {}),
-    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }
@@ -309,4 +301,26 @@ describe('GET /api/v1/analytics/sources', () => {
     expect(body[1].source).toBe('similarity')
     expect(body[1].approvalRate).toBeCloseTo(0.333, 2)
   })
+})
+
+describe('analytics admin guard', () => {
+  it.each(['overview', 'batches', 'genres', 'sources', 'scores', 'trend', 'time-to-act'])(
+    'rejects a non-admin on /api/v1/analytics/%s',
+    async (route) => {
+      const execute = vi.fn(async () => ({ rows: [] }))
+      const app = createApp(
+        makeDeps({
+          db: { execute } as unknown as AppDependencies['db'],
+          getUserById: vi.fn(async () => ({
+            id: 1,
+            username: 'member',
+            isAdmin: false,
+          })) as unknown as AppDependencies['getUserById'],
+        }),
+      )
+      const res = await authedRequest(app, `/api/v1/analytics/${route}`)
+      expect(res.status).toBe(403)
+      expect(execute).not.toHaveBeenCalled()
+    },
+  )
 })

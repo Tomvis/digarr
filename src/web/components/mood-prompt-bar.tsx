@@ -1,7 +1,17 @@
-import { type FormEvent, useState } from 'react'
+import { Sparkles } from 'lucide-react'
+import {
+  type FocusEvent,
+  type FormEvent,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { toast } from 'sonner'
-import { moodDiscover, quickDiscover } from '../lib/api'
+import { shouldIgnoreShortcut } from '../hooks/use-keyboard-shortcuts'
+import { moodDiscover } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { type MoodAddFailure, moodAddQueue } from '../lib/mood-add-queue'
 
 export function MoodPromptBar({
   existingArtistNames,
@@ -20,7 +30,39 @@ export function MoodPromptBar({
     inLibrary?: boolean
   }> | null>(null)
   const [loading, setLoading] = useState(false)
-  const [queued, setQueued] = useState<Set<string>>(new Set())
+  const addStatuses = useSyncExternalStore(moodAddQueue.subscribe, moodAddQueue.getSnapshot)
+  const [expanded, setExpanded] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const focusOnOpen = useRef(false)
+  const visible = expanded || query !== '' || results !== null || loading
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== '/' || shouldIgnoreShortcut(e)) return
+      e.preventDefault()
+      focusOnOpen.current = true
+      setExpanded(true)
+      inputRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    if (visible && focusOnOpen.current) {
+      focusOnOpen.current = false
+      inputRef.current?.focus()
+    }
+  }, [visible])
+
+  function handleBlur(e: FocusEvent<HTMLFormElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget)) setExpanded(false)
+  }
+
+  function expand() {
+    focusOnOpen.current = true
+    setExpanded(true)
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -38,28 +80,50 @@ export function MoodPromptBar({
     }
   }
 
-  async function handleAddToQueue(artistName: string) {
-    setQueued((prev) => new Set([...prev, artistName]))
-    try {
-      await quickDiscover(artistName)
-      toast.success(t('discover.moodAddedSuccess').replace('{0}', artistName))
-      // Seed artist is stored async on the backend - poll for it to appear
-      setTimeout(onQueued, 2000)
-      setTimeout(onQueued, 5000)
-    } catch {
-      toast.error(t('discover.moodAddFailed').replace('{0}', artistName))
-      setQueued((prev) => {
-        const next = new Set(prev)
-        next.delete(artistName)
-        return next
-      })
+  function handleAddToQueue(artistName: string) {
+    moodAddQueue.enqueue(artistName, {
+      onAdded: () => {
+        toast.success(t('discover.moodAddedSuccess').replace('{0}', artistName))
+        // Seed artist is stored async on the backend - poll for it to appear
+        setTimeout(onQueued, 2000)
+        setTimeout(onQueued, 5000)
+      },
+      onFailed: (reason, err) => toast.error(failureMessage(artistName, reason, err)),
+    })
+  }
+
+  function failureMessage(artistName: string, reason: MoodAddFailure, err: unknown) {
+    if (reason === 'rate-limited')
+      return t('discover.moodAddRateLimited').replace('{0}', artistName)
+    if (reason === 'pipeline-running') {
+      return t('discover.moodAddPipelineRunning').replace('{0}', artistName)
     }
+    const base = t('discover.moodAddFailed').replace('{0}', artistName)
+    const detail = err instanceof Error ? err.message.trim() : ''
+    return detail ? `${base}: ${detail}` : base
+  }
+
+  if (!visible) {
+    return (
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={expand}
+          aria-keyshortcuts="/"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted border border-border rounded hover:text-text hover:border-accent/40 transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+        >
+          <Sparkles size={14} aria-hidden="true" />
+          {t('discover.moodOpen')}
+        </button>
+      </div>
+    )
   }
 
   return (
     <div className="mb-4">
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} onBlur={handleBlur} className="flex gap-2">
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -116,15 +180,23 @@ export function MoodPromptBar({
                       <span className="text-micro text-muted px-2 py-1 bg-bg border border-border rounded">
                         {t('discover.pendingReview')}
                       </span>
-                    ) : queued.has(r.artistName) ? (
+                    ) : addStatuses.get(r.artistName) === 'added' ? (
                       <span className="text-micro text-approve px-2 py-1 bg-approve/10 border border-approve/20 rounded">
                         {t('discover.addedToQueue')}
+                      </span>
+                    ) : addStatuses.get(r.artistName) === 'sending' ? (
+                      <span className="text-micro text-muted px-2 py-1 bg-bg border border-border rounded">
+                        {t('discover.discovering')}
+                      </span>
+                    ) : addStatuses.get(r.artistName) === 'queued' ? (
+                      <span className="text-micro text-muted px-2 py-1 bg-bg border border-dashed border-border rounded">
+                        {t('discover.moodAddQueued')}
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleAddToQueue(r.artistName)}
-                        className="text-micro px-2 py-1 bg-accent/10 text-accent border border-accent/20 rounded hover:bg-accent/20 transition-colors"
+                        className="text-micro px-2 py-1 bg-accent/5 text-accent-text border border-accent/20 rounded hover:bg-accent/20 transition-colors"
                       >
                         {t('discover.addDiscover')}
                       </button>

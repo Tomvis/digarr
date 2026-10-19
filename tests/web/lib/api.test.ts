@@ -19,10 +19,12 @@ import {
   importSpotifyLikedSongs,
   loginUser,
   migrateLegacySession,
+  quickDiscover,
   registerUser,
   restoreBackupApi,
   updateSettings,
 } from '@/web/lib/api'
+import { loadMessages } from '@/web/lib/locale-catalogs'
 import { setStoredLocale } from '@/web/lib/locale-storage'
 
 const fetchMock = vi.fn()
@@ -81,7 +83,7 @@ function expectCookieRequest(init: RequestInit, csrf: boolean): Headers {
   return headers
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   fetchMock.mockReset()
@@ -89,6 +91,7 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage())
   localStorage.setItem('digarr-auth-token', 'legacy-session-token')
   setStoredLocale('de')
+  await loadMessages('de')
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
     value: vi.fn(() => 'blob:test'),
@@ -331,6 +334,16 @@ describe('authenticated downloads', () => {
     expect(clickedAnchor?.download).toBe('server-backup.json')
   })
 
+  it('treats a 401 on a raw download as an expired session', async () => {
+    const onExpired = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired, { once: true })
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401 })
+
+    await expect(exportPlaylistApi(7, 'm3u')).rejects.toMatchObject({ status: 401 })
+
+    expect(onExpired).toHaveBeenCalledTimes(1)
+  })
+
   it('preserves each download function error shape', async () => {
     fetchMock
       .mockResolvedValueOnce({ ok: false, status: 500 })
@@ -349,6 +362,48 @@ describe('authenticated downloads', () => {
       status: 422,
       message: 'Backup failed',
     })
+  })
+})
+
+describe('ApiError message', () => {
+  it.each([
+    [
+      'a translated code over the legacy error member',
+      { title: 'Not Found', error: 'raw', code: 'errors.auth.notAuthenticated' },
+      'Nicht authentifiziert',
+    ],
+    [
+      'the legacy error member over a generic title',
+      {
+        type: '/problems/http-400',
+        title: 'Bad Request',
+        detail: 'Unknown targetId: x',
+        error: 'Unknown targetId: x',
+      },
+      'Unknown targetId: x',
+    ],
+    [
+      'the title of a native problem over its detail',
+      { type: '/problems/not-found', title: 'Not Found', detail: 'No route for GET /api/v1/x' },
+      'Not Found',
+    ],
+    ['the message when nothing else is set', { message: 'Plain message' }, 'Plain message'],
+  ])('prefers %s', (_case, data, expected) => {
+    expect(new ApiError(400, data).message).toBe(expected)
+  })
+})
+
+describe('Retry-After on API errors (#1109)', () => {
+  it('exposes the Retry-After header in seconds on the thrown ApiError', async () => {
+    const res = jsonResponse({ code: 'rate-limited' }, 429)
+    res.headers.set('Retry-After', '42')
+    fetchMock.mockResolvedValueOnce(res)
+
+    const error = await quickDiscover('Burial').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(429)
+    expect((error as ApiError).retryAfter).toBe(42)
   })
 })
 

@@ -1,3 +1,4 @@
+import type { ReleaseGroupTypes } from '@/core/targets/lidarr-metadata-profile'
 import type { DiscoveryModeRequest } from './request'
 
 export type DiscoveryFieldType = 'text' | 'number' | 'select' | 'multiselect' | 'toggle' | 'tags'
@@ -39,6 +40,8 @@ export type RawDiscoveryCandidate =
   | (RawDiscoveryCandidateBase & {
       candidateType: 'artist'
       artistName?: never
+      recordingMbid?: string
+      recordingTitle?: string
     })
   | (RawDiscoveryCandidateBase & {
       candidateType: 'release'
@@ -46,6 +49,7 @@ export type RawDiscoveryCandidate =
       artistMbid: string
       releaseMbid?: string
       releaseGroupMbid?: string
+      releaseGroupTypes?: ReleaseGroupTypes
     })
 
 export type DiscoveryCandidate = RawDiscoveryCandidate & {

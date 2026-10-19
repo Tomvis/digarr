@@ -23,6 +23,17 @@ describe('scoreSlskdCandidate()', () => {
   })
 })
 
+describe('scoreSlskdCandidate() artist names with dots', () => {
+  it.each(['Dr. Dre - 2001', 'Dr. Dre - 2001.flac'])('keeps "Dr. Dre" in %s', (filename) => {
+    const scored = scoreSlskdCandidate(
+      { artistName: 'Dr. Dre', releaseTitle: '2001' },
+      { filename },
+    )
+    expect(scored.artistMatch).toBe(true)
+    expect(scored.titleMatch).toBe(true)
+  })
+})
+
 describe('selectBestSlskdCandidate()', () => {
   it('queues an exact audio release with cover art and metadata companions', () => {
     const selected = selectBestSlskdCandidate(release, [
@@ -40,6 +51,58 @@ describe('selectBestSlskdCandidate()', () => {
     ])
     expect(selected.decision).toBe('auto_queue')
   })
+
+  const peer = (username: string, extra: Partial<SlskdSearchResult> = {}): SlskdSearchResult => ({
+    id: username,
+    filename: 'Radiohead - OK Computer',
+    username,
+    size: 100,
+    files: [{ filename: 'Radiohead\\OK Computer\\01.flac', size: 100 }],
+    ...extra,
+  })
+
+  it.each([
+    [
+      'free slot beats a queue',
+      [
+        peer('queued', { queueLength: 0 }),
+        peer('free', { hasFreeUploadSlot: true, queueLength: 9 }),
+      ],
+      'free',
+    ],
+    [
+      'shorter queue beats a longer one',
+      [
+        peer('long', { hasFreeUploadSlot: false, queueLength: 5 }),
+        peer('short', { hasFreeUploadSlot: false, queueLength: 1 }),
+      ],
+      'short',
+    ],
+    [
+      'faster upload breaks a queue tie',
+      [
+        peer('slow', { queueLength: 2, uploadSpeed: 10 }),
+        peer('fast', { queueLength: 2, uploadSpeed: 99 }),
+      ],
+      'fast',
+    ],
+    [
+      'missing stats rank last',
+      [
+        peer('unknown'),
+        peer('known', { hasFreeUploadSlot: false, queueLength: 50, uploadSpeed: 1 }),
+      ],
+      'known',
+    ],
+  ])(
+    'auto-queues a release shared by several peers and prefers peer signals: %s',
+    (_name, candidates, winner) => {
+      const selected = selectBestSlskdCandidate(release, candidates)
+
+      expect(selected.decision).toBe('auto_queue')
+      expect(selected.candidate?.username).toBe(winner)
+    },
+  )
 
   it('returns needs_review for ambiguous weak matches', () => {
     const candidates: SlskdSearchResult[] = [

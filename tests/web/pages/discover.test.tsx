@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import type { QueryClient } from '@tanstack/react-query'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuditionQueue } from '@/web/hooks/use-audition-queue'
+import type { PreviewSource } from '@/web/hooks/use-preview'
 import { I18nProvider } from '@/web/lib/i18n'
 import { PreviewContext } from '@/web/lib/preview-context'
 
@@ -14,7 +15,8 @@ const noopPreview = {
   play: vi.fn(),
   stop: vi.fn(),
   hasPreview: () => false,
-  currentMbid: null,
+  currentMbid: null as string | null,
+  currentTrack: undefined as PreviewSource['track'],
   playing: false,
   globalPlayId: 0,
   volume: 1,
@@ -34,19 +36,19 @@ const noopPreview = {
   },
 }
 
-function renderWithQuery(ui: ReactElement, initialEntries: string[] = ['/']) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return render(
+function renderPage(ui: ReactElement, initialEntries: string[] = ['/']) {
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <I18nProvider>
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={initialEntries}>
-          <PreviewContext.Provider value={noopPreview}>{ui}</PreviewContext.Provider>
-        </MemoryRouter>
-      </QueryClientProvider>
-    </I18nProvider>,
+      <MemoryRouter initialEntries={initialEntries}>
+        <PreviewContext.Provider value={noopPreview}>{children}</PreviewContext.Provider>
+      </MemoryRouter>
+    </I18nProvider>
   )
+  return renderWithQuery(ui, { wrapper })
+}
+
+async function openMoreMenu() {
+  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
 }
 
 // ---------------------------------------------------------------------------
@@ -55,12 +57,26 @@ function renderWithQuery(ui: ReactElement, initialEntries: string[] = ['/']) {
 
 vi.mock('@/web/lib/api', () => ({
   getRecommendations: vi.fn(),
+  getRecommendationCounts: vi.fn(),
+  listOwnApprovalRequests: vi.fn().mockResolvedValue([]),
+  resolveApprovalRequest: vi.fn(),
+  listApprovalRequests: vi.fn().mockResolvedValue([]),
   updateRecommendation: vi.fn(),
   approveRecommendation: vi.fn(),
   approveToTarget: vi.fn(),
   bulkAction: vi.fn(),
+  deleteAlbumBlock: vi.fn(),
+  deleteArtistBlock: vi.fn(),
   getWarmStatuses: vi.fn(),
   getPopularAlbums: vi.fn(),
+  getPendingPlayability: vi.fn().mockResolvedValue({
+    pendingArtists: 0,
+    withTrack: 0,
+    withoutTrack: 0,
+    reasons: { missingSource: 0, noMatch: 0, upstreamFailure: 0, titleOnly: 0 },
+    unknown: 0,
+    checkedAt: null,
+  }),
   getPopularAlbumsAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, spotify: true, lastfm: false }),
@@ -79,17 +95,18 @@ vi.mock('@/web/lib/api', () => ({
   getUserPreferences: vi.fn().mockResolvedValue({}),
   getAuthStatus: vi.fn().mockResolvedValue({ authenticated: true, isAdmin: true }),
   getCurrentUser: vi.fn().mockResolvedValue({ id: 1, username: 'admin', isAdmin: true }),
-  getLidarrProfiles: vi.fn().mockResolvedValue([{ id: 1, name: 'Any' }]),
-  getLidarrMetadataProfiles: vi.fn().mockResolvedValue([{ id: 1, name: 'Standard' }]),
-  getLidarrRootFolders: vi.fn().mockResolvedValue([{ id: 1, path: '/music', freeSpace: 0 }]),
 }))
 
 import {
   approveRecommendation,
   approveToTarget,
   bulkAction,
+  deleteAlbumBlock,
+  deleteArtistBlock,
   getAuthStatus,
   getCurrentUser,
+  getPendingPlayability,
+  getRecommendationCounts,
   getRecommendations,
   getUserPreferences,
   getWarmStatuses,
@@ -100,6 +117,7 @@ import {
 
 const mockApproveToTarget = approveToTarget as ReturnType<typeof vi.fn>
 const mockGetRecommendations = getRecommendations as ReturnType<typeof vi.fn>
+const mockGetCounts = getRecommendationCounts as ReturnType<typeof vi.fn>
 const mockUpdateRecommendation = updateRecommendation as ReturnType<typeof vi.fn>
 const mockApproveRecommendation = approveRecommendation as ReturnType<typeof vi.fn>
 const mockBulkAction = bulkAction as ReturnType<typeof vi.fn>
@@ -121,6 +139,8 @@ const makeRec = (
     sources: Record<string, number> | null
     lidarrError: string | null
     kind: 'artist' | 'album' | 'track'
+    recommendedReleaseGroupId: string | null
+    recommendedReleaseGroupTitle: string | null
     recommendedTrackTitle: string | null
   }> = {},
 ) => ({
@@ -160,11 +180,80 @@ function setupMockApi(recs: ReturnType<typeof makeRec>[] = [makeRec()]) {
   mockListTargets.mockResolvedValue([])
 }
 
+const named = (id: number, name: string, status = 'pending') => ({
+  ...makeRec({ id, status }),
+  artist: { ...makeRec().artist, id: id + 100, name, mbid: `mbid-${id}` },
+})
+
+type CachedList = { items: Array<{ id: number; status: string }>; total: number }
+
+function cachedLists(client: QueryClient) {
+  return client
+    .getQueriesData<CachedList | { pages: CachedList[] }>({ queryKey: ['recommendations'] })
+    .filter(([key, data]) => data && key[1] !== 'counts' && key[1] !== 'playability')
+    .map(([, data]) => {
+      const pages = data && 'pages' in data ? data.pages : data ? [data] : []
+      return {
+        ids: pages.flatMap((page) => page.items.map((r) => r.id)),
+        statuses: pages.flatMap((page) => page.items.map((r) => r.status)),
+        total: pages.at(-1)?.total,
+      }
+    })
+}
+
+/** Serves the list like the API (status filter, offset, limit) and applies mutations to it. */
+function mockServer(recs: ReturnType<typeof named>[]) {
+  const rows = recs.map((r) => ({ ...r }))
+  const setStatus = (id: number, status: string) => {
+    const row = rows.find((r) => r.id === id)
+    if (row) row.status = status
+  }
+  mockGetRecommendations.mockImplementation((params?: Record<string, string>) => {
+    const statuses = params?.status?.split(',')
+    const matching = rows.filter((r) => !statuses || statuses.includes(r.status))
+    const offset = Number(params?.offset ?? 0)
+    return Promise.resolve({
+      items: matching.slice(offset, offset + Number(params?.limit ?? 50)),
+      total: matching.length,
+    })
+  })
+  ;(getWarmStatuses as ReturnType<typeof vi.fn>).mockResolvedValue({ statuses: {} })
+  mockListTargets.mockResolvedValue([])
+  mockUpdateRecommendation.mockImplementation(async (id: number, body: { status: string }) => {
+    setStatus(id, body.status)
+    return { status: body.status }
+  })
+  return setStatus
+}
+
+async function settledCallCounts() {
+  await waitFor(() => expect(mockGetCounts).toHaveBeenCalled())
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  return {
+    lists: mockGetRecommendations.mock.calls.length,
+    counts: mockGetCounts.mock.calls.length,
+  }
+}
+
+/** One counts GET, plus the active page GET in grid/list (never in the stack). */
+async function expectRefetches(before: { lists: number; counts: number }, pageRefetch: boolean) {
+  await waitFor(() => expect(mockGetCounts).toHaveBeenCalledTimes(before.counts + 1))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(mockGetCounts).toHaveBeenCalledTimes(before.counts + 1)
+  expect(mockGetRecommendations).toHaveBeenCalledTimes(before.lists + (pageRefetch ? 1 : 0))
+  if (pageRefetch)
+    expect(mockGetRecommendations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: '50', offset: '0' }),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Import component after mocks are registered
 // ---------------------------------------------------------------------------
 
 import { DiscoverPage } from '@/web/pages/discover'
+import { renderWithQuery } from '../helpers/query'
+import { installMemoryLocalStorage } from '../helpers/storage'
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -173,26 +262,14 @@ import { DiscoverPage } from '@/web/pages/discover'
 describe('DiscoverPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    noopPreview.currentMbid = null
+    noopPreview.currentTrack = undefined
     noopPreview.audition.unavailable = []
     noopPreview.audition.selectedCount = 0
     mockGetAuthStatus.mockResolvedValue({ authenticated: true, isAdmin: true })
     mockGetCurrentUser.mockResolvedValue({ id: 1, username: 'admin', isAdmin: true })
-    const storage = new Map<string, string>()
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: vi.fn((key: string) => storage.get(key) ?? null),
-        setItem: vi.fn((key: string, value: string) => {
-          storage.set(key, value)
-        }),
-        removeItem: vi.fn((key: string) => {
-          storage.delete(key)
-        }),
-        clear: vi.fn(() => {
-          storage.clear()
-        }),
-      },
-    })
+    mockGetCounts.mockResolvedValue({ all: 0, pending: 0, approved: 0, rejected: 0 })
+    installMemoryLocalStorage()
     Object.defineProperty(globalThis, 'ResizeObserver', {
       configurable: true,
       value: class {
@@ -209,7 +286,8 @@ describe('DiscoverPage', () => {
       primaryGenres: ['metal', 'jazz', 'trip hop'],
       secondaryGenres: ['ambient'],
     })
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Filters' }))
     const select = await screen.findByRole('combobox', { name: 'Discovery order' })
     expect(select).toHaveValue('score')
     await waitFor(() =>
@@ -234,10 +312,12 @@ describe('DiscoverPage', () => {
     const rec = makeRec()
     rec.artist.streamingUrls = { spotify: '' }
     setupMockApi([rec, makeRec({ id: 2, status: 'approved' })])
-    renderWithQuery(<DiscoverPage />)
-    const button = await screen.findByRole('button', { name: /Audition/ })
-    await waitFor(() => expect(button).toBeEnabled())
-    fireEvent.click(button)
+    renderPage(<DiscoverPage />)
+    await waitFor(() => expect(screen.getAllByText('Test Artist').length).toBeGreaterThan(0))
+    await openMoreMenu()
+    const item = await screen.findByRole('menuitem', { name: /Audition/ })
+    expect(item).not.toHaveAttribute('aria-disabled')
+    fireEvent.click(item)
     expect(noopPreview.audition.start).toHaveBeenCalledWith([
       {
         mbid: rec.artist.mbid,
@@ -258,48 +338,40 @@ describe('DiscoverPage', () => {
         reason: 'missing-links',
       },
     ]
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     expect(await screen.findByText('1 of 2 selected previews unavailable')).toBeInTheDocument()
     expect(screen.getByText('No-link artist: No preview links')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(noopPreview.audition.dismissSummary).toHaveBeenCalled()
   })
 
-  it('renders recommendation cards from API data', async () => {
+  it('summarizes pending artists without a playable track by reason', async () => {
     setupMockApi()
-    renderWithQuery(<DiscoverPage />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
+    vi.mocked(getPendingPlayability).mockResolvedValueOnce({
+      pendingArtists: 5,
+      withTrack: 1,
+      withoutTrack: 3,
+      reasons: { missingSource: 1, noMatch: 1, upstreamFailure: 0, titleOnly: 1 },
+      unknown: 1,
+      checkedAt: '2026-10-02T00:00:00.000Z',
     })
+    renderPage(<DiscoverPage />)
 
-    expect(screen.getByText('78%')).toBeInTheDocument()
-  })
-
-  it('keeps the recommendation workspace free of discovery mode cards', async () => {
-    setupMockApi()
-    renderWithQuery(<DiscoverPage />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
-
-    expect(screen.queryByRole('heading', { name: 'Discovery Modes' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Run discovery' })).not.toBeInTheDocument()
-  })
-
-  it('shows skeleton cards while loading', () => {
-    // Never resolves during this test
-    mockGetRecommendations.mockReturnValue(new Promise(() => {}))
-    renderWithQuery(<DiscoverPage />)
-    // Skeleton elements are present (animate-pulse divs)
-    const pulsingEls = document.querySelectorAll('.animate-pulse')
-    expect(pulsingEls.length).toBeGreaterThan(0)
+    expect(
+      await screen.findByText(
+        '3 of 5 pending artists had no playable track in your latest Audition playlist runs',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('No track source set up: 1')).toBeInTheDocument()
+    expect(screen.getByText('No matching track: 1')).toBeInTheDocument()
+    expect(screen.getByText('Title only, nothing to play: 1')).toBeInTheDocument()
+    expect(screen.getByText('Not checked yet: 1')).toBeInTheDocument()
+    expect(screen.queryByText(/Lookup failed/)).not.toBeInTheDocument()
   })
 
   it('shows empty state when no recommendations match filter', async () => {
     mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
     await waitFor(() => {
       expect(screen.getByText(/No pending recommendations/i)).toBeInTheDocument()
@@ -307,46 +379,68 @@ describe('DiscoverPage', () => {
     expect(screen.queryByRole('link', { name: 'Library Gap-Fill' })).not.toBeInTheDocument()
   })
 
-  it('explains album producers and links to each action when the Albums view is empty', async () => {
-    mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
-    renderWithQuery(<DiscoverPage />, ['/discover?kind=album'])
+  it('shows a load error with retry instead of an empty queue', async () => {
+    mockGetRecommendations.mockRejectedValue(new Error('boom'))
+    renderPage(<DiscoverPage />)
 
-    expect(await screen.findByText('No album recommendations in this view.')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load recommendations.")
+    expect(screen.queryByText(/No pending recommendations/i)).toBeNull()
+    mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText(/No pending recommendations/i)).toBeInTheDocument()
+  })
+
+  it('tells a decade-filtered empty result apart and clears the filter', async () => {
+    mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
+    renderPage(<DiscoverPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Filters' }))
+    fireEvent.click(screen.getByRole('button', { name: '70s' }))
     expect(
-      screen.getByText(
-        'A normal scan finds artists. Use one of the options below to generate album recommendations.',
-      ),
+      await screen.findByText('No recommendations match the selected decades.'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Library Gap-Fill' })).toHaveAttribute(
-      'href',
-      '/discover/modes?mode=gap-fill',
-    )
-    expect(screen.getByRole('link', { name: 'Release Radar' })).toHaveAttribute(
-      'href',
-      '/discover/modes?mode=release-radar',
-    )
-    expect(screen.getByRole('link', { name: 'Net-new album discovery' })).toHaveAttribute(
-      'href',
-      '/settings?tab=recommendations#net-new-album-discovery',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Approved' }))
-    expect(await screen.findByText('No album recommendations in this view.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(await screen.findByText(/No pending recommendations/i)).toBeInTheDocument()
   })
 
-  it('shows the album guidance when the saved view is the card stack', async () => {
-    localStorage.setItem('digarr:discover-view', 'stack')
-    mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
+  it.each([
+    ['list', undefined],
+    ['stack', 'stack'],
+  ])(
+    'explains album producers and links to each action when the Albums view is empty (%s view)',
+    async (_view, saved) => {
+      if (saved) localStorage.setItem('digarr:discover-view', saved)
+      mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
+      renderPage(<DiscoverPage />, ['/discover?kind=album'])
 
-    renderWithQuery(<DiscoverPage />, ['/discover?kind=album'])
+      expect(await screen.findByText('No album recommendations in this view.')).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'A normal scan finds artists. Use one of the options below to generate album recommendations.',
+        ),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Library Gap-Fill' })).toHaveAttribute(
+        'href',
+        '/discovery-modes?mode=gap-fill',
+      )
+      expect(screen.getByRole('link', { name: 'Release Radar' })).toHaveAttribute(
+        'href',
+        '/discovery-modes?mode=release-radar',
+      )
+      expect(screen.getByRole('link', { name: 'Net-new album discovery' })).toHaveAttribute(
+        'href',
+        '/settings?tab=recommendations#net-new-album-discovery',
+      )
+      expect(screen.queryByText('No more recommendations')).not.toBeInTheDocument()
 
-    expect(await screen.findByText('No album recommendations in this view.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Library Gap-Fill' })).toHaveAttribute(
-      'href',
-      '/discover/modes?mode=gap-fill',
-    )
-    expect(screen.queryByText('No more recommendations')).not.toBeInTheDocument()
-  })
+      if (!saved) {
+        fireEvent.click(screen.getByRole('button', { name: 'Approved' }))
+        expect(
+          await screen.findByText('No album recommendations in this view.'),
+        ).toBeInTheDocument()
+      }
+    },
+  )
 
   it('filter tabs update the displayed list', async () => {
     // Default filter is "pending", show one rec. Switch to "approved" -> empty.
@@ -360,11 +454,9 @@ describe('DiscoverPage', () => {
       return Promise.resolve({ items: [], total: 0 })
     })
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    await screen.findByText('Test Artist')
 
     fireEvent.click(screen.getByRole('button', { name: /Approved/i }))
 
@@ -373,13 +465,28 @@ describe('DiscoverPage', () => {
     })
   })
 
-  it('clicking a card expands it', async () => {
-    setupMockApi()
-    renderWithQuery(<DiscoverPage />)
+  it('suspends approve and reject shortcuts while the More menu is open', async () => {
+    setupMockApi([makeRec()])
+    renderPage(<DiscoverPage />)
+    await screen.findByText('Test Artist')
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    fireEvent.keyDown(window, { key: 'j' })
+    await openMoreMenu()
+    await screen.findByRole('menu')
+    fireEvent.keyDown(window, { key: 'a' })
+    fireEvent.keyDown(window, { key: 'r' })
+
+    expect(mockUpdateRecommendation).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Why are you rejecting?' })).toBeNull()
+  })
+
+  it('shows genre tags and expands a card on click', async () => {
+    setupMockApi()
+    renderPage(<DiscoverPage />)
+
+    await screen.findByText('Test Artist')
+    expect(screen.getByText('rock')).toBeInTheDocument()
+    expect(screen.getByText('indie')).toBeInTheDocument()
 
     // Click the card - AI reasoning should appear in expanded view
     fireEvent.click(screen.getByText('Test Artist'))
@@ -389,30 +496,31 @@ describe('DiscoverPage', () => {
     })
   })
 
-  it('approve button calls approveRecommendation without dialog when no Lidarr targets', async () => {
-    mockApproveRecommendation.mockResolvedValue(undefined as unknown as never)
-    setupMockApi()
-
-    renderWithQuery(<DiscoverPage />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
-
-    // Find the card's Approve button (from MonitoringOptions split button)
-    const approveButtons = screen.getAllByText('Approve')
-    expect(approveButtons.length).toBeGreaterThanOrEqual(1)
-    // biome-ignore lint/style/noNonNullAssertion: checked above
-    fireEvent.click(approveButtons[0]!)
-
-    // No Lidarr targets -> no dialog, calls approveRecommendation directly with monitorOption
-    await waitFor(() => {
-      expect(mockApproveRecommendation).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ monitorOption: 'none' }),
+  it.each([
+    { previewMbid: 'mbid-test-001', hasTrack: true, expected: true },
+    { previewMbid: 'another-artist', hasTrack: true, expected: false },
+    { previewMbid: 'mbid-test-001', hasTrack: false, expected: false },
+  ])(
+    'approves directly without a dialog and sends exact preview context only for the approved artist: $expected',
+    async ({ previewMbid, hasTrack, expected }) => {
+      setupMockApi()
+      noopPreview.currentMbid = previewMbid
+      noopPreview.currentTrack = hasTrack
+        ? { artistName: 'Test Artist', trackName: 'The song' }
+        : undefined
+      mockApproveRecommendation.mockResolvedValue({ status: 'approved' })
+      renderPage(<DiscoverPage />)
+      await screen.findByText('Test Artist')
+      fireEvent.click(screen.getAllByText('Approve')[0] as HTMLElement)
+      await waitFor(() => expect(mockApproveRecommendation).toHaveBeenCalled())
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(mockApproveRecommendation.mock.calls[0]?.[0]).toBe(1)
+      expect(mockApproveRecommendation.mock.calls[0]?.[1]?.monitorOption).toBe('none')
+      expect(mockApproveRecommendation.mock.calls[0]?.[1]?.feedbackTrack).toEqual(
+        expected ? noopPreview.currentTrack : undefined,
       )
-    })
-  })
+    },
+  )
 
   it('undoing an approval asks for the Lidarr removal and reports what happened', async () => {
     setupMockApi()
@@ -424,7 +532,7 @@ describe('DiscoverPage', () => {
     } as never)
     const success = vi.spyOn(toast, 'success')
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     await waitFor(() => {
       expect(screen.getByText('Test Artist')).toBeInTheDocument()
     })
@@ -457,13 +565,15 @@ describe('DiscoverPage', () => {
     mockUpdateRecommendation.mockResolvedValue({ status: 'pending' } as never)
     const success = vi.spyOn(toast, 'success')
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     await waitFor(() => {
       expect(screen.getByText('Test Artist')).toBeInTheDocument()
     })
 
     // "Reject" exact text (not the "Rejected" tab)
     fireEvent.click(screen.getByText('Reject'))
+    const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject without a reason' }))
     await waitFor(() => {
       expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
     })
@@ -494,7 +604,7 @@ describe('DiscoverPage', () => {
     ])
     mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     await waitFor(() => {
       expect(screen.getByText('Test Artist')).toBeInTheDocument()
     })
@@ -517,9 +627,12 @@ describe('DiscoverPage', () => {
     setupMockApi([makeRec({ status: 'added_to_lidarr' })])
     mockUpdateRecommendation.mockResolvedValue({ status: 'added_to_lidarr' } as never)
 
-    renderWithQuery(<DiscoverPage />)
-    fireEvent.click(await screen.findByText('Test Artist'))
+    renderPage(<DiscoverPage />)
+    await screen.findByText('Test Artist')
+    fireEvent.keyDown(window, { key: 'j' })
     fireEvent.keyDown(window, { key: 'r' })
+    const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject without a reason' }))
     await waitFor(() => {
       expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
     })
@@ -549,7 +662,7 @@ describe('DiscoverPage', () => {
       lidarrArtistRemoved: false,
     } as never)
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     fireEvent.click(screen.getByRole('button', { name: /Rejected/i }))
     await waitFor(() => {
       expect(screen.getByText('Test Artist')).toBeInTheDocument()
@@ -564,11 +677,9 @@ describe('DiscoverPage', () => {
 
   it('offers popular albums from the approve dropdown', async () => {
     setupMockApi()
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    await screen.findByText('Test Artist')
 
     fireEvent.click(screen.getByLabelText('Monitoring options'))
 
@@ -580,13 +691,20 @@ describe('DiscoverPage', () => {
     // Two recs: one above 70%, one below
     setupMockApi([makeRec({ id: 1, score: 0.85 }), makeRec({ id: 2, score: 0.5 })])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
     await waitFor(() => {
       expect(screen.getAllByText('Test Artist')).toHaveLength(2)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /approve all above/i }))
+    await openMoreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /approve all above/i }))
+
+    expect(mockBulkAction).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('dialog', { name: 'Approve all above 70%?' })
+    expect(dialog).toHaveTextContent('Approve 1 pending recommendations at 70% or higher?')
+    expect(dialog).toHaveTextContent('Lidarr')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve 1' }))
 
     await waitFor(() => {
       // Only rec id=1 qualifies (85% >= 70%)
@@ -607,11 +725,14 @@ describe('DiscoverPage', () => {
       makeRec({ id: 2, score: 0.8, kind: 'track', recommendedTrackTitle: 'Song' }),
     ])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     await waitFor(() => {
       expect(screen.getAllByText('Test Artist').length).toBeGreaterThan(0)
     })
-    fireEvent.click(screen.getByRole('button', { name: /approve all above/i }))
+    await openMoreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /approve all above/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Approve all above 70%?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve 2' }))
 
     await waitFor(() => {
       expect(warning).toHaveBeenCalledWith(
@@ -627,7 +748,7 @@ describe('DiscoverPage', () => {
       .mockResolvedValueOnce({ status: 'pending', lidarrArtistRemoved: false } as never)
     const success = vi.spyOn(toast, 'success')
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
     await waitFor(() => {
       expect(screen.getAllByText('Song').length).toBeGreaterThan(0)
     })
@@ -640,6 +761,24 @@ describe('DiscoverPage', () => {
     })
   })
 
+  it('cancelling the approve-above confirmation does nothing', async () => {
+    setupMockApi([makeRec({ id: 1, score: 0.85 })])
+    renderPage(<DiscoverPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('Test Artist')).toHaveLength(1)
+    })
+
+    await openMoreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /approve all above/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Approve all above 70%?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Approve all above 70%?' })).toBeNull()
+    })
+    expect(mockBulkAction).not.toHaveBeenCalled()
+  })
+
   it('bulk reject below threshold opens the picker and rejects only pending below-threshold items', async () => {
     mockBulkAction.mockResolvedValue(undefined as unknown as never)
     setupMockApi([
@@ -650,13 +789,14 @@ describe('DiscoverPage', () => {
       makeRec({ id: 5, score: 0.2, status: 'rejected' }),
     ])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
     await waitFor(() => {
       expect(screen.getAllByText('Test Artist')).toHaveLength(5)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /reject all below/i }))
+    await openMoreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /reject all below/i }))
 
     expect(mockBulkAction).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('dialog', { name: 'Why are you rejecting?' })
@@ -690,9 +830,9 @@ describe('DiscoverPage', () => {
     ;(getWarmStatuses as ReturnType<typeof vi.fn>).mockResolvedValue({ statuses: {} })
     mockListTargets.mockResolvedValue([])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await openMoreMenu()
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Clear All' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Reject All' }))
 
@@ -723,9 +863,9 @@ describe('DiscoverPage', () => {
     const toastPromise = vi
       .spyOn(toast, 'promise')
       .mockImplementation(() => ({ unwrap: async () => undefined }))
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await openMoreMenu()
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Refresh Data' }))
 
     expect(mockRescanArtists).toHaveBeenCalledTimes(1)
@@ -737,46 +877,81 @@ describe('DiscoverPage', () => {
     )
   })
 
-  it('hides shared metadata refresh from non-admin users', async () => {
+  it.each([
+    ['hides', { id: 2, username: 'user', isAdmin: false }, false],
+    ['shows to cookie-authenticated admins', null, true],
+  ])('%s shared metadata refresh', async (_label, user, visible) => {
     setupMockApi()
-    mockGetAuthStatus.mockResolvedValue({ authenticated: true, isAdmin: false })
-    mockGetCurrentUser.mockResolvedValue({ id: 2, username: 'user', isAdmin: false })
-    renderWithQuery(<DiscoverPage />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
-
-    expect(screen.queryByRole('menuitem', { name: 'Refresh Data' })).not.toBeInTheDocument()
-  })
-
-  it('shows shared metadata refresh to cookie-authenticated admins', async () => {
-    setupMockApi()
-    mockGetCurrentUser.mockResolvedValue(null)
-    mockGetAuthStatus.mockResolvedValue({ authenticated: true, isAdmin: true })
-    renderWithQuery(<DiscoverPage />)
+    mockGetCurrentUser.mockResolvedValue(user)
+    mockGetAuthStatus.mockResolvedValue({ authenticated: true, isAdmin: visible })
+    renderPage(<DiscoverPage />)
 
     await waitFor(() => expect(mockGetAuthStatus).toHaveBeenCalled())
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await openMoreMenu()
 
-    expect(await screen.findByRole('menuitem', { name: 'Refresh Data' })).toBeInTheDocument()
+    if (visible) {
+      expect(await screen.findByRole('menuitem', { name: 'Refresh Data' })).toBeInTheDocument()
+    } else {
+      expect(screen.queryByRole('menuitem', { name: 'Refresh Data' })).not.toBeInTheDocument()
+    }
   })
 
-  it('reject button calls updateRecommendation', async () => {
+  it('reject opens the reason picker, and rejecting without a reason sends no reason', async () => {
     mockUpdateRecommendation.mockResolvedValue(undefined as unknown as never)
     setupMockApi()
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    await screen.findByText('Test Artist')
 
     // "Reject" exact text (not "Rejected" tab)
-    const rejectButton = screen.getByText('Reject')
-    fireEvent.click(rejectButton)
+    fireEvent.click(screen.getByText('Reject'))
+    expect(mockUpdateRecommendation).not.toHaveBeenCalled()
+
+    const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject without a reason' }))
 
     await waitFor(() => {
       expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, { status: 'rejected' })
     })
+  })
+
+  it('the r shortcut opens the same picker and sends the chosen reason', async () => {
+    mockUpdateRecommendation.mockResolvedValue(undefined as unknown as never)
+    setupMockApi()
+
+    renderPage(<DiscoverPage />)
+    await screen.findByText('Test Artist')
+
+    fireEvent.keyDown(window, { key: 'j' })
+    fireEvent.keyDown(window, { key: 'r' })
+
+    const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Wrong genre or style for me' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject' }))
+
+    await waitFor(() => {
+      expect(mockUpdateRecommendation).toHaveBeenCalledWith(1, {
+        status: 'rejected',
+        reason: 'wrong_style',
+      })
+    })
+  })
+
+  it('cancelling the picker leaves the recommendation untouched', async () => {
+    setupMockApi()
+
+    renderPage(<DiscoverPage />)
+    await screen.findByText('Test Artist')
+
+    fireEvent.click(screen.getByText('Reject'))
+    const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Why are you rejecting/ })).toBeNull()
+    })
+    expect(mockUpdateRecommendation).not.toHaveBeenCalled()
   })
 
   it('keyboard approve sends a selected recommendation to a standalone slskd target', async () => {
@@ -786,7 +961,7 @@ describe('DiscoverPage', () => {
       { id: 7, type: 'slskd', name: 'slskd', config: {}, enabled: true, owned: true },
     ])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
     const artist = await screen.findByText('Test Artist')
     fireEvent.click(artist)
@@ -804,7 +979,7 @@ describe('DiscoverPage', () => {
     mockUpdateRecommendation.mockResolvedValue(undefined as unknown as never)
     setupMockApi()
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
     const artist = await screen.findByText('Test Artist')
     fireEvent.click(artist)
@@ -816,55 +991,14 @@ describe('DiscoverPage', () => {
     expect(mockApproveToTarget).not.toHaveBeenCalled()
   })
 
-  it('renders genre tags', async () => {
+  it('keeps streaming links in the expanded card, off the decision face', async () => {
     setupMockApi()
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('rock')).toBeInTheDocument()
-      expect(screen.getByText('indie')).toBeInTheDocument()
-    })
-  })
-
-  it('renders streaming links', async () => {
-    setupMockApi()
-    renderWithQuery(<DiscoverPage />)
-
-    await waitFor(() => {
-      // SP link for Spotify
-      expect(screen.getByTitle('Spotify')).toBeInTheDocument()
-    })
-  })
-
-  it('uses translated feedback insights copy in French', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    setupMockApi()
-    renderWithQuery(<DiscoverPage />)
-
-    expect(await screen.findByRole('button', { name: 'Afficher les retours' })).toBeInTheDocument()
-  })
-
-  it('uses translated view switcher labels in French', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    setupMockApi()
-    renderWithQuery(<DiscoverPage />)
-
-    expect(await screen.findByRole('button', { name: 'Vue en grille' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Vue en liste' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Vue empilée' })).toBeInTheDocument()
-  })
-
-  it('uses translated scan action copy in French', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    mockGetRecommendations.mockResolvedValue({ items: [], total: 0 })
-    renderWithQuery(<DiscoverPage />)
-
-    const allButtons = await screen.findAllByRole('button', { name: 'Tout' })
-    const allButton = allButtons[0]
-    if (!allButton) throw new Error('expected at least one "Tout" button')
-    fireEvent.click(allButton)
-
-    expect(await screen.findByText('Exécuter une analyse')).toBeInTheDocument()
+    const card = await screen.findByTestId('rec-card-button')
+    expect(screen.queryByTitle('Spotify')).toBeNull()
+    fireEvent.click(card)
+    expect(await screen.findByTitle('Spotify')).toBeInTheDocument()
   })
 
   it('requests combined approval mode when sending a discovery result to slskd with Lidarr present', async () => {
@@ -874,11 +1008,9 @@ describe('DiscoverPage', () => {
       { id: 7, type: 'slskd', name: 'slskd', config: {}, enabled: true, owned: true },
     ])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    await screen.findByText('Test Artist')
 
     fireEvent.click(screen.getByRole('button', { name: '' }))
     fireEvent.click(screen.getByText('Add to slskd'))
@@ -891,49 +1023,15 @@ describe('DiscoverPage', () => {
     })
   })
 
-  it('sends the linked Lidarr target when slskd is paired to one of multiple Lidarr targets', async () => {
-    setupMockApi()
-    mockListTargets.mockResolvedValue([
-      { id: 1, type: 'lidarr', name: 'Main Lidarr', config: {}, enabled: true, owned: true },
-      { id: 2, type: 'lidarr', name: 'Alt Lidarr', config: {}, enabled: true, owned: true },
-      {
-        id: 7,
-        type: 'slskd',
-        name: 'slskd',
-        config: { lidarrTargetId: 2 },
-        enabled: true,
-        owned: true,
-      },
-    ])
-
-    renderWithQuery(<DiscoverPage />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: '' }))
-    fireEvent.click(screen.getByText('Add to slskd'))
-
-    await waitFor(() => {
-      expect(mockApproveToTarget).toHaveBeenCalledWith(1, 'slskd-7', {
-        approvalMode: 'combined_lidarr_slskd',
-        lidarrTargetId: 'lidarr-2',
-      })
-    })
-  })
-
   it('sends a discovery result directly to a standalone slskd target', async () => {
     setupMockApi()
     mockListTargets.mockResolvedValue([
       { id: 7, type: 'slskd', name: 'slskd', config: {}, enabled: true, owned: true },
     ])
 
-    renderWithQuery(<DiscoverPage />)
+    renderPage(<DiscoverPage />)
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Artist')).toBeInTheDocument()
-    })
+    await screen.findByText('Test Artist')
 
     const approveButtons = screen.getAllByText('Approve')
     expect(approveButtons.length).toBeGreaterThanOrEqual(1)
@@ -948,5 +1046,220 @@ describe('DiscoverPage', () => {
         approvalMode: 'single_target',
       })
     })
+  })
+
+  it.each([
+    ['removes the artist block it created', makeRec(), 'Test Artist', 'artist', true],
+    [
+      'removes the album block it created',
+      makeRec({
+        kind: 'album',
+        recommendedReleaseGroupId: 'rg-1',
+        recommendedReleaseGroupTitle: 'Souvlaki',
+      }),
+      'Souvlaki by Test Artist',
+      'album',
+      true,
+    ],
+    ['keeps an artist block that already existed', makeRec(), 'Test Artist', 'artist', false],
+  ])(
+    'undo %s and names it in the toast',
+    async (_label, rec, name, blockKind, blockCreated) => {
+      localStorage.setItem('digarr:discover-view', 'stack')
+      setupMockApi([rec])
+      mockUpdateRecommendation.mockResolvedValue({ status: 'rejected', blockCreated })
+      ;(deleteArtistBlock as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+      ;(deleteAlbumBlock as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+
+      renderPage(<DiscoverPage />)
+
+      await screen.findAllByText('Test Artist')
+      fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+      const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Wrong genre or style for me' }))
+      fireEvent.click(within(dialog).getByLabelText(/show this artist again/i))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Block forever' }))
+
+      expect(await screen.findByText(`Rejected and blocked ${name}`)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+      await waitFor(() => {
+        expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'pending' })
+      })
+      if (!blockCreated) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(deleteArtistBlock).not.toHaveBeenCalled()
+        expect(deleteAlbumBlock).not.toHaveBeenCalled()
+      } else if (blockKind === 'album') {
+        await waitFor(() => expect(deleteAlbumBlock).toHaveBeenCalledWith('rg-1'))
+      } else {
+        await waitFor(() => expect(deleteArtistBlock).toHaveBeenCalledWith(10))
+      }
+    },
+    15_000,
+  )
+
+  describe('cache updates after an action', () => {
+    async function rejectFirst() {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Reject' })[0] as HTMLElement)
+      const dialog = await screen.findByRole('dialog', { name: /Why are you rejecting/ })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reject without a reason' }))
+    }
+
+    it.each([
+      ['grid', 'reject', rejectFirst],
+      [
+        'list',
+        'approve',
+        async () => fireEvent.click(screen.getAllByText('Approve')[0] as HTMLElement),
+      ],
+      [
+        'stack',
+        'approve',
+        async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })),
+      ],
+      [
+        'grid',
+        'bulk approve',
+        async () => {
+          await openMoreMenu()
+          fireEvent.click(await screen.findByRole('menuitem', { name: /approve all above/i }))
+          const dialog = await screen.findByRole('dialog', { name: 'Approve all above 70%?' })
+          fireEvent.click(within(dialog).getByRole('button', { name: 'Approve 1' }))
+        },
+      ],
+    ])(
+      '%s %s drops the row from Pending and refetches only counts and the active page',
+      async (view, _action, act) => {
+        localStorage.setItem('digarr:discover-view', view)
+        const setStatus = mockServer([
+          { ...named(1, 'First Artist'), score: 0.9 },
+          { ...named(2, 'Second Artist'), score: 0.5 },
+        ])
+        mockApproveRecommendation.mockImplementation(async (id: number) => {
+          setStatus(id, 'approved')
+          return { status: 'approved' }
+        })
+        mockBulkAction.mockImplementation(async () => {
+          setStatus(1, 'approved')
+          return { results: [{ id: 1, status: 'approved' }] }
+        })
+        const { client } = renderPage(<DiscoverPage />)
+        await screen.findAllByText('First Artist')
+        const before = await settledCallCounts()
+
+        await act()
+
+        await waitFor(() => expect(cachedLists(client)[0]?.ids).toEqual([2]))
+        expect(cachedLists(client)[0]?.total).toBe(1)
+        await expectRefetches(before, view !== 'stack')
+      },
+      15_000,
+    )
+
+    it('refills the grid page so the next row is not skipped after a reject', async () => {
+      mockServer(Array.from({ length: 51 }, (_, i) => named(i + 1, `Artist ${i + 1}`)))
+      const { client } = renderPage(<DiscoverPage />)
+      await screen.findByText('Artist 1')
+      expect(cachedLists(client)[0]?.ids).not.toContain(51)
+
+      await rejectFirst()
+
+      await waitFor(() => expect(cachedLists(client)[0]?.ids).toContain(51))
+      expect(cachedLists(client)[0]).toMatchObject({ total: 50 })
+      expect(cachedLists(client)[0]?.ids).toHaveLength(50)
+      expect(cachedLists(client)[0]?.ids).not.toContain(1)
+    }, 15_000)
+
+    it('keeps an acted row in the All view with its new status', async () => {
+      const setStatus = mockServer([named(1, 'First Artist'), named(2, 'Second Artist')])
+      mockApproveRecommendation.mockImplementation(async (id: number) => {
+        setStatus(id, 'added_to_lidarr')
+        return { status: 'added_to_lidarr' }
+      })
+      const { client } = renderPage(<DiscoverPage />, ['/discover?status=all'])
+      await screen.findByText('First Artist')
+      const before = await settledCallCounts()
+
+      fireEvent.click(screen.getAllByText('Approve')[0] as HTMLElement)
+
+      await waitFor(() =>
+        expect(cachedLists(client)[0]?.statuses).toEqual(['added_to_lidarr', 'pending']),
+      )
+      expect(cachedLists(client)[0]).toMatchObject({ ids: [1, 2], total: 2 })
+      await expectRefetches(before, true)
+    })
+
+    it('undo puts the row back where it was', async () => {
+      mockServer([named(1, 'First Artist'), named(2, 'Second Artist')])
+      const { client } = renderPage(<DiscoverPage />)
+      await screen.findByText('First Artist')
+      await rejectFirst()
+      await waitFor(() => expect(cachedLists(client)[0]?.ids).toEqual([2]))
+      const before = await settledCallCounts()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+      await waitFor(() => expect(cachedLists(client)[0]).toMatchObject({ ids: [1, 2], total: 2 }))
+      expect(mockUpdateRecommendation).toHaveBeenLastCalledWith(1, { status: 'pending' })
+      await expectRefetches(before, true)
+    })
+
+    it('rolls the restored row back out when undo fails', async () => {
+      mockServer([named(1, 'First Artist'), named(2, 'Second Artist')])
+      const { client } = renderPage(<DiscoverPage />)
+      await screen.findByText('First Artist')
+      await rejectFirst()
+      await waitFor(() => expect(cachedLists(client)[0]?.ids).toEqual([2]))
+      const before = await settledCallCounts()
+      const toastError = vi.spyOn(toast, 'error')
+
+      mockUpdateRecommendation.mockRejectedValue(new Error('offline'))
+      fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+      await waitFor(() => expect(toastError).toHaveBeenCalledWith('Undo failed'))
+      expect(cachedLists(client)[0]).toMatchObject({ ids: [2], total: 1 })
+      expect(mockGetRecommendations).toHaveBeenCalledTimes(before.lists)
+    })
+
+    it.each([
+      [true, 1],
+      [false, 0],
+    ])('requests warm status only for admins (admin: %s)', async (isAdmin, calls) => {
+      setupMockApi()
+      mockGetAuthStatus.mockResolvedValue({ authenticated: true, isAdmin })
+      renderPage(<DiscoverPage />)
+      await screen.findByText('Test Artist')
+      await waitFor(() => expect(mockGetAuthStatus).toHaveBeenCalled())
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(getWarmStatuses).toHaveBeenCalledTimes(calls)
+    })
+
+    it('keeps stack paging offsets aligned after a reject', async () => {
+      localStorage.setItem('digarr:discover-view', 'stack')
+      const server = Array.from({ length: 20 }, (_, i) => i + 1)
+      mockGetRecommendations.mockImplementation((params: Record<string, string>) => {
+        const offset = Number(params.offset ?? 0)
+        return Promise.resolve({
+          items: server.slice(offset, offset + 3).map((id) => named(id, `Artist ${id}`)),
+          total: server.length,
+        })
+      })
+      ;(getWarmStatuses as ReturnType<typeof vi.fn>).mockResolvedValue({ statuses: {} })
+      mockUpdateRecommendation.mockImplementation(async (id: number) => {
+        server.splice(server.indexOf(id), 1)
+        return { status: 'rejected' }
+      })
+      const { client } = renderPage(<DiscoverPage />)
+      await waitFor(() => expect(cachedLists(client)[0]?.ids).toEqual([1, 2, 3, 4, 5, 6]))
+
+      await rejectFirst()
+
+      await waitFor(() => expect(cachedLists(client)[0]?.ids).toEqual([2, 3, 4, 5, 6, 7, 8, 9]))
+      expect(cachedLists(client)[0]?.total).toBe(19)
+      expect(mockGetRecommendations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: '5' }),
+      )
+    }, 15_000)
   })
 })

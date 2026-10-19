@@ -8,11 +8,12 @@ const mockDeps = {
   db: {} as never,
   getRecommendation: vi.fn(),
   updateRecommendationStatus: vi.fn().mockResolvedValue(undefined),
-  rejectRecommendation: vi.fn().mockResolvedValue(1),
+  rejectRecommendation: vi.fn().mockResolvedValue({ artistId: 1, blockCreated: false }),
   listArtistBlocks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   removeArtistBlock: vi.fn().mockResolvedValue(true),
   addArtistBlock: vi.fn().mockResolvedValue(undefined),
   bulkUpdateStatus: vi.fn().mockResolvedValue(undefined),
+  bulkRejectRecommendations: vi.fn().mockResolvedValue({ rejected: 0, blocksCreated: 0 }),
   filterOwnedIds: vi.fn(async (ids: number[]) => ids),
   listRecommendations: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getSettings: vi.fn().mockResolvedValue({ preferences: {} }),
@@ -36,8 +37,26 @@ function createTestApp() {
 describe('target-aware approval', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it.each([null, 2])('treats a recommendation owned by %s as not found', async (owner) => {
+    mockDeps.getRecommendation.mockResolvedValue({
+      userId: owner,
+      id: 1,
+      artist: { mbid: 'mbid-1', name: 'Radiohead' },
+    })
+
+    const res = await createTestApp().request('/api/v1/recommendations/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    })
+
+    expect(res.status).toBe(404)
+    expect(mockDeps.updateRecommendationStatus).not.toHaveBeenCalled()
+  })
+
   it('approves without targets - sets status to approved', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -60,8 +79,9 @@ describe('target-aware approval', () => {
     )
   })
 
-  it('approves with Lidarr target - adds to Lidarr and sets added_to_lidarr', async () => {
+  it('first approval accepts an existing Lidarr artist and sets added_to_lidarr', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -89,12 +109,13 @@ describe('target-aware approval', () => {
     expect(body.status).toBe('added_to_lidarr')
     expect(mockTarget.addArtist).toHaveBeenCalledWith(
       { mbid: 'mbid-1', name: 'Radiohead' },
-      expect.any(Object),
+      expect.objectContaining({ retryExisting: true }),
     )
   })
 
   it('partial Lidarr add (artist added, album not monitored) persists the artist link and warns, not orphaned', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -136,6 +157,7 @@ describe('target-aware approval', () => {
 
   it('approves with failing Lidarr target - sets add_failed', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -165,6 +187,7 @@ describe('target-aware approval', () => {
 
   it('approves with createPlaylist-only targets - sets approved', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -172,7 +195,7 @@ describe('target-aware approval', () => {
       id: 'spotify-playlist-1',
       type: 'spotify-playlist',
       capabilities: ['createPlaylist'],
-      createPlaylist: vi.fn(),
+      openPlaylistExportSession: vi.fn(),
       testConnection: vi.fn(),
     }
     mockDeps.getEnabledTargetsForUser.mockResolvedValue([spotifyTarget])
@@ -191,11 +214,12 @@ describe('target-aware approval', () => {
       'approved',
       expect.objectContaining({ targetActions: {} }),
     )
-    expect(spotifyTarget.createPlaylist).not.toHaveBeenCalled()
+    expect(spotifyTarget.openPlaylistExportSession).not.toHaveBeenCalled()
   })
 
   it('approves to specific target via targetId', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -241,6 +265,7 @@ describe('target-aware approval', () => {
 
   it('handles multiple addArtist targets', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -287,6 +312,7 @@ describe('target-aware approval', () => {
 
   it('bulk approve with addArtist targets', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -321,6 +347,7 @@ describe('target-aware approval', () => {
 
   it('bulk approve without targets marks all as approved', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -346,6 +373,7 @@ describe('target-aware approval', () => {
     'bulk album approval preserves target outcome: $scenario',
     async ({ lidarr, slskd, status }) => {
       mockDeps.getRecommendation.mockResolvedValue({
+        userId: 1,
         id: 1,
         kind: 'album',
         recommendedReleaseGroupId: 'rg-1',
@@ -362,7 +390,9 @@ describe('target-aware approval', () => {
         addAlbum: vi
           .fn()
           .mockResolvedValue(
-            success ? { success, externalId: 7 } : { success, error: 'album not found in Lidarr' },
+            success
+              ? { success, externalId: 7 }
+              : { success, error: 'HTTP 404: album not found in Lidarr' },
           ),
       }))
       mockDeps.getEnabledTargetsForUser.mockResolvedValue(targets)
@@ -391,9 +421,15 @@ describe('target-aware approval', () => {
         expect(target.addAlbum).toHaveBeenCalledExactlyOnceWith(
           { artistMbid: 'mbid-1', artistName: 'Radiohead', releaseGroupMbid: 'rg-1' },
           {
-            qualityProfileId: 2,
-            metadataProfileId: 3,
-            rootFolderId: 4,
+            // Explicit picks are scoped to the only Lidarr target, dropped without one.
+            ...(lidarr !== null
+              ? {
+                  lidarrOptionsTargetId: 'lidarr-1',
+                  qualityProfileId: 2,
+                  metadataProfileId: 3,
+                  rootFolderId: 4,
+                }
+              : {}),
             userId: 1,
             recommendationId: 1,
           },
@@ -407,13 +443,13 @@ describe('target-aware approval', () => {
                 'lidarr-1': {
                   status: lidarr ? 'added' : 'failed',
                   externalId: lidarr ? 7 : undefined,
-                  error: lidarr ? undefined : 'album not found in Lidarr',
+                  error: lidarr ? undefined : 'HTTP 404: album not found in Lidarr',
                 },
               }
             : {}),
           ...(slskd ? { 'slskd-1': { status: 'queued', externalId: 7, error: undefined } } : {}),
         },
-        ...(lidarr === false ? { lidarrError: 'album not found in Lidarr' } : {}),
+        ...(lidarr === false ? { lidarrError: 'HTTP 404: album not found in Lidarr' } : {}),
       })
     },
   )
@@ -422,6 +458,7 @@ describe('target-aware approval', () => {
     'bulk album approval fails without artist acquisition: %s',
     async (scenario) => {
       mockDeps.getRecommendation.mockResolvedValue({
+        userId: 1,
         id: 1,
         kind: 'album',
         recommendedReleaseGroupId: scenario === 'missing release group' ? null : 'rg-1',
@@ -509,6 +546,7 @@ describe('target-aware approval', () => {
 
   it('bulk album approval selects an album-only target', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       kind: 'album',
       recommendedReleaseGroupId: 'rg-1',
@@ -536,6 +574,7 @@ describe('target-aware approval', () => {
 
   it('bulk approve with createPlaylist-only targets marks all as approved', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -543,7 +582,7 @@ describe('target-aware approval', () => {
       id: 'spotify-playlist-1',
       type: 'spotify-playlist',
       capabilities: ['createPlaylist'],
-      createPlaylist: vi.fn(),
+      openPlaylistExportSession: vi.fn(),
       testConnection: vi.fn(),
     }
     mockDeps.getEnabledTargetsForUser.mockResolvedValue([spotifyTarget])
@@ -557,11 +596,12 @@ describe('target-aware approval', () => {
 
     const body = await res.json()
     expect(body.results[0].status).toBe('approved')
-    expect(spotifyTarget.createPlaylist).not.toHaveBeenCalled()
+    expect(spotifyTarget.openPlaylistExportSession).not.toHaveBeenCalled()
   })
 
   it('returns a per-target summary on partial failure', async () => {
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
     })
@@ -578,7 +618,9 @@ describe('target-aware approval', () => {
         type: 'lidarr',
         name: 'Lidarr Backup',
         capabilities: ['addArtist'],
-        addArtist: vi.fn().mockResolvedValue({ success: false, error: 'connection refused' }),
+        addArtist: vi
+          .fn()
+          .mockResolvedValue({ success: false, error: 'HTTP 400: invalid profile' }),
       },
     ])
 
@@ -595,7 +637,7 @@ describe('target-aware approval', () => {
       total: 2,
       succeeded: 1,
       failed: 1,
-      failures: [{ id: 'lidarr-2', name: 'Lidarr Backup', error: 'connection refused' }],
+      failures: [{ id: 'lidarr-2', name: 'Lidarr Backup', error: 'HTTP 400: invalid profile' }],
       warnings: [],
     })
   })
@@ -603,6 +645,7 @@ describe('target-aware approval', () => {
   it('retrying a failed target keeps prior successes and does not regress status', async () => {
     // Rec already has lidarr-1 succeeded, lidarr-2 failed.
     mockDeps.getRecommendation.mockResolvedValue({
+      userId: 1,
       id: 1,
       artist: { mbid: 'mbid-1', name: 'Radiohead' },
       lidarrArtistId: 42,

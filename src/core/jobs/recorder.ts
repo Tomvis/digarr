@@ -1,7 +1,15 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Database } from '@/db'
-import { jobRuns } from '@/db/schema'
+import { jobRuns, recommendationBatches } from '@/db/schema'
+import { classifyFailure } from './failure-scope'
 import type { CompleteJobParams, JobRecorder, StartJobParams } from './types'
+
+// drizzle error text embeds the full SQL and every bound param; never persist or show it.
+const DB_ERROR_MESSAGE = 'Database error - see server logs for details'
+
+export function sanitizeJobError(error: string): string {
+  return /^Failed query:/i.test(error.trimStart()) ? DB_ERROR_MESSAGE : error
+}
 
 // A live scan routinely takes 30-90 min (MusicBrainz-bound resolve), and
 // subscriptions/discovery runs now queue behind it (orchestrator.runQueued),
@@ -12,9 +20,38 @@ const STUCK_THRESHOLDS_MS: Record<string, number> = {
   quick_discover: 4 * 60 * 60 * 1000,
   subscription: 6 * 60 * 60 * 1000,
   target: 2 * 60 * 1000,
-  playlist: 2 * 60 * 1000,
+  // Track resolution is rate-limited to ~1.4s per artist, so a 100-artist Audition takes over 2 min.
+  playlist: 15 * 60 * 1000,
   library_sync: 90 * 60 * 1000,
   music_rater_sync: 15 * 60 * 1000,
+}
+
+export const INTERRUPTED_JOB_ERROR = 'Interrupted by a server restart'
+
+// Every job type runs in-process, so a row still 'running' from before this boot belongs to a
+// dead process. Assumes one app replica (documented); a second live replica's jobs would be hit.
+// The startedAt cutoff keeps work that started after boot safe from this late-landing update.
+export async function markInterruptedJobs(db: Database, bootedAt = new Date()): Promise<number> {
+  const jobs = await db
+    .update(jobRuns)
+    .set({
+      status: 'failed',
+      completedAt: bootedAt,
+      durationMs: sql<number>`ROUND(EXTRACT(EPOCH FROM (${bootedAt.toISOString()}::timestamptz - ${jobRuns.startedAt})) * 1000)::integer`,
+      error: INTERRUPTED_JOB_ERROR,
+    })
+    .where(and(eq(jobRuns.status, 'running'), lt(jobRuns.startedAt, bootedAt)))
+    .returning({ id: jobRuns.id })
+  await db
+    .update(recommendationBatches)
+    .set({ status: 'failed' })
+    .where(
+      and(
+        eq(recommendationBatches.status, 'running'),
+        lt(recommendationBatches.createdAt, bootedAt),
+      ),
+    )
+  return jobs.length
 }
 
 export function createJobRecorder(db: Database): JobRecorder {
@@ -58,9 +95,14 @@ export function createJobRecorder(db: Database): JobRecorder {
 
     async fail(jobId: number, error: string): Promise<void> {
       const MAX_ERROR_LENGTH = 2048
+      const safeError = sanitizeJobError(error)
+      if (safeError !== error) console.error(`[jobs] job ${jobId} failed:`, error)
       const truncatedError =
-        error.length > MAX_ERROR_LENGTH ? `${error.slice(0, MAX_ERROR_LENGTH)}...` : error
+        safeError.length > MAX_ERROR_LENGTH
+          ? `${safeError.slice(0, MAX_ERROR_LENGTH)}...`
+          : safeError
       const now = new Date()
+      const failureScope = classifyFailure(safeError)
       await db
         .update(jobRuns)
         .set({
@@ -68,6 +110,9 @@ export function createJobRecorder(db: Database): JobRecorder {
           completedAt: now,
           durationMs: sql<number>`ROUND(EXTRACT(EPOCH FROM (NOW() - ${jobRuns.startedAt})) * 1000)::integer`,
           error: truncatedError,
+          ...(failureScope
+            ? { metadata: sql`${jobRuns.metadata} || ${JSON.stringify({ failureScope })}::jsonb` }
+            : {}),
         })
         .where(eq(jobRuns.id, jobId))
     },

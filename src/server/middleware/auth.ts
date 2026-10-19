@@ -2,11 +2,11 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getCookie } from 'hono/cookie'
 import { createMiddleware } from 'hono/factory'
 import { envConfig } from '@/config/env'
-import { isApiKeyToken, parseApiKey } from '@/core/auth/api-keys'
 import { getSession } from '@/core/sessions'
-import { API_KEY_TOUCH_THROTTLE_MS, type ApiKeyStore } from '@/db/queries/api-keys'
 import { notAuthenticated } from '@/server/helpers/auth-problems'
+import { getClientIp } from '@/server/helpers/client-ip'
 import { problem } from '@/server/helpers/problem'
+import { rateLimiter } from '@/server/middleware/rate-limit'
 import { SESSION_COOKIE_NAME } from '@/server/middleware/session-cookie'
 import type { AuthMethod, HonoEnv } from '@/server/types'
 
@@ -53,20 +53,26 @@ const OPTIONAL_AUTH_PATHS = new Set([
 // Only SSE/audio flows are allowed to use query-param auth tokens.
 const QUERY_TOKEN_PATHS = new Set(['/api/v1/pipeline/events', '/api/v1/preview/audio'])
 
-// Last successful `last_used_at` write per API key id, so a burst of requests
-// from the same key only touches the DB once per throttle window.
-const lastTouchedAt = new Map<number, number>()
-
 export function authGuard(options: {
   hasUsers: () => Promise<boolean>
   isSetupComplete: () => Promise<boolean>
-  apiKeys?: ApiKeyStore
+  resolveApiToken?: (
+    token: string,
+  ) => Promise<{ userId: number; scope: import('@/db/schema').ApiTokenScope } | null>
 }) {
+  const failedTokenLimit = rateLimiter({
+    windowMs: 60_000,
+    max: 20,
+    keyPrefix: 'api-token-failures',
+    getIp: getClientIp,
+    countResponse: (c) => c.res.status === 401 && c.get('authMethod') !== 'api-token',
+  })
   return createMiddleware<HonoEnv>(async (c, next) => {
     const publicPath =
       !c.req.path.startsWith('/api/v1/') ||
       PUBLIC_PATHS.has(c.req.path) ||
-      /^\/api\/v1\/auth\/oauth\/[^/]+\/callback$/.test(c.req.path)
+      /^\/api\/v1\/auth\/oauth\/[^/]+\/callback$/.test(c.req.path) ||
+      /^\/api\/v1\/auth\/oauth\/lastfm\/callback\/[^/]+$/.test(c.req.path)
 
     // Skip auth for non-API paths (static assets, SPA routes), public API paths, and OAuth callbacks
     // Only the callback path is public (browser redirect from provider, no auth header).
@@ -74,8 +80,9 @@ export function authGuard(options: {
     if (publicPath && !OPTIONAL_AUTH_PATHS.has(c.req.path)) return next()
 
     // Proxy auth already validated upstream - skip token checks
+    const personalTokenOnly = c.req.path === '/api/v1/mcp'
     const proxyAuthed = c.get('proxyAuth')
-    if (proxyAuthed) return next()
+    if (proxyAuthed && !personalTokenOnly) return next()
 
     // Extract one credential and retain its source through verification.
     // Any Authorization header suppresses query/cookie fallback, including a
@@ -86,7 +93,7 @@ export function authGuard(options: {
       if (header.startsWith('Bearer ')) {
         credential = { token: header.slice(7), source: 'bearer' }
       }
-    } else {
+    } else if (!personalTokenOnly) {
       const qp = c.req.query('token')
       if (qp && QUERY_TOKEN_PATHS.has(c.req.path)) {
         credential = { token: qp, source: 'query' }
@@ -96,46 +103,12 @@ export function authGuard(options: {
       }
     }
 
-    // API key auth. Recognised by prefix so it costs no session lookup, and
-    // never from a query parameter: only SSE/audio accept ?token=, and a
-    // long-lived credential has no business in a URL.
-    if (
-      options.apiKeys &&
-      credential?.token &&
-      credential.source === 'bearer' &&
-      isApiKeyToken(credential.token)
-    ) {
-      const parsed = parseApiKey(credential.token)
-      const verified = parsed ? await options.apiKeys.verify(parsed.prefix, parsed.secret) : null
-      if (verified) {
-        c.set('userId', verified.userId)
-        c.set('authMethod', 'api-key')
-        // Not read anywhere yet -- kept deliberately, at essentially no cost,
-        // for a future per-request audit trail (e.g. logging or persisting
-        // which key authorised a mutating request) that needs to name the
-        // specific key rather than just the user it authenticated as.
-        c.set('apiKeyId', verified.id)
-        c.set('apiKeyScopes', verified.scopes)
-
-        const now = Date.now()
-        const previous = lastTouchedAt.get(verified.id) ?? 0
-        if (now - previous >= API_KEY_TOUCH_THROTTLE_MS) {
-          lastTouchedAt.set(verified.id, now)
-          // Fire and forget: a read must not become a write on the hot path.
-          void options.apiKeys.touchLastUsed(verified.id).catch((err: unknown) => {
-            console.warn(`[auth] failed to update last_used_at for api key ${verified.id}:`, err)
-          })
-        }
-        return next()
-      }
-      // A presented-but-invalid api key falls through to the 401 below. It must
-      // NOT fall back to the legacy token: that would let a revoked key keep
-      // working whenever DIGARR_AUTH_TOKEN happens to be configured.
-      return notAuthenticated(c)
-    }
-
     // Try session token first
-    if (credential?.token) {
+    if (
+      !personalTokenOnly &&
+      credential?.token &&
+      !(credential.source === 'bearer' && credential.token.startsWith('dga_'))
+    ) {
       const session = await getSession(credential.token)
       if (session) {
         c.set('userId', session.userId)
@@ -147,13 +120,14 @@ export function authGuard(options: {
     // Fall back to legacy DIGARR_AUTH_TOKEN (read-only, first user, no admin)
     const legacyToken = envConfig.authToken
     if (
+      !personalTokenOnly &&
       legacyToken &&
       credential &&
       credential.source !== 'cookie' &&
       safeCompare(credential.token, legacyToken)
     ) {
       console.warn(
-        `[auth] DEPRECATED: Legacy token auth from ${c.req.header('x-forwarded-for') ?? 'direct'} - no admin access, no per-user features. Migrate to user sessions.`,
+        `[auth] DEPRECATED: Legacy token auth from ${c.req.header('x-forwarded-for') ?? 'direct'} - no admin access, no per-user features. Migrate to personal API tokens in Settings > Account.`,
       )
       // Assign userId=1 (first user) so downstream queries scope correctly
       // instead of matching NULL userId records
@@ -161,6 +135,42 @@ export function authGuard(options: {
       c.set('legacyTokenAuth', true)
       c.set('authMethod', credential.source === 'bearer' ? 'legacy-bearer' : 'legacy-query')
       return next()
+    }
+
+    if (credential?.source === 'bearer' && credential.token.startsWith('dga_')) {
+      return failedTokenLimit(c, async () => {
+        const token = await options.resolveApiToken?.(credential.token)
+        if (!token) {
+          c.res = notAuthenticated(c)
+          return
+        }
+        c.set('userId', token.userId)
+        c.set('authMethod', 'api-token')
+        c.set('apiTokenScope', token.scope)
+        if (
+          token.scope === 'read' &&
+          !['GET', 'HEAD'].includes(c.req.method) &&
+          !(personalTokenOnly && c.req.method === 'POST')
+        ) {
+          c.res = problem(
+            c,
+            'token-read-only',
+            'Read-only token',
+            403,
+            undefined,
+            undefined,
+            'tokens.readOnlyError',
+          )
+          return
+        }
+        await next()
+      })
+    }
+
+    if (personalTokenOnly) {
+      return failedTokenLimit(c, async () => {
+        c.res = notAuthenticated(c)
+      })
     }
 
     if (publicPath) return next()

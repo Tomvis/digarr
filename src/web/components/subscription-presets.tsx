@@ -221,6 +221,7 @@ export function SubscriptionPresets({ connectedServices, onComplete, onCustom }:
       <div>
         <p className="text-sm font-medium text-text">{t('subscriptionPresets.getStarted')}</p>
         <p className="text-xs text-muted mt-0.5">{t('subscriptionPresets.intro')}</p>
+        <p className="text-xs text-muted mt-0.5">{t('subscriptionPresets.spotifyChartsNote')}</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {PRESETS.map((preset) => {
@@ -251,7 +252,7 @@ export function SubscriptionPresets({ connectedServices, onComplete, onCustom }:
                 disabled={disabled}
                 className={`w-full px-3 py-1.5 rounded-md text-sm font-medium transition-opacity ${
                   preset.id === 'ai-only' || preset.id === 'custom'
-                    ? 'border border-border text-text hover:border-accent/40 hover:text-accent disabled:opacity-50'
+                    ? 'border border-border text-text hover:border-accent/40 hover:text-accent-text disabled:opacity-50'
                     : 'bg-accent text-accent-fg hover:opacity-90 disabled:opacity-50'
                 }`}
               >

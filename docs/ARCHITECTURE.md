@@ -39,18 +39,18 @@ before a concurrent reset cannot mint a post-reset session.
 OIDC account linking reuses that callback with a server-owned transaction
 purpose. Initiation requires a cookie session and fresh password proof. The
 link callback locks the user and initiating session, rechecks the password
-fingerprint and session validity, and updates only the OIDC subject. It never
-creates an account or session; the unique subject index prevents linking one
-identity to two accounts.
+fingerprint and session validity, and updates only the OIDC issuer and subject.
+It never creates an account or session; the unique issuer-and-subject index
+prevents linking one identity to two accounts.
 
 ## Database backend
 
 Digarr runs on PostgreSQL through Drizzle either way, but the backend is chosen
 at boot:
 
-- **PostgreSQL server** when a DSN is present -- `DATABASE_URL`, or the
+- **PostgreSQL server** when a DSN is present - `DATABASE_URL`, or the
   `DB_HOST` + `DB_USER` + `DB_NAME` triple. Uses a connection pool.
-- **Embedded PGlite** otherwise -- PostgreSQL compiled to Wasm,
+- **Embedded PGlite** otherwise - PostgreSQL compiled to Wasm,
   running in-process, with the whole database persisted to a single directory at
   `DB_PATH` (image default `/app/data`). No separate database server or
   container.
@@ -62,7 +62,7 @@ selected backend is surfaced at `GET /health` (`"dbBackend": "pglite" |
 "postgres"`) and printed at startup as `[db] backend=...`.
 
 Boot interaction (see [Boot order](#boot-order)): `waitForDatabase()` only runs
-for the external pool (`if (pool)`) -- PGlite is in-process and always ready --
+for the external pool (`if (pool)`) - PGlite is in-process and always ready --
 then the same `preFlightCheck()` -> `runMigrations()` path runs for both
 backends.
 
@@ -70,7 +70,7 @@ backends.
 Wasm and persists in a data directory, so exactly one replica may own it. The
 Helm opt-in requires `replicaCount=1` and forces the `Recreate` rollout strategy
 (no two pods touching the file at once). Raw manifests require manual PVC, strategy, environment, and memory-limit edits; see their deployment comments. Because the working set sits in Wasm
-memory, PGlite is a scale ceiling -- it fits digarr's small-data, single-writer
+memory, PGlite is a scale ceiling - it fits digarr's small-data, single-writer
 profile. Switch to a PostgreSQL server for a managed database or larger
 datasets, but keep the app at one replica: pipeline coordination, schedulers,
 rate limits, and migration locks remain process-local, so a DSN alone does not
@@ -212,12 +212,69 @@ bypass those artist-oriented filters because a new release from a tracked artist
 is the point, but still pass the album block layer, cross-batch dedup, and the
 score threshold.
 
+### Filter: recently played recordings
+
+When a user turns on `excludeRecentlyPlayed`, the filter stage reads that
+user's own ListenBrainz listens for the configured window (1-365 days, default
+30) and drops candidates whose `suggestedRecording.mbid` is in them. Listens are
+read newest first in pages of 1,000 with `max_ts`, stopping at the window start,
+an empty page, or 5,000 listens. Matching uses both the submitted
+`additional_info.recording_mbid` and the server-side `mbid_mapping` one, since a
+scrobbler can submit a stale or redirected MBID that LB has since remapped.
+
+Only known plays are excluded. Candidates without a recording MBID are always
+kept, and so is everything when history is unavailable. The job's
+`metadata.recentlyPlayed` records `status`: `missing` (no ListenBrainz
+connection), `capped` (hit the listen cap before the window start), `partial`
+(a page failed, so only listens read before it count), `ok`, or `disabled`,
+plus `listensRead`, `windowDays` and `excluded`; Job History shows it as one
+line. If the exclusion leaves fewer than 5 results, or under a quarter of what
+the run would have stored, the stage emits a filter progress warning
+(`pipeline.message.recentlyPlayedTooFew`) and keeps the filter. Blocks and
+rejection cooldowns run before this step, unchanged.
+
+### Recording identity
+
+Recommendations stay artist- or album-kind. A source that recommends a specific
+track can also attach a MusicBrainz recording MBID and title. Today ListenBrainz
+Tag Radio (the highest-ranked radio recording for each artist), Weekly Jams and Weekly
+Exploration (the first playlist track for each artist) do this. The fields travel as `recordingMbid` / `recordingTitle` on the
+discovery candidate and `DiscoveredArtist`, then `suggestedRecording` on
+`ResolvedArtist`. They are stored in `recommendations.recommended_recording_mbid`
+and `recommended_recording_title`, both nullable. Resolve keeps a recording only when the discovery's
+artist MBID equals the resolved artist, so a name-only match to a same-name
+artist drops it. Provider IDs (Spotify URI, Deezer id, local path) are never
+stored in these fields; they are looked up at playlist time and kept in their
+own `ResolvedTrack` fields next to `mbid`.
+
+Audition takes the recording of the best-scored pending recommendation for each
+artist. When a stored recording has a title, the track resolver only accepts an
+exact artist and title match in local libraries, Spotify (field query, double
+quotes stripped), or Deezer (plain query, matched in code). Without a match, it
+keeps the MusicBrainz identity itself. It never picks another song by the same
+artist. Export targets match that identity by exact title, so a remaster with a
+different title or the same title by another artist stays unresolved there. The
+ListenBrainz playlist write-back sends the stored MBID. Tag Radio only stores a
+recording when MusicBrainz returned a title; a stored recording without one
+cannot be matched and the artist resolves the usual way. Spotify export skips an
+item that has a recording MBID but no title instead of using the artist's top
+tracks. Recommendation exports include the recording: JSON `recordingMbid` /
+`recordingTitle`, CSV `recording_mbid` / `recording_title`, and XSPF uses the
+title as the track title and the recording URL as the identifier.
+
+Approval ignores the recording. A recording-backed recommendation is approved
+exactly like an artist recommendation: Lidarr `addArtist` with the same monitor
+option (manual approval defaults to `none`; auto-approve uses its configured
+option) and the same slskd artist job. It never becomes an album
+add or a track download. The recently played filter above matches on the same
+recording MBID before it is stored.
+
 ## Registry patterns
 
 Extension points use registries or configuration maps:
 
 - `DiscoverySource` - listening-source plugins in `src/core/plugins/`, registered through `SourceRegistry`; add new IDs to `LISTENING_SOURCE_IDS` for unconfigured-source reporting
-- `LibrarySource` - library-sync adapters in `src/core/library/sources/`, registered through `LibrarySourceRegistry` and ordered by MBID quality
+- `LibrarySource` - library-sync adapters in `src/core/library/sources/`, built through the sync orchestrator's `buildGlobalSources` and `buildPerUserSources` callbacks and ordered by MBID quality
 
 - `DestinationTarget` - where recommendations are pushed (Lidarr, Emby, `slskd`, ...)
 - `SubscriptionAdapter` - how recurring seeds are sourced (CSV, Spotify saved, ...)
@@ -272,7 +329,7 @@ reuse, and queue advancement remain in the SPA. Bridge initialization is
 bounded and falls back to the standard Spotify iframe for standalone previews;
 an active audition queue skips the unavailable item. YouTube embeds have no
 equivalent completion signal in this integration and use a bounded 30-second
-fallback.
+fallback. The inline Spotify embed on expanded recommendation cards stays a local placeholder button until clicked, so no Spotify request happens on render. The one exception is the per-user `spotifyAutoloadDashboard` preference (off by default), which lets Today's Pick on the dashboard load the player without a click; it is set from the checkbox in that placeholder and turned off from the link under the player.
 
 Audition retains per-item unavailable reasons after skipping or queue completion, independently of playback state. New runs reset the summary and retrying an item replaces its prior failure. Reasons describe observable lookup and playback outcomes; browser fetch rejection does not establish CORS or provider outage, and Spotify controller failure does not establish account access. Stale audio callbacks and superseded resolutions cannot advance a newer queue item. No approval writes occur during playback.
 
@@ -290,8 +347,8 @@ Digest positions live in server-owned `settings.digestDeliveryPositions`, outsid
 Albums are a first-class recommendation unit:
 
 - **`kind` discriminator** on the `recommendations` table (`'artist' | 'album'`, default `'artist'`). All recommendation queries and API responses include `kind`; the list endpoint accepts a `?kind=` filter.
-- **`album_blocks` table** -- per-user, forever-block layer for albums, keyed on release-group MBID. Independent of `artist_blocks`; the filter stage drops candidates matching either block layer.
-- **`applyAlbumModifier`** in `src/core/pipeline/score.ts` -- computes a bounded recency / popularity / gap-priority modifier added to the artist-similarity base score, then clamps the result to `[0, 1]`.
+- **`album_blocks` table** - per-user, forever-block layer for albums, keyed on release-group MBID. Independent of `artist_blocks`; the filter stage drops candidates matching either block layer.
+- **`applyAlbumModifier`** in `src/core/pipeline/score.ts` - computes a bounded recency / popularity / gap-priority modifier added to the artist-similarity base score, then clamps the result to `[0, 1]`.
 
 ### Album approval
 
@@ -314,17 +371,20 @@ target call. Album external IDs stay in `targetActions`, never the artist ID.
 ### Release radar
 
 The release-radar discovery mode emits `kind='album'` recommendations for new
-releases from artists the user already tracks. These land in the Albums tab.
+releases from artists the user already tracks. These appear in Discover under the Albums kind filter.
 Artist seeds come from ListenBrainz, Spotify, or Last.fm; Plex listening history
 does not currently supply this mode. Release metadata comes from MusicBrainz.
 Kind-aware dedup keeps one album recommendation per release, including several
-releases from the same artist in one scan window.
+releases from the same artist in one scan window. The filter stage also drops albums
+already in the user's synced library, matched by release-group MBID, or by artist
+MBID plus normalized title for owned rows without an album MBID.
 
 ### Library gap-fill
 
 The library gap-fill executor iterates a rotated, bounded slice of the user's
 tracked artists. Its cursor is `library_artists.last_gap_check_at`, ordered
-`asc nulls first` so never-checked artists go first. The default slice is 25
+`asc nulls first` so never-checked artists go first. Library snapshot replacement
+carries the cursor over for rows whose source artist ID and MBID are unchanged. The default slice is 25
 artists per run, overridable through the mode's `maxArtistsPerRun` setting. A
 p-queue walks the slice with concurrency 2 and a 200ms interval so large libraries
 do not starve the event loop.
@@ -334,7 +394,7 @@ For each artist, the executor calls the album-coverage engine
 missing eligible primary-type `Album` release group. Each carries the release-group MBID and the release year
 as the recency signal. In v2.0.0, only a slice whose coverage lookups all succeed
 has its artists' `last_gap_check_at` stamped so the next run advances the cursor. The resulting
-recommendations fill the Albums tab with missing studio-classified releases from artists
+recommendations fill the Discover Albums kind filter with missing studio-classified releases from artists
 already in the library. In v2.0.0, coverage requires primary type `Album` and an
 explicit empty secondary-type array; it excludes every secondary type, including
 Live, Compilation, Soundtrack and Demo. Owned excluded groups affect neither count.
@@ -349,6 +409,10 @@ row rewrite is added; rollback restores broader coverage.
 
 In v2.0.0, the shared MusicBrainz release-group client walks sequential pages of up to 100 groups through the existing rate limiter, retains type filters and first-seen order, and deduplicates IDs. Provider counts/offsets are validated when present; without them, a short or empty page ends the read. At most 100 pages/10,000 returned groups are read. A failed required page, invalid or stalled pagination, or an unresolved end at that bound rejects the whole lookup without returning accumulated partial groups. Catalog changes can invalidate the read; it is not a snapshot. This also applies to artist album lists, release matching, reconciliation and Release Radar. v1.19.0 stops after the first page ([#796](https://github.com/iuliandita/digarr/issues/796)).
 
+MusicBrainz responses are cached in two layers ([#1143](https://github.com/iuliandita/digarr/issues/1143)). The in-memory release-group cache (24 h, 2,000 artists) stays in front; behind it, `musicbrainz_cache` stores responses keyed by request path, or `release-groups:<mbid>` for the complete default-type catalog, with per-kind TTLs: artist lookups, artist relations and recordings 30 days, artist searches 3 days, release groups 24 hours (the same as before the persistent layer, because Release Radar filters to a short recent window), 404s 1 day. A memory entry refilled from the database expires when the database row does, so release groups are never older than 24 hours. Transient failures (429/5xx, timeouts) and incomplete catalogs are never stored, and a cache read or write failure only logs and falls through to MusicBrainz. The store is installed once at startup; without it (tests, scripts) the client uses a no-op store. Expired rows are pruned at most hourly on write. A forced library sync (`bypassCache`) skips cached reads for artist searches and release groups, then writes the fresh results back to both layers so later readers see the post-sync data. The table is rebuildable and excluded from backups and backend copies.
+
+The shared queue keeps its single slot and configured interval but has two priorities: interactive (default: scans, quick discover, discovery modes, routes, playlists and Audition) and background (library sync and its artist/album reconciliation). A waiting interactive request always takes the next slot; each retry after a 503 or timeout re-enters the queue with its original priority.
+
 In v2.0.0, Gap-Fill waits for every queued coverage lookup to settle. Any failure rejects the run with the original error before stamping any artist or handing candidates to the pipeline. The whole slice remains eligible for retry, including successful lookups whose candidates were not stored. Manual and subscription runs record the failure; subscriptions retain the previous result count and save the error. Genuine empty coverage remains successful and advances the cursor. A persistently failing artist can hold the selected slice until its lookup succeeds. v1.19.0 swallows coverage errors and marks failed artists checked ([#797](https://github.com/iuliandita/digarr/issues/797)). No schema migration or repair of old cursor values is added; retry after resolving provider errors, and allow the existing rotation to revisit previously stamped artists. Rollback restores swallowed failures.
 
 ### Net-new album discovery
@@ -360,6 +424,19 @@ the AI's `suggestedAlbum` to a MusicBrainz release group. A match becomes an alb
 recommendation with its release-group MBID and first-release date, then follows
 the normal album scoring, filtering, and storage paths. An unmatched title stays
 an artist recommendation.
+
+### Lidarr metadata profile check
+
+Lidarr only lists release groups its metadata profile allows (`SkyHookProxy.FilterAlbums`:
+allowed primary type; no secondary types needs `Studio`, otherwise any allowed
+secondary type; any allowed release status). When the user has an enabled Lidarr
+target, the filter stage drops album candidates whose MusicBrainz types no enabled
+Lidarr target would list. The profile is the tracked artist's, else the target's
+default metadata profile. Unknown types, target lookup failures and users without
+a Lidarr target keep every candidate. Release status is not known at pipeline time,
+so only the add path checks it. When an album add cannot find the release group,
+the target looks it up through Lidarr and reports which type the profile blocks;
+that failure is not retried. Existing pending recommendations are not rescanned (#1108).
 
 ### Album empty-state routing
 
@@ -391,13 +468,18 @@ three points, allowing multiple albums per artist to survive a single run:
 
 - Library sync replaces a source snapshot only after all source album fetches succeed. A failed fetch retains the previous snapshot and marks the run failed; MusicBrainz reconciliation failures remain separately counted.
 - Config precedence: for settings stored in the DB (single row, `id=1`), saved values override env defaults. Deployment-only options such as `DIGARR_MUSICBRAINZ_URL` and `DIGARR_MUSICBRAINZ_INTERVAL_MS` come from the environment and require a restart. Direct per-user service credentials live on `users`, with global settings as the fallback where supported; Spotify, Deezer, and TIDAL OAuth credentials live in `oauth_tokens`.
+- Outbound requests to user-supplied or public hosts go through `src/core/net/guarded-fetch.ts`: it resolves the host, rejects private,
+  loopback, link-local/metadata, CGNAT and reserved ranges (IPv4-mapped IPv6 included), pins the request to the resolved IP with
+  the original Host and TLS server name, and re-checks every redirect hop. `publicIpOnly` HTTP clients, notification channels, the
+  OIDC issuer and the Bandcamp scraper use it; notification channels with private targets enabled use the `lan` policy, which
+  allows only RFC 1918. LAN service clients (Lidarr, media servers) are deliberately unguarded.
 - Metadata, service-client, and playlist-target requests generally go through
   `createHttpClient()` in `src/core/clients/http.ts` for timeout, retry/backoff,
   JSON parsing, response-body errors, redaction, and optional TLS-skip behavior.
   Anthropic and OpenAI providers use vendor SDK transports, so these policies are not universal. Read-only shared-client calls retain the client retry default. Duplicate-producing playlist
   creation and song-add calls pass `retries: 0`; this classification is based on
   endpoint semantics because Subsonic mutations use GET-shaped endpoints.
-- Playlist resolution records a disposition for every selected artist: resolved, unmatched, unavailable, error, or excluded by the size cap. Spotify and Deezer artist names must match after Unicode/case/whitespace normalization before tracks are selected.
+- Playlist resolution records a disposition for every selected artist: resolved, unmatched, unavailable, error, or excluded by the size cap. Spotify and Deezer artist names must match after Unicode/case/whitespace normalization before tracks are selected. Deezer rejects field-qualified searches (`artist:"x"` returns nothing), so Deezer resolution is artist search, then `/artist/{id}/top` when exactly one exact-name artist exists, else a plain track search filtered to that name. An outcome whose tracks are all MusicBrainz titles carries `titleOnly` and is not counted as playable in the pending playability summary.
 
   Production resolver credentials come only from the playlist owner's saved
   library connections. Jellyfin, Emby, and Subsonic use the saved operator TLS
@@ -441,6 +523,7 @@ three points, allowing multiple albums per artist to survive a single run:
 - Tests run in Node.js (vitest), not Bun. `Bun.serve()`, `Bun.file()` and similar Bun-only APIs are unavailable in tests; password hashing uses `node:crypto` `scrypt`.
 - Migrations are idempotent. Drizzle generates bare DDL, so every generated migration must add `IF NOT EXISTS` / `IF EXISTS` clauses by hand.
 - Backup restore runs in a single DB transaction. It locks and checks included tables and omitted dependents before replacing rows, rejecting unsafe partial restores or unresolved artist references without writes. It preserves original row IDs. Back up the destination and prefer a fresh database for JSON restore ([#757](https://github.com/iuliandita/digarr/issues/757)). Selected tables use natural-key conflict targets (`mbid`, `slug`, `nameNormalized`); others use their original `id`.
+- Normalized artist names and album titles are persisted as lookup and conflict keys. Changing a normalizer needs a recompute migration and restore handling; see [Name normalization](NORMALIZATION.md).
 - Primary keys are `integer GENERATED BY DEFAULT AS IDENTITY` (not legacy `serial`). BY DEFAULT is deliberate: backup restore re-inserts rows with their original `id`, which `GENERATED ALWAYS` would reject.
 - Backend migration never modifies the source database. Verification (row count + content hash) must pass before `ok: true` is returned; any mismatch surfaces in `MigrationReport.mismatches`.
 - Optional genre-priority ordering is a user-scoped read concern in `listRecommendations`, independent of score computation. Exact genre matches select primary, secondary, and other groups before score ordering and pagination. Secondary browsing excludes primary matches; missing preferences preserve score ordering. No recommendation rows are rewritten.

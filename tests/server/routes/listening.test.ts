@@ -120,9 +120,10 @@ function makeDeps(
     completeSetup: vi.fn(async () => ({})),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -131,6 +132,7 @@ function makeDeps(
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async () => []),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -169,7 +171,6 @@ function makeDeps(
     },
     jobRecorder: {} as AppDependencies['jobRecorder'],
     jobQueries: {} as AppDependencies['jobQueries'],
-    apiKeyStore: {} as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

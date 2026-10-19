@@ -4,13 +4,16 @@ import { ensureAdminToken, installAuthCookie } from './auth'
 test.describe('library sync', () => {
   test('library sources panel renders and Sync all triggers the API request', async ({ page }) => {
     const token = await ensureAdminToken(page.request, { completeSetup: true })
-    test.skip(!token, 'Requires a working local Postgres test database')
+    expect(token).toBeTruthy()
     if (!token) return
 
     await installAuthCookie(page)
 
-    await page.goto('/library/health')
-    await expect(page.getByRole('heading', { name: 'Library Sources' })).toBeVisible()
+    await page.goto('/library?tab=health')
+    const sourcesToggle = page.getByRole('button', { name: 'Library Sources' })
+    await expect(sourcesToggle).toHaveAttribute('aria-expanded', 'false')
+    await sourcesToggle.click()
+    await expect(sourcesToggle).toHaveAttribute('aria-expanded', 'true')
 
     const syncRequest = page.waitForRequest(
       (req) => req.url().includes('/api/v1/library/sync') && req.method() === 'POST',

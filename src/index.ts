@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { Cron } from 'croner'
 import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import { canAutoSetup, envConfig } from './config/env'
+import { requiresApprovalRequest } from './core/approvals/policy'
 import { OidcService } from './core/auth/oidc'
 import { createBandcampClient } from './core/clients/bandcamp'
 import { createDeezerClient } from './core/clients/deezer'
@@ -10,6 +11,7 @@ import { createJellyfinClient } from './core/clients/jellyfin'
 import { createLidarrClient } from './core/clients/lidarr'
 import { createMusicRaterClient } from './core/clients/music-rater'
 import { createMusicBrainzClient } from './core/clients/musicbrainz'
+import { setMusicBrainzCacheStore } from './core/clients/musicbrainz-cache'
 import { createPlexClient } from './core/clients/plex'
 import { tryConsume } from './core/clients/rate-limiter'
 import { createSlskdClient } from './core/clients/slskd'
@@ -19,9 +21,10 @@ import { decryptChannelSecrets, initEncryption, isEncryptionEnabled } from './co
 import { createDefaultDiscoveryModeRegistry } from './core/discovery-modes/registry'
 import { runDiscoveryMode } from './core/discovery-modes/run'
 import { GenreService } from './core/genre/service'
+import { resolveSupportedLocale } from './core/i18n/locales'
 import { startDigestNotifier } from './core/jobs/digest-notifier'
 import { recordFailureSafely } from './core/jobs/record-failure-safely'
-import { createJobRecorder } from './core/jobs/recorder'
+import { createJobRecorder, markInterruptedJobs } from './core/jobs/recorder'
 import { startStuckDetector } from './core/jobs/stuck-detector'
 import { createAlbumCoverageService } from './core/library/album-coverage'
 import { LibraryHealthService } from './core/library/health'
@@ -39,6 +42,7 @@ import { markShuttingDown } from './core/lifecycle'
 import { startMusicRaterSyncScheduler } from './core/music-rater/scheduler'
 import { syncMusicRaterCorpus } from './core/music-rater/sync'
 import { dispatch } from './core/notifications'
+import { encryptLegacyPlaintext } from './core/ops/encrypt-legacy'
 import { bootstrapInitialAdmin } from './core/ops/initial-admin'
 import { migrateLegacyListeningConnections } from './core/ops/legacy-listening-connections'
 import { isMaintenance, setMaintenance } from './core/ops/maintenance'
@@ -46,20 +50,25 @@ import { runPreFlightCheck } from './core/ops/upgrade'
 import { analyze } from './core/pipeline/analyze'
 import { waitForGenreWarmers } from './core/pipeline/genre-backfill'
 import { type PipelineDeps, PipelineOrchestrator } from './core/pipeline/orchestrator'
-import type { StoreDb } from './core/pipeline/store'
+import { type StoreDb, saveRecommendationChunk } from './core/pipeline/store'
 import { SubscriptionScheduler } from './core/pipeline/subscription-scheduler'
 import { createSavedPlaylistExportStore, pushSavedPlaylistToTargets } from './core/playlists/export'
 import { withPlaylistLock } from './core/playlists/generation-lock'
-import { generatePlaylist } from './core/playlists/generator'
+import { generatePlaylist, playlistGenerationFailure } from './core/playlists/generator'
 import { buildPlaylistResolverDeps } from './core/playlists/resolver-deps'
-import { PlaylistScheduler } from './core/playlists/scheduler'
+import { PlaylistScheduler, schedulePlaylists } from './core/playlists/scheduler'
 import { buildStrategyDeps } from './core/playlists/strategy-deps'
+import { getAudioMuseConfig } from './core/plugins/audiomuse'
 import { createDiscogsSource } from './core/plugins/discogs'
 import { createLastFmSource } from './core/plugins/lastfm'
 import { createListenBrainzSource } from './core/plugins/listenbrainz'
 import { SourceRegistry } from './core/plugins/registry'
 import { isConnectedToken, resolveProviderToken } from './core/provider-auth'
 import { createDefaultRegistry } from './core/providers/registry'
+import {
+  createScrobblerWriteBack,
+  type PlaylistGenerationTrigger,
+} from './core/scrobbler-write-back'
 import { buildSearchSourceCatalog } from './core/search/catalog'
 import { enrichSearchResultsWithImages } from './core/search/enrich'
 import type { SearchSource } from './core/search/multi-source'
@@ -91,12 +100,17 @@ import type {
   SubscriptionConfig,
   SubscriptionRunDeps,
 } from './core/subscriptions/types'
-import { createEmbyPlaylistTarget } from './core/targets/emby-playlist'
-import { createJellyfinPlaylistTarget } from './core/targets/jellyfin-playlist'
 import { createLidarrTarget } from './core/targets/lidarr'
-import { createNavidromePlaylistTarget } from './core/targets/navidrome-playlist'
-import { createPlexPlaylistTarget } from './core/targets/plex-playlist'
+import {
+  linkLidarrTargetsToServerConnection,
+  resolveLidarrTargetConnection,
+  resolveLidarrTargetDefaults,
+  withResolvedLidarrConnection,
+} from './core/targets/lidarr-connection'
+import { retryWaitingApprovals } from './core/targets/lidarr-retry-worker'
+import { createSavedPlaylistExportTarget } from './core/targets/saved-playlist-targets'
 import { createSlskdTarget } from './core/targets/slskd'
+import { updateSlskdRecommendationAction } from './core/targets/slskd-recommendation'
 import { createSongpickTarget, pickRootFolderPath } from './core/targets/songpick'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
 import { testTargetConnection } from './core/targets/test-connection'
@@ -109,7 +123,6 @@ import {
   listAlbumBlocks as listAlbumBlocksQuery,
   removeAlbumBlock as removeAlbumBlockQuery,
 } from './db/queries/album-blocks'
-import { apiKeyQueries } from './db/queries/api-keys'
 import {
   addBlock as addArtistBlockQuery,
   getBlockedMbids as getBlockedArtistMbids,
@@ -140,8 +153,10 @@ import {
   upsertGenre,
 } from './db/queries/genres'
 import * as jobQueries from './db/queries/jobs'
+import { getOwnedAlbumKeys } from './db/queries/library-albums'
 import {
   getLibraryHealthState,
+  markLibraryHealthScanFailed,
   markLibraryHealthScanStarted,
   saveLibraryHealthState,
 } from './db/queries/library-health'
@@ -152,15 +167,17 @@ import {
   pruneMusicRaterAlbums,
   upsertMusicRaterAlbums,
 } from './db/queries/music-rater'
+import { createMusicBrainzCacheStore } from './db/queries/musicbrainz-cache'
 import { deleteExpiredPendingOAuth } from './db/queries/oauth-pending'
 import { getOAuthToken } from './db/queries/oauth-tokens'
 import {
-  getEnabledPlaylists,
   getPlaylistWithTracks,
+  getScheduledPlaylists,
   replacePlaylistTracks,
   updatePlaylist as updatePlaylistRow,
 } from './db/queries/playlists'
 import {
+  bulkRejectRecommendations,
   bulkUpdateStatus,
   filterOwnedIds,
   getExistingAlbumReleaseGroupMbids,
@@ -171,6 +188,8 @@ import {
   getRejectedArtistMbids,
   insertRecommendation,
   listRecommendations,
+  listRecommendationsForExport,
+  listWaitingApprovals,
   rejectRecommendation,
   updateRecommendationStatus,
 } from './db/queries/recommendations'
@@ -181,6 +200,7 @@ import {
   getDigestDeliveryPositions,
   getSettings,
   initializeDigestDeliveryPositions,
+  initializeExperimentalIntegrations,
   isSetupComplete,
   setDigestDeliveryPosition,
   updateSettings,
@@ -271,6 +291,13 @@ await runPreFlightCheck(db)
 // Idempotent; selects the migrator matching the active backend.
 await runMigrations()
 console.log('Database migrations applied')
+setMusicBrainzCacheStore(createMusicBrainzCacheStore(db))
+await initializeExperimentalIntegrations(db)
+
+const legacyEncrypted = await encryptLegacyPlaintext(db)
+if (legacyEncrypted > 0) {
+  console.log(`Encrypted ${legacyEncrypted} stored value(s) saved before encryption was enabled`)
+}
 
 try {
   await bootstrapInitialAdmin(db, envConfig)
@@ -287,8 +314,6 @@ try {
 
 // Wire up DB-backed session store after migrations are applied.
 setSessionStore(sessionQueries(db))
-
-const apiKeyStore = apiKeyQueries(db)
 
 // Read library sync interval once; used by both the orchestrator's stale
 // check and the background scheduler. Runtime changes require a restart.
@@ -328,13 +353,16 @@ async function getDiscoveryConnectionSnapshot(userId: number) {
 }
 
 const storeDb: StoreDb = {
-  getExistingAlbumReleaseGroupMbids: (userId) => getExistingAlbumReleaseGroupMbids(db, userId),
+  getExistingAlbumReleaseGroupMbids: (userId, options) =>
+    getExistingAlbumReleaseGroupMbids(db, userId, options),
   getBlockedAlbumKeys: (userId) => getBlockedAlbumKeys(db, userId),
+  getOwnedAlbumKeys: (userId) => getOwnedAlbumKeys(db, userId),
   getArtistGenreCacheByMbids: (mbids) => getArtistGenreCacheByMbids(db, mbids),
   getArtistGenreCacheByAliases: (aliases) => getArtistGenreCacheByAliases(db, aliases),
   upsertArtistGenres: (data) => upsertArtistGenres(db, data),
   upsertArtistGenreAlias: (data) => upsertArtistGenreAlias(db, data),
-  getExistingRecommendationMbids: (userId) => getExistingRecommendationMbids(db, userId),
+  getExistingRecommendationMbids: (userId, options) =>
+    getExistingRecommendationMbids(db, userId, options),
   insertBatch: async (data) => {
     const rows = await db
       .insert(recommendationBatches)
@@ -360,6 +388,7 @@ const storeDb: StoreDb = {
     return { id: row.id }
   },
   insertRecommendation: (data) => insertRecommendation(db, data),
+  saveRecommendationChunk: (entries) => saveRecommendationChunk(db, entries),
   // Atomic pair: prevents orphaned artist rows when the followup insert fails
   upsertArtistAndRecommendation: async (artistData, recData) => {
     await db.transaction(async (tx) => {
@@ -369,9 +398,19 @@ const storeDb: StoreDb = {
   },
   getRejectedMbids: (cooldownDays, userId) => getRejectedArtistMbids(db, cooldownDays, userId),
   getBlockedMbids: (userId) => getBlockedArtistMbids(db, userId),
+  getBlockedArtistNames: async (userId) => {
+    const names: string[] = []
+    let cursor: import('./db/queries/artist-blocks').ListBlocksCursor | null = null
+    do {
+      const page = await listArtistBlocksQuery(db, { userId, limit: 200, cursor })
+      names.push(...page.items.map((artist) => artist.name))
+      cursor = page.nextCursor
+    } while (cursor)
+    return names
+  },
   getFeedbackHistory: (userId) => getGenreFeedbackHistory(db, userId),
   lookupArtistMetadata: (name) => lookupByName(db, name),
-  getPopularityMap: () => getPopularityMap(db),
+  getPopularityMap: (names) => getPopularityMap(db, names),
   findMusicRaterScoresByNames: (userId, keys) => findMusicRaterScoresByNames(db, userId, keys),
   findMusicRaterArtistScores: (userId, names) => findMusicRaterArtistScores(db, userId, names),
   getLibraryArtistsForUser: async (userId, options) => {
@@ -397,6 +436,20 @@ const storeDb: StoreDb = {
 }
 
 jobRecorder = createJobRecorder(db)
+const scrobblerWriteBack = createScrobblerWriteBack({
+  getPreferences: async (userId) => (await getUserById(db, userId))?.preferences,
+  getConnections: (userId) => getUserConnections(db, userId),
+  getLastFmSession: (userId) => getOAuthToken(db, userId, 'lastfm'),
+  recorder: jobRecorder,
+  lastfmSharedSecret: () => envConfig.lastfmSharedSecret,
+  encryptionEnabled: isEncryptionEnabled,
+})
+// Close out jobs and batches a previous process left 'running' so they do not wait for the stuck detector
+markInterruptedJobs(db)
+  .then((n) => {
+    if (n > 0) console.warn(`[startup] Marked ${n} job(s) interrupted by a restart as failed`)
+  })
+  .catch((err) => console.error('[startup] Interrupted-job cleanup failed:', err))
 // Mark stuck jobs at startup
 jobRecorder
   .markStuck({ all: true })
@@ -414,72 +467,20 @@ const orchestrator = new PipelineOrchestrator()
 const scheduler = new SubscriptionScheduler()
 const playlistScheduler = new PlaylistScheduler()
 
-async function updateSlskdRecommendationAction(
-  recommendationId: number,
-  targetId: number,
-  status: string,
-  error?: string,
-) {
-  const recommendation = await getRecommendation(db, recommendationId)
-  if (!recommendation) {
-    return
-  }
-
-  const jobs = await listSlskdJobsForRecommendationTarget(db, recommendationId, targetId)
-  const activeStates = new Set(['pending', 'searching', 'queued', 'downloading', 'import_pending'])
-  const activeJobs = jobs.filter((job) => activeStates.has(job.state))
-  const completedJobs = jobs.filter((job) => job.state === 'completed')
-  const failedJobs = jobs.filter((job) => job.state === 'failed')
-  const needsReview = failedJobs.some((job) => job.lastError === 'slskd search needs manual review')
-
-  let nextActionStatus = status
-  let nextActionError = error
-
-  if (activeJobs.some((job) => job.state === 'import_pending')) {
-    nextActionStatus = 'import_pending'
-    nextActionError = undefined
-  } else if (activeJobs.some((job) => job.state === 'downloading')) {
-    nextActionStatus = 'downloading'
-    nextActionError = undefined
-  } else if (activeJobs.length > 0) {
-    nextActionStatus = 'queued'
-    nextActionError = undefined
-  } else if (completedJobs.length > 0) {
-    nextActionStatus = 'added'
-    nextActionError = undefined
-  } else if (needsReview) {
-    nextActionStatus = 'needs_review'
-    nextActionError = undefined
-  } else if (failedJobs.length > 0) {
-    nextActionStatus = 'failed'
-    nextActionError =
-      nextActionError ??
-      failedJobs.find((job) => job.lastError && job.lastError.length > 0)?.lastError ??
-      undefined
-  }
-
-  const targetActions = {
-    ...(((recommendation.targetActions as Record<string, unknown> | null) ?? {}) as Record<
-      string,
-      unknown
-    >),
-    [`slskd-${targetId}`]: nextActionError
-      ? { status: nextActionStatus, error: nextActionError }
-      : { status: nextActionStatus },
-  }
-
-  const nextStatus =
-    nextActionStatus === 'failed' && recommendation.status !== 'added_to_lidarr'
-      ? 'add_failed'
-      : recommendation.status
-
-  await updateRecommendationStatus(db, recommendationId, nextStatus, {
-    targetActions,
-  })
+// Subscription and playlist runs write to the DB, so shutdown waits on them before closeDb.
+const inFlightJobs = new Set<Promise<unknown>>()
+function trackInFlight<T>(run: Promise<T>): Promise<T> {
+  inFlightJobs.add(run)
+  const done = () => inFlightJobs.delete(run)
+  run.then(done, done)
+  return run
 }
 
 const slskdOrchestrator = createSlskdOrchestrator({
-  listTargets: () => getAllTargets(db),
+  listTargets: async () => {
+    const [rows, settings] = await Promise.all([getAllTargets(db), getSettings(db)])
+    return rows.map((row) => withResolvedLidarrConnection(row, settings))
+  },
   createSlskdClient: (url, apiKey, skipTlsVerify) => createSlskdClient(url, apiKey, skipTlsVerify),
   createLidarrClient: (url, apiKey, skipTlsVerify) =>
     createLidarrClient(url, apiKey, skipTlsVerify),
@@ -487,7 +488,18 @@ const slskdOrchestrator = createSlskdOrchestrator({
   createJob: (input) => createSlskdJob(db, input),
   listPendingJobs: (limit) => listPendingSlskdJobs(db, limit),
   updateJobState: (id, state, extra) => updateSlskdJobState(db, id, state, extra),
-  updateRecommendationAction: updateSlskdRecommendationAction,
+  updateRecommendationAction: (id, targetId, status, error) =>
+    updateSlskdRecommendationAction(
+      {
+        getRecommendation: (id) => getRecommendation(db, id),
+        listJobs: (id, targetId) => listSlskdJobsForRecommendationTarget(db, id, targetId),
+        update: (id, status, extra) => updateRecommendationStatus(db, id, status, extra),
+      },
+      id,
+      targetId,
+      status,
+      error,
+    ),
 })
 const providerRegistry = createDefaultRegistry()
 
@@ -521,29 +533,24 @@ const genreService = new GenreService({
 // LibraryHealthService uses a lazy Lidarr client that reads current settings per call.
 // This avoids the chicken-and-egg problem of needing settings at construction time.
 function makeLazyLidarrClient() {
+  // Reads throw too: an empty library would make an unconfigured Lidarr look healthy.
   async function getClient() {
     const s = await getSettings(db)
     if (s?.lidarrUrl && s?.lidarrApiKey) {
       return createLidarrClient(s.lidarrUrl, s.lidarrApiKey, s.skipTlsVerify ?? false)
     }
-    return null
+    throw new Error('Lidarr not configured')
   }
 
   return {
-    getArtists: async () => (await getClient())?.getArtists() ?? [],
-    getAlbums: async (artistId: number) => (await getClient())?.getAlbums(artistId) ?? [],
-    lookupArtist: async (term: string) => (await getClient())?.lookupArtist(term) ?? [],
-    setArtistsMonitored: async (artistIds: number[], monitored: boolean) => {
-      const client = await getClient()
-      if (!client) throw new Error('Lidarr not configured')
-      return client.setArtistsMonitored(artistIds, monitored)
-    },
-    triggerCommand: async (name: string, body?: Record<string, unknown>) => {
-      const client = await getClient()
-      if (!client) throw new Error('Lidarr not configured')
-      return client.triggerCommand(name, body)
-    },
-    getRootFolders: async () => (await getClient())?.getRootFolders() ?? [],
+    getArtists: async () => (await getClient()).getArtists(),
+    getAlbums: async (artistId: number) => (await getClient()).getAlbums(artistId),
+    lookupArtist: async (term: string) => (await getClient()).lookupArtist(term),
+    setArtistsMonitored: async (artistIds: number[], monitored: boolean) =>
+      (await getClient()).setArtistsMonitored(artistIds, monitored),
+    triggerCommand: async (name: string, body?: Record<string, unknown>) =>
+      (await getClient()).triggerCommand(name, body),
+    getRootFolders: async () => (await getClient()).getRootFolders(),
   }
 }
 
@@ -580,6 +587,7 @@ const libraryHealth = new LibraryHealthService({
     markScanStarted: () => markLibraryHealthScanStarted(db),
     save: ({ checks, lastCompletedAt, lastError }) =>
       saveLibraryHealthState(db, { checks, lastCompletedAt, lastError }),
+    markScanFailed: (error) => markLibraryHealthScanFailed(db, error),
   },
 })
 
@@ -641,6 +649,7 @@ async function buildGlobalLibrarySources() {
     return [
       createLidarrLibrarySource(
         createLidarrClient(s.lidarrUrl, s.lidarrApiKey, s.skipTlsVerify ?? false),
+        { requireFiles: s.preferences?.lidarrRequireFiles !== false },
       ),
     ]
   }
@@ -650,7 +659,7 @@ async function buildGlobalLibrarySources() {
 const librarySyncOrchestrator: SyncOrchestrator = createSyncOrchestrator({
   store: librarySyncStore,
   recorder: jobRecorder,
-  mbClient: createMusicBrainzClient(),
+  mbClient: createMusicBrainzClient({ priority: 'background' }),
   buildPerUserSources: buildPerUserLibrarySources,
   buildGlobalSources: buildGlobalLibrarySources,
   staleHours: librarySyncIntervalHours,
@@ -711,10 +720,15 @@ async function buildDiscoveryModePipelineDeps(userId: number) {
     throw new Error('Settings not found')
   }
 
-  const [userConnections, userPreferences] = await Promise.all([
+  const [userConnections, user] = await Promise.all([
     getUserConnections(db, userId),
-    resolveUserPreferences(db, settings.preferences, userId),
+    getUserById(db, userId),
   ])
+  const userPreferences = await resolveUserPreferences(
+    async () => user,
+    settings.preferences,
+    userId,
+  )
 
   let spotifyAccessToken: string | null = null
   try {
@@ -740,8 +754,12 @@ async function buildDiscoveryModePipelineDeps(userId: number) {
         },
       }))
     },
-    getEnabledTargets: () => getEnabledTargetsForResolvedUser(userId),
+    getEnabledTargets: () => getEnabledTargetsForResolvedUser(userId, userPreferences),
     userId,
+    jobRecorder,
+    ...(user && user.approvalPolicy !== 'direct'
+      ? { canApprove: async (score: number) => !requiresApprovalRequest(user, score) }
+      : {}),
     updateRecommendationStatus: (
       id: number,
       status: string,
@@ -762,6 +780,7 @@ async function buildDiscoveryModePipelineDeps(userId: number) {
       settings: {
         ...settings,
         preferences: mergePreferences(userPreferences),
+        audiomuse: getAudioMuseConfig(settings.preferences),
         spotifyAccessToken,
       },
       providerRegistry,
@@ -790,23 +809,26 @@ const executeDiscoveryModeRun = async (
 
 async function getEnabledTargetsForResolvedUser(
   userId: number,
+  resolvedPreferences?: Partial<import('./db/schema').Preferences> | null,
 ): Promise<import('./core/targets/types').DestinationTarget[]> {
   const rows = await getTargetsByUser(db, userId)
   const settings = await getSettings(db)
-  const prefs = (settings?.preferences ?? {}) as Record<string, unknown>
+  // Server-connection defaults: the owner's preferences, falling back to global.
+  const serverDefaults = mergePreferences(
+    resolvedPreferences !== undefined
+      ? resolvedPreferences
+      : await resolveUserPreferences(db, settings?.preferences ?? null, userId),
+  )
 
   const targets: import('./core/targets/types').DestinationTarget[] = []
   for (const row of rows) {
     if (!row.enabled) continue
     if (row.type === 'lidarr') {
+      const connection = resolveLidarrTargetConnection(row.config, settings)
       targets.push(
         createLidarrTarget(row.id, {
-          url: row.config.url as string,
-          apiKey: row.config.apiKey as string,
-          skipTlsVerify: (row.config.skipTlsVerify as boolean) ?? false,
-          qualityProfileId: Number(prefs.qualityProfileId ?? 1),
-          metadataProfileId: Number(prefs.metadataProfileId ?? 1),
-          rootFolderId: prefs.rootFolderId != null ? Number(prefs.rootFolderId) : undefined,
+          ...(connection ?? {}),
+          ...resolveLidarrTargetDefaults(row.config, serverDefaults),
         }),
       )
     }
@@ -969,7 +991,11 @@ function startSubscription(subscriptionId: number): Promise<void> {
   return Promise.resolve()
 }
 
-async function executeSubscription(subscriptionId: number): Promise<void> {
+function executeSubscription(subscriptionId: number): Promise<void> {
+  return trackInFlight(runSubscriptionById(subscriptionId))
+}
+
+async function runSubscriptionById(subscriptionId: number): Promise<void> {
   const sub = await getSubscription(db, subscriptionId)
   if (!sub) {
     console.warn(`[subscription-runner] Subscription ${subscriptionId} not found - skipping`)
@@ -1144,8 +1170,6 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
     subscriptionConfig,
     (adapter ?? {
       type: DISCOVERY_MODE_SUBSCRIPTION_TYPE,
-      label: 'Discovery Mode',
-      configFields: [],
       fetch: async () => ({ artists: [] }),
     }) as import('./core/subscriptions/types').SubscriptionAdapter,
     {
@@ -1179,11 +1203,19 @@ async function executeSubscription(subscriptionId: number): Promise<void> {
   )
 }
 
-async function executePlaylistGeneration(playlistId: number): Promise<void> {
-  return withPlaylistLock(playlistId, () => generatePlaylistContents(playlistId))
+async function executePlaylistGeneration(
+  playlistId: number,
+  trigger: PlaylistGenerationTrigger,
+): Promise<void> {
+  return trackInFlight(
+    withPlaylistLock(playlistId, () => generatePlaylistContents(playlistId, trigger)),
+  )
 }
 
-async function generatePlaylistContents(playlistId: number): Promise<void> {
+async function generatePlaylistContents(
+  playlistId: number,
+  trigger: PlaylistGenerationTrigger,
+): Promise<void> {
   let jobId: number | null = null
 
   const result = await getPlaylistWithTracks(db, playlistId)
@@ -1205,8 +1237,12 @@ async function generatePlaylistContents(playlistId: number): Promise<void> {
       },
     })
 
-    const strategyDeps = buildStrategyDeps(db, playlist.userId ?? null)
-    const resolverDeps = await buildPlaylistResolverDeps(db, playlist.userId ?? null)
+    // Approvals are per user; an ownerless playlist would regenerate empty.
+    if (playlist.userId == null) {
+      throw new Error('Playlist has no owner; kept the previous tracks')
+    }
+    const strategyDeps = buildStrategyDeps(db, playlist.userId)
+    const resolverDeps = await buildPlaylistResolverDeps(db, playlist.userId)
     const generation = await generatePlaylist(
       playlist.strategy as import('./db/schema').PlaylistStrategy,
       playlist.config,
@@ -1225,17 +1261,30 @@ async function generatePlaylistContents(playlistId: number): Promise<void> {
       position: index,
     }))
 
+    if (jobId != null) {
+      await jobQueries.updateJobMetadata(db, jobId, {
+        playlistResolution: generation.resolution,
+      })
+    }
+
+    // A resolver outage would otherwise replace a good playlist with an empty or thin one.
+    const failure = playlistGenerationFailure(generation.resolution)
+    if (failure) throw new Error(`${failure}; kept the previous tracks`)
+
     await replacePlaylistTracks(db, playlist.id, trackInserts)
     await updatePlaylistRow(db, playlist.id, {
       lastGeneratedAt: new Date(),
       trackCount: generation.tracks.length,
     })
 
-    if (jobId != null) {
-      await jobQueries.updateJobMetadata(db, jobId, {
-        playlistResolution: generation.resolution,
-      })
-    }
+    void trackInFlight(
+      scrobblerWriteBack.generatedPlaylist(
+        playlist.userId,
+        playlist.name,
+        generation.tracks,
+        trigger,
+      ),
+    )
 
     if (playlist.targetIds.length > 0 && playlist.userId != null) {
       const userId = playlist.userId
@@ -1253,44 +1302,13 @@ async function generatePlaylistContents(playlistId: number): Promise<void> {
         spotifyUri: track.spotifyUri ?? undefined,
       }))
 
-      const targets: Array<{ targetId: number; target: DestinationTarget }> = []
+      const targets: Array<{ targetId: number; target: DestinationTarget; targetName: string }> = []
       for (const targetRow of enabledTargetRows) {
-        let target: DestinationTarget | null = null
-
-        if (targetRow.type === 'navidrome-playlist') {
-          target = createNavidromePlaylistTarget(targetRow.id, {
-            url: targetRow.config.url as string,
-            username: targetRow.config.username as string,
-            password: targetRow.config.password as string,
-          })
-        } else if (targetRow.type === 'jellyfin-playlist') {
-          target = createJellyfinPlaylistTarget(targetRow.id, {
-            url: targetRow.config.url as string,
-            apiKey: targetRow.config.apiKey as string,
-            userId: targetRow.config.userId as string,
-            skipTlsVerify:
-              (targetRow.config.skipTlsVerify as boolean | undefined) ?? globalSkipTlsVerify,
-          })
-        } else if (targetRow.type === 'emby-playlist') {
-          target = createEmbyPlaylistTarget(targetRow.id, {
-            url: targetRow.config.url as string,
-            apiKey: targetRow.config.apiKey as string,
-            userId: targetRow.config.userId as string,
-            skipTlsVerify:
-              (targetRow.config.skipTlsVerify as boolean | undefined) ?? globalSkipTlsVerify,
-          })
-        } else if (targetRow.type === 'plex-playlist') {
-          target = createPlexPlaylistTarget(targetRow.id, {
-            url: targetRow.config.url as string,
-            token: targetRow.config.token as string,
-          })
-        } else if (targetRow.type === 'spotify-playlist') {
-          target = createSpotifyPlaylistTarget(targetRow.id, {
-            getAccessToken: () => resolveProviderToken(db, userId, 'spotify'),
-          })
-        }
-
-        if (target?.createPlaylist) targets.push({ targetId: targetRow.id, target })
+        const target = createSavedPlaylistExportTarget(targetRow, {
+          globalSkipTlsVerify,
+          getSpotifyAccessToken: () => resolveProviderToken(db, userId, 'spotify'),
+        })
+        if (target) targets.push({ targetId: targetRow.id, target, targetName: targetRow.name })
       }
 
       await pushSavedPlaylistToTargets(
@@ -1298,6 +1316,9 @@ async function generatePlaylistContents(playlistId: number): Promise<void> {
         playlist.name,
         playlistItems,
         createSavedPlaylistExportStore(db, userId, playlist.id),
+        async (playlistExports) => {
+          if (jobId != null) await jobQueries.updateJobMetadata(db, jobId, { playlistExports })
+        },
       )
     }
 
@@ -1323,24 +1344,27 @@ async function generatePlaylistContents(playlistId: number): Promise<void> {
 }
 
 async function restartPlaylistScheduler(): Promise<void> {
-  playlistScheduler.stopAll()
-
   const settings = await getSettings(db)
-  const prefs = mergePreferences(settings?.preferences)
-  if (!prefs.playlistEnabled) return
+  const enabled = mergePreferences(settings?.preferences).playlistEnabled ?? false
+  schedulePlaylists(playlistScheduler, {
+    enabled,
+    playlists: enabled ? await getScheduledPlaylists(db) : [],
+    generate: (playlistId) => executePlaylistGeneration(playlistId, 'scheduled'),
+  })
+}
 
-  const playlists = await getEnabledPlaylists(db)
-  for (const playlist of playlists) {
-    if (!playlist.schedule) continue
-
-    playlistScheduler.schedule(`playlist-${playlist.id}`, playlist.schedule, async () => {
-      await executePlaylistGeneration(playlist.id)
-    })
+// One invalid stored cron must not stop the remaining schedulers from starting.
+function scheduleIsolated(label: string, start: () => void): void {
+  try {
+    start()
+  } catch (err: unknown) {
+    console.error(`[scheduler] ${label} not scheduled:`, errMsg(err))
   }
 }
 
 let librarySyncCron: Cron | null = null
 let libraryHealthCron: Cron | null = null
+let approvalRetryCron: Cron | null = null
 let slskdCron: Cron | null = null
 let stuckDetectorCron: Cron | null = null
 let digestNotifierCron: Cron | null = null
@@ -1358,6 +1382,10 @@ function restartLibraryMaintenanceScheduler(intervalHours: number): void {
   libraryHealthCron = startLibraryHealthScheduler({
     intervalHours,
     libraryHealth,
+    isConfigured: async () => {
+      const s = await getSettings(db)
+      return Boolean(s?.lidarrUrl && s?.lidarrApiKey)
+    },
   })
 }
 
@@ -1468,7 +1496,6 @@ const discoveryModeRegistry = createDefaultDiscoveryModeRegistry()
 const app = createApp({
   db,
   storeDb,
-  apiKeyStore,
   orchestrator,
   scheduler,
   providerRegistry,
@@ -1481,6 +1508,7 @@ const app = createApp({
     return batches[0] ?? null
   },
   listRecommendations: (filters) => listRecommendations(db, filters),
+  listRecommendationsForExport: (filters) => listRecommendationsForExport(db, filters),
   getRecommendation: (id) => getRecommendation(db, id),
   updateRecommendationStatus: (id, status, extra) =>
     updateRecommendationStatus(db, id, status, extra),
@@ -1509,6 +1537,7 @@ const app = createApp({
   listAlbumBlocks: (userId) => listAlbumBlocksQuery(db, userId),
   removeAlbumBlock: (params) => removeAlbumBlockQuery(db, params),
   bulkUpdateStatus: (ids, status) => bulkUpdateStatus(db, ids, status),
+  bulkRejectRecommendations: (params) => bulkRejectRecommendations(db, params),
   filterOwnedIds: (ids, userId) => filterOwnedIds(db, ids, userId),
   listBatches: (opts?: Parameters<typeof listBatches>[1]) => listBatches(db, opts),
   getBatch: (id) => getBatch(db, id),
@@ -1556,7 +1585,10 @@ const app = createApp({
       updateTarget(db, id, data),
     deleteTarget: (id: number) => deleteTarget(db, id),
   },
-  testTargetConnection,
+  testTargetConnection: async (type, config) => {
+    const resolved = withResolvedLidarrConnection({ type, config }, await getSettings(db))
+    return testTargetConnection(type, resolved.config)
+  },
   getFeedbackHistory: (userId) => getGenreFeedbackHistory(db, userId),
   dashboardQueries: {
     getTopGenresForUser: (userId) => getTopGenresForUser(db, userId),
@@ -1574,10 +1606,16 @@ const app = createApp({
     getJobsForSubscription: (subId, limit) => jobQueries.getJobsForSubscription(db, subId, limit),
   },
   getEnabledTargetsForUser: (userId) => getEnabledTargetsForResolvedUser(userId),
+  scrobblerWriteBack: {
+    approvedTrack: (userId, track) =>
+      trackInFlight(scrobblerWriteBack.approvedTrack(userId, track)),
+    generatedPlaylist: (userId, title, tracks, trigger) =>
+      trackInFlight(scrobblerWriteBack.generatedPlaylist(userId, title, tracks, trigger)),
+  },
   playlistDeps: {
     db,
     playlistScheduler,
-    runPlaylistGeneration: (playlistId) => executePlaylistGeneration(playlistId),
+    runPlaylistGeneration: (playlistId) => executePlaylistGeneration(playlistId, 'manual'),
     restartPlaylistScheduler,
   },
   search: {
@@ -1586,6 +1624,8 @@ const app = createApp({
       const storedSettings = await getSettings(db)
       return buildSearchSourceCatalog({
         hasSpotifyOAuth: Boolean(spotifyOAuth),
+        showExperimentalIntegrations:
+          storedSettings?.preferences?.showExperimentalIntegrations ?? false,
         hasTidalSearch: Boolean(storedSettings?.tidalClientId && storedSettings?.tidalClientSecret),
       })
     },
@@ -1693,7 +1733,8 @@ const server = serve({ fetch: app.fetch, port })
       updateSettings: (partial) => updateSettings(db, partial),
     })
 
-    // Backfill: create Lidarr target for existing installations
+    // Backfill: create a Lidarr target for existing installations, then link
+    // copies of the server connection to it (#994).
     const settings = await getSettings(db)
     if (settings?.lidarrUrl && settings?.lidarrApiKey) {
       const existingTargets = await getTargetsByType(db, 'lidarr')
@@ -1704,15 +1745,18 @@ const server = serve({ fetch: app.fetch, port })
           await createTarget(db, {
             type: 'lidarr',
             name: 'Lidarr',
-            config: {
-              url: settings.lidarrUrl as string,
-              apiKey: settings.lidarrApiKey as string,
-              skipTlsVerify: (settings.skipTlsVerify as boolean) ?? false,
-            },
+            config: { useServerConnection: true },
             userId: admin.id,
           })
           console.log('[boot] Created Lidarr target from existing settings (migration backfill)')
         }
+      }
+      const linked = await linkLidarrTargetsToServerConnection(settings, {
+        listLidarrTargets: () => getTargetsByType(db, 'lidarr'),
+        updateTargetConfig: (id, config) => updateTarget(db, id, { config }),
+      })
+      if (linked.length > 0) {
+        console.log(`[boot] Linked ${linked.length} Lidarr target(s) to the server connection`)
       }
     }
 
@@ -1720,14 +1764,18 @@ const server = serve({ fetch: app.fetch, port })
     const prefs = mergePreferences(settings?.preferences)
     const cron = prefs.scheduleCron
     if (cron) {
-      scheduler.schedule('main-pipeline', cron, runPipelineForAllUsers)
-      console.log(`Scheduler started with cron: ${cron}`)
+      scheduleIsolated('main pipeline', () => {
+        scheduler.schedule('main-pipeline', cron, runPipelineForAllUsers)
+        console.log(`Scheduler started with cron: ${cron}`)
+      })
     }
 
     const subs = await getEnabledSubscriptions(db)
     for (const sub of subs) {
-      scheduler.schedule(`subscription-${sub.id}`, sub.cron, () => startSubscription(sub.id))
-      console.log(`Subscription '${sub.name}' (id=${sub.id}) scheduled with cron: ${sub.cron}`)
+      scheduleIsolated(`subscription ${sub.id}`, () => {
+        scheduler.schedule(`subscription-${sub.id}`, sub.cron, () => startSubscription(sub.id))
+        console.log(`Subscription '${sub.name}' (id=${sub.id}) scheduled with cron: ${sub.cron}`)
+      })
     }
 
     await restartPlaylistScheduler()
@@ -1735,11 +1783,14 @@ const server = serve({ fetch: app.fetch, port })
     // Library maintenance schedulers - background, idempotent. Boot fire is non-blocking.
     restartLibraryMaintenanceScheduler(librarySyncIntervalHours)
     // Fire one sync + health scan at boot so fresh installs don't wait for the first cron tick.
-    void librarySyncOrchestrator
-      .syncGlobal()
-      .catch((err) => console.error('[boot] initial library syncGlobal failed:', err))
-    libraryHealth.startScan()
-    void slskdOrchestrator.warmup()
+    // Delayed so the first page loads after a restart do not compete with these.
+    setTimeout(() => {
+      void librarySyncOrchestrator
+        .syncGlobal()
+        .catch((err) => console.error('[boot] initial library syncGlobal failed:', err))
+      libraryHealth.startScan()
+      void slskdOrchestrator.warmup()
+    }, 60_000).unref()
     slskdCron = new Cron('*/10 * * * *', async () => {
       if (isMaintenance()) {
         console.log('[slskd-scheduler] tick skipped: maintenance in progress')
@@ -1752,11 +1803,45 @@ const server = serve({ fetch: app.fetch, port })
       }
     })
 
+    approvalRetryCron = new Cron('*/5 * * * *', { protect: true }, async () => {
+      if (isMaintenance()) return
+      try {
+        await retryWaitingApprovals({
+          listWaiting: () => listWaitingApprovals(db),
+          getRecommendation: (id) => getRecommendation(db, id),
+          getTargets: getEnabledTargetsForResolvedUser,
+          isBlocked: async (rec) => {
+            if (rec.userId == null) return false
+            const [artists, albums] = await Promise.all([
+              getBlockedArtistMbids(db, rec.userId),
+              getBlockedAlbumKeys(db, rec.userId),
+            ])
+            return (
+              artists.has(rec.artist.mbid) ||
+              Boolean(rec.recommendedReleaseGroupId && albums.has(rec.recommendedReleaseGroupId))
+            )
+          },
+          update: (id, status, extra) => updateRecommendationStatus(db, id, status, extra),
+          recorder: jobRecorder,
+          getLocale: async (userId) =>
+            resolveSupportedLocale((await getUserById(db, userId))?.preferredLocale),
+          notify: async (payload) =>
+            dispatch(await buildDigestDeps().getChannels(), 'approval_failed', payload),
+        })
+      } catch (error) {
+        console.error('[lidarr-retry] tick failed:', errMsg(error))
+      }
+    })
+
     // Start stuck job detector
     stuckDetectorCron = startStuckDetector(jobRecorder)
 
     // Start scheduled notification digest (no-op until digestCron is configured)
-    digestNotifierCron = await startDigestNotifier(buildDigestDeps())
+    try {
+      digestNotifierCron = await startDigestNotifier(buildDigestDeps())
+    } catch (err: unknown) {
+      console.error('[scheduler] digest notifier not scheduled:', errMsg(err))
+    }
 
     // Nightly music-rater corpus sync, one user at a time. Only users with a
     // complete connection (both URL and API key) are ticked.
@@ -1798,7 +1883,7 @@ setInterval(
 console.log(`Digarr running on http://localhost:${port}`)
 if (!envConfig.allowedOrigin && process.env.NODE_ENV === 'production') {
   console.warn(
-    'ALLOWED_ORIGIN not set - CORS rejects all cross-origin requests. Set ALLOWED_ORIGIN to your domain.',
+    'ALLOWED_ORIGIN not set - CORS rejects all cross-origin requests, the Secure cookie and same-origin/CSRF checks fall back to the request URL (login or mutations can fail behind a proxy), and OIDC and TIDAL redirect URIs cannot be built. Set ALLOWED_ORIGIN to your public origin.',
   )
 }
 if (envConfig.authToken && envConfig.authToken.length < 16) {
@@ -1808,7 +1893,7 @@ if (envConfig.authToken && envConfig.authToken.length < 16) {
 }
 if (envConfig.authToken) {
   console.warn(
-    'DEPRECATED: DIGARR_AUTH_TOKEN provides read-only access with no admin privileges, no per-user features, and no audit trail. Create a user account instead.',
+    'DEPRECATED: DIGARR_AUTH_TOKEN provides read-only access with no admin privileges, no per-user features, and no audit trail. Create personal API tokens in Settings > Account instead. See docs/AUTHENTICATION.md#personal-api-tokens.',
   )
 }
 if (!envConfig.authToken && !envConfig.initialUsername) {
@@ -1830,6 +1915,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     await new Promise((resolve) => setTimeout(resolve, 12_000))
     scheduler.stopAll()
     playlistScheduler.stopAll()
+    approvalRetryCron?.stop()
     slskdCron?.stop()
     stuckDetectorCron?.stop()
     digestNotifierCron?.stop()
@@ -1858,6 +1944,15 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
           resolve()
         }, 25_000)
       })
+    }
+    if (inFlightJobs.size > 0) {
+      console.log(`Waiting for ${inFlightJobs.size} subscription/playlist run(s) to finish...`)
+      await Promise.race([
+        (async () => {
+          while (inFlightJobs.size > 0) await Promise.allSettled([...inFlightJobs])
+        })(),
+        new Promise((resolve) => setTimeout(resolve, 25_000)),
+      ])
     }
     await waitForGenreWarmers()
     await closeDb()

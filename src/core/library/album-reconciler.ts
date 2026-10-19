@@ -1,5 +1,6 @@
 import { type createMusicBrainzClient, parseYear } from '@/core/clients/musicbrainz'
-import { isValidMbid } from '@/core/validation'
+import { isSpecialPurposeArtist } from '@/core/clients/musicbrainz-special-purpose'
+import { errMsg, isValidMbid } from '@/core/validation'
 import { normalizeAlbumTitle } from './normalize'
 import type { LibraryAlbum } from './sources/types'
 import type { UnreconciledReason } from './types'
@@ -50,6 +51,18 @@ function makeRow(
   }
 }
 
+type MBReleaseGroup = Awaited<ReturnType<MBClient['getReleaseGroups']>>[number]
+
+function matchesAlias(releaseGroup: MBReleaseGroup, titleNormalized: string): boolean {
+  if (!Array.isArray(releaseGroup.aliases)) return false
+  return releaseGroup.aliases.some(
+    (name) =>
+      typeof name === 'string' &&
+      name.trim() !== '' &&
+      normalizeAlbumTitle(name) === titleNormalized,
+  )
+}
+
 export async function reconcileAlbumsForArtist(
   artistMbid: string,
   albums: LibraryAlbum[],
@@ -63,6 +76,19 @@ export async function reconcileAlbumsForArtist(
     onMbError?: (err: unknown) => void
   },
 ): Promise<ReconciledAlbum[]> {
+  if (albums.length === 0) return []
+
+  if (isSpecialPurposeArtist(artistMbid)) {
+    // Keep the source inventory without attempting discography matching.
+    return albums.map((album) =>
+      makeRow(album, normalizeAlbumTitle(album.title), artistMbid, {
+        albumMbid: isValidMbid(album.mbid) ? album.mbid : null,
+        releaseYear: album.releaseYear ?? null,
+        primaryType: album.primaryType ?? null,
+      }),
+    )
+  }
+
   let releaseGroups: Awaited<ReturnType<MBClient['getReleaseGroups']>>
   let releaseGroupLookupFailed = false
   try {
@@ -71,18 +97,21 @@ export async function reconcileAlbumsForArtist(
     releaseGroupLookupFailed = true
     deps.onMbError?.(err)
     console.warn(
-      `[library-reconcile] MB getReleaseGroups failed for artist ${artistMbid}; albums left unreconciled: ${err instanceof Error ? err.message : String(err)}`,
+      `[library-reconcile] MB getReleaseGroups failed for artist ${artistMbid}; albums left unreconciled: ${errMsg(err)}`,
     )
     releaseGroups = []
   }
 
   return albums.map((album) => {
     const titleNormalized = normalizeAlbumTitle(album.title)
+    // A source-provided MBID survives unmatched rows; the reason still flags them.
+    const sourceMbid = isValidMbid(album.mbid) ? album.mbid : null
 
     if (releaseGroupLookupFailed) {
       return makeRow(album, titleNormalized, artistMbid, {
         releaseYear: album.releaseYear ?? null,
         primaryType: album.primaryType ?? null,
+        albumMbid: sourceMbid,
         unreconciledReason: 'lookup_failed',
       })
     }
@@ -101,14 +130,21 @@ export async function reconcileAlbumsForArtist(
       })
     }
 
-    const candidates = releaseGroups.filter(
+    // A primary-title match outranks alias matches, so an alias shared with
+    // another release group cannot turn a clean primary match into an ambiguity.
+    const primaryMatches = releaseGroups.filter(
       (rg) => normalizeAlbumTitle(rg.title) === titleNormalized,
     )
+    const candidates =
+      primaryMatches.length > 0
+        ? primaryMatches
+        : releaseGroups.filter((rg) => matchesAlias(rg, titleNormalized))
 
     if (candidates.length === 0) {
       return makeRow(album, titleNormalized, artistMbid, {
         releaseYear: album.releaseYear ?? null,
         primaryType: album.primaryType ?? null,
+        albumMbid: sourceMbid,
         unreconciledReason: 'no_candidate',
       })
     }
@@ -149,6 +185,7 @@ export async function reconcileAlbumsForArtist(
     return makeRow(album, titleNormalized, artistMbid, {
       releaseYear: album.releaseYear ?? null,
       primaryType: album.primaryType ?? null,
+      albumMbid: sourceMbid,
       unreconciledReason: 'ambiguous',
     })
   })

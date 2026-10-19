@@ -1,11 +1,11 @@
 // @vitest-environment node
 
-import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSession } from '@/core/sessions'
 import type { SettingsRow } from '@/db/queries/settings'
 import type { AppDependencies } from '@/server'
 import { createApp } from '@/server'
+import { makeDeps as makeSharedDeps } from '../../helpers/test-app'
 
 vi.mock('@/core/clients/deezer', () => ({
   createDeezerClient: vi.fn(() => ({
@@ -30,14 +30,6 @@ vi.mock('@/core/clients/wikidata', () => ({
     getArtistEnrichment: wikidataGetEnrichment,
   })),
 }))
-
-function makeMockOrchestrator() {
-  const emitter = new EventEmitter()
-  return Object.assign(emitter, {
-    isRunning: false,
-    run: vi.fn(async () => ({ batchId: 1 })),
-  })
-}
 
 function makeChainableMockDb() {
   const chain: Record<string, unknown> = {}
@@ -64,13 +56,11 @@ function makeChainableMockDb() {
 }
 
 function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
-  return {
+  return makeSharedDeps({
     db: makeChainableMockDb(),
     storeDb: {} as unknown as AppDependencies['storeDb'],
-    orchestrator: makeMockOrchestrator() as unknown as AppDependencies['orchestrator'],
     scheduler: {} as AppDependencies['scheduler'],
     providerRegistry: {} as unknown as AppDependencies['providerRegistry'],
-    isSetupComplete: async () => true,
     getSettings: vi.fn(
       async () =>
         ({
@@ -80,141 +70,10 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
           preferences: {},
         }) as SettingsRow,
     ),
-    updateSettings: vi.fn(async () => {}),
-    completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
-    getLastBatch: vi.fn(async () => null),
-    listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
-    getRecommendation: vi.fn(async () => null),
-    updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
-    lidarrRemoveArtist: vi.fn(async () => {}),
-    lidarrArtistHasFiles: vi.fn(async () => false),
-    listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
-    removeArtistBlock: vi.fn(async () => true),
-    addArtistBlock: vi.fn(async () => {}),
-    listAlbumBlocks: vi.fn(async () => []),
-    removeAlbumBlock: vi.fn(async () => {}),
-    bulkUpdateStatus: vi.fn(async () => {}),
-    filterOwnedIds: vi.fn(async (ids: number[]) => ids),
-    listBatches: vi.fn(async () => []),
-    getBatch: vi.fn(async () => null),
-    getArtistById: vi.fn(async () => null),
-    restartScheduler: vi.fn(),
-    restartPlaylistScheduler: vi.fn(),
-    createUser: vi.fn(async () => ({
-      id: 1,
-      username: 'test',
-      isAdmin: false,
-      preferences: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      subsonicMusicFolderId: null,
-      musicRaterUrl: null,
-      musicRaterApiKey: null,
-      createdAt: new Date(),
-    })),
-    getUserByUsername: vi.fn(async () => null),
     getUserById: vi.fn(async () => null),
     getUserCount: vi.fn(async () => 0),
-    updateUserPreferredLocale: vi.fn(async () => {}),
-    genreService: {
-      getLibraryGenres: vi.fn(async () => []),
-      search: vi.fn(async () => []),
-      getOrFetchGenre: vi.fn(async () => null),
-      getSubGenres: vi.fn(async () => []),
-      seedFromLibrary: vi.fn(async () => {}),
-      slugify: vi.fn((name: string) => name),
-      isStale: vi.fn(() => false),
-    } as unknown as AppDependencies['genreService'],
-    libraryHealth: {} as unknown as AppDependencies['libraryHealth'],
-    librarySync: {} as unknown as AppDependencies['librarySync'],
-    librarySyncStore: {} as unknown as AppDependencies['librarySyncStore'],
-    targetQueries: {
-      createTarget: vi.fn().mockResolvedValue({ id: 1 }),
-      getTargetsByUser: vi.fn().mockResolvedValue([]),
-      getAllTargets: vi.fn().mockResolvedValue([]),
-      getTarget: vi.fn().mockResolvedValue(null),
-      updateTarget: vi.fn().mockResolvedValue(undefined),
-      deleteTarget: vi.fn().mockResolvedValue(undefined),
-    },
-    testTargetConnection: vi.fn().mockResolvedValue({ success: true, message: 'ok' }),
-    getEnabledTargetsForUser: vi.fn().mockResolvedValue([]),
-    subscriptionQueries: {
-      createSubscription: vi.fn(async () => ({}) as never),
-      getSubscription: vi.fn(async () => null),
-      getSubscriptionsByUser: vi.fn(async () => []),
-      getEnabledSubscriptions: vi.fn(async () => []),
-      updateSubscription: vi.fn(async () => {}),
-      deleteSubscription: vi.fn(async () => {}),
-    },
-    runSubscription: vi.fn(async () => {}),
-    getOidcService: vi.fn(async () => null),
-    getUserByOidcIdentity: vi.fn(async () => null),
-    getUserByEmail: vi.fn(async () => null),
-    updateUser: vi.fn(async () => {}),
-    listUsers: vi.fn(async () => []),
-    deleteUser: vi.fn(async () => {}),
-    getFeedbackHistory: vi.fn(async () => new Map()),
-    dashboardQueries: {
-      getTopGenresForUser: vi.fn(async () => []),
-      getLatestGenreCoverage: vi.fn(async () => null),
-      getRecentActivity: vi.fn(async () => []),
-    },
-    jobRecorder: {
-      start: vi.fn().mockResolvedValue(1),
-      complete: vi.fn().mockResolvedValue(undefined),
-      fail: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-      markStuck: vi.fn().mockResolvedValue(0),
-    },
-    jobQueries: {
-      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      getJobById: vi.fn().mockResolvedValue(null),
-      getJobHealth: vi.fn().mockResolvedValue({
-        pipeline: { status: 'ok', lastRun: null, nextRun: null },
-        subscriptions: { status: 'ok', healthy: 0, total: 0 },
-        playlists: { status: 'ok', lastRun: null },
-        sources: {},
-      }),
-      getJobsForSubscription: vi.fn().mockResolvedValue([]),
-    },
-    apiKeyStore: {
-      create: vi.fn(async () => {
-        throw new Error('apiKeyStore.create not stubbed')
-      }),
-      verify: vi.fn(async () => null),
-      listForUser: vi.fn(async () => []),
-      listAll: vi.fn(async () => []),
-      revoke: vi.fn(async () => false),
-      touchLastUsed: vi.fn(async () => {}),
-    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
-  }
+  })
 }
 
 const SESSION_TOKEN = 'artists-session-token'
@@ -612,5 +471,43 @@ describe('GET /api/v1/artists/:id/enrichment', () => {
     const app = createApp(makeDeps({ db, getSettings: vi.fn(async () => enrichmentSettings()) }))
     const res = await authedRequest(app, '/api/v1/artists/999/enrichment?locale=en')
     expect(res.status).toBe(404)
+  })
+})
+
+describe('preview audio proxy redirects', () => {
+  const GOOD = 'https://cdns-preview-a.dzcdn.net/stream/a.mp3'
+  const audio = () => new Response('abc', { headers: { 'Content-Type': 'audio/mpeg' } })
+  const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to } })
+
+  it('follows a redirect that stays on the allowlist', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(redirect('https://cdns-preview-b.dzcdn.net/stream/b.mp3'))
+      .mockResolvedValueOnce(audio())
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, `/api/v1/preview/audio?url=${encodeURIComponent(GOOD)}`)
+    expect(res.status).toBe(200)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ redirect: 'manual' })
+    fetchMock.mockRestore()
+  })
+
+  it('refuses a redirect to a non-allowlisted host', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(redirect('http://169.254.169.254/latest'))
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, `/api/v1/preview/audio?url=${encodeURIComponent(GOOD)}`)
+    expect(res.status).toBe(502)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fetchMock.mockRestore()
+  })
+
+  it('stops after too many redirects', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => redirect(GOOD))
+    const app = createApp(makeDeps())
+    const res = await authedRequest(app, `/api/v1/preview/audio?url=${encodeURIComponent(GOOD)}`)
+    expect(res.status).toBe(502)
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(4)
+    fetchMock.mockRestore()
   })
 })

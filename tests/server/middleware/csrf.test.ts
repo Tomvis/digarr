@@ -43,7 +43,7 @@ function unsafeRequest(headers: Record<string, string> = {}, path = '/api/v1/tes
 }
 
 describe('csrf middleware policy', () => {
-  it.each<AuthMethod>(['session-bearer', 'legacy-bearer', 'api-key'])(
+  it.each<AuthMethod>(['session-bearer', 'legacy-bearer', 'api-token'])(
     'allows verified %s auth without browser headers',
     async (authMethod) => {
       const res = await createGuardApp(authMethod).request(unsafeRequest())
@@ -232,6 +232,8 @@ describe('csrf middleware policy', () => {
       type: '/problems/csrf-validation-failed',
       title: 'Request rejected',
       status: 403,
+      code: 'errors.csrf.originMismatch',
+      detail: expect.stringContaining('ALLOWED_ORIGIN'),
     })
   })
 })

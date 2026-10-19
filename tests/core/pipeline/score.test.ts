@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { applyAlbumModifier, criticScoreKey, score } from '@/core/pipeline/score'
+import {
+  applyAlbumModifier,
+  computeWeightedScore,
+  criticScoreKey,
+  score,
+} from '@/core/pipeline/score'
 import type { ResolvedArtist } from '@/core/types'
 import type { Preferences } from '@/db/schema'
 
@@ -252,7 +257,7 @@ describe('score()', () => {
     expect(withPop[0]?.sourceScores.popularity).toBeCloseTo(0.9)
   })
 
-  it('artist not in popularity map gets popularity 0', () => {
+  it('artist not in popularity map gets neutral popularity', () => {
     const popWeights: Preferences['scoringWeights'] = {
       ...defaultWeights,
       popularity: 0.2,
@@ -260,7 +265,32 @@ describe('score()', () => {
     const artist = makeArtist({ name: 'Unknown Artist' })
     const popMap = new Map([['other artist', 0.8]])
     const result = score([artist], ['rock'], popWeights, new Map(), popMap)
-    expect(result[0]?.sourceScores.popularity).toBe(0)
+    expect(result[0]?.sourceScores.popularity).toBe(0.5)
+  })
+
+  it('does not let an old release date sink a gap-fill album with full genre overlap', () => {
+    const oldAlbum = (source: string) =>
+      makeArtist({
+        mbid: `mbid-${source}`,
+        genres: ['rock'],
+        discoveries: [{ name: 'Test Artist', similarityScore: 0.7, source }],
+        kind: 'album' as const,
+        releaseGroupMbid: `rg-${source}`,
+        releaseDate: '1997',
+      })
+    const scored = score(
+      [oldAlbum('gap-fill'), oldAlbum('release-radar')],
+      ['rock'],
+      defaultWeights,
+      new Map(),
+      new Map(),
+    )
+    const gapFill = scored.find((a) => a.mbid === 'mbid-gap-fill')
+    const radar = scored.find((a) => a.mbid === 'mbid-release-radar')
+    expect(gapFill?.score).toBeGreaterThan(0.5)
+    // Fork (MUSIC-25): recency only ever boosts, so an old date sinks no album,
+    // gap-fill or not.
+    expect(radar?.score).toBe(gapFill?.score)
   })
 
   it('applies the album modifier and records recency for album-kind', () => {
@@ -464,5 +494,38 @@ describe('applyAlbumModifier with criticScore', () => {
   it('stays clamped to [0, 1]', () => {
     expect(applyAlbumModifier(1, { criticScore: 1 })).toBeLessThanOrEqual(1)
     expect(applyAlbumModifier(0, { criticScore: 0 })).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('computeWeightedScore clamp', () => {
+  const ones = {
+    consensus: 1,
+    similarity: 1,
+    genreOverlap: 1,
+    aiConfidence: 1,
+    feedbackBoost: 1,
+    popularity: 1,
+  }
+  const uniform = (w: number) => ({
+    ...ones,
+    consensus: w,
+    similarity: w,
+    genreOverlap: w,
+    aiConfidence: w,
+    feedbackBoost: w,
+    popularity: w,
+  })
+
+  it.each([
+    ['above 1', 5, 1],
+    ['below 0', -2, 0],
+  ])('clamps a result %s', (_label, weight, expected) => {
+    expect(computeWeightedScore(uniform(weight), ones)).toBe(expected)
+  })
+
+  it('treats an omitted popularity weight as 0', () => {
+    const { popularity: _omitted, ...rest } = defaultWeights
+    const weights = { ...rest, consensus: 0.3 } as unknown as Preferences['scoringWeights']
+    expect(computeWeightedScore(weights, ones)).toBeCloseTo(0.3 + 0.25 + 0.2 + 0.15 + 0.1, 5)
   })
 })

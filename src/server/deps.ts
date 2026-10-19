@@ -36,7 +36,6 @@ import type { Cursor } from '@/server/helpers/pagination-cursor'
 
 type SubscriptionRow = typeof subscriptions.$inferSelect
 
-import type { ApiKeyStore } from '@/db/queries/api-keys'
 import type { TargetInsert, TargetRow, TargetUpdate } from '@/db/queries/targets'
 import type { UserBootstrapOptions, UserPublic } from '@/db/queries/users'
 import type { PlaylistDeps } from './routes/playlists'
@@ -73,6 +72,9 @@ export interface UserDeps {
       username: string
       passwordHash: string
       isAdmin?: boolean
+      approvalPolicy?: import('@/db/schema').ApprovalPolicy
+      maxOpenRequests?: number | null
+      approvalThreshold?: number | null
     },
     options?: UserBootstrapOptions,
   ) => Promise<UserPublic>
@@ -88,7 +90,16 @@ export interface UserDeps {
     subject: string,
   ) => Promise<{ id: number; username: string } | null>
   getUserByEmail: (email: string) => Promise<{ id: number; username: string } | null>
-  updateUser: (id: number, data: { isAdmin?: boolean; email?: string | null }) => Promise<void>
+  updateUser: (
+    id: number,
+    data: {
+      isAdmin?: boolean
+      email?: string | null
+      approvalPolicy?: import('@/db/schema').ApprovalPolicy
+      maxOpenRequests?: number | null
+      approvalThreshold?: number | null
+    },
+  ) => Promise<void>
   listUsers: (opts?: { limit?: number; cursor?: Cursor | null }) => Promise<UserPublic[]>
   deleteUser: (id: number) => Promise<void>
 }
@@ -125,6 +136,9 @@ export interface JobDeps {
 
 export interface RecommendationDeps {
   listRecommendations: (filters?: ListRecommendationsFilters) => Promise<ListRecommendationsResult>
+  listRecommendationsForExport: (
+    filters?: Pick<ListRecommendationsFilters, 'status' | 'batchId' | 'userId' | 'limit'>,
+  ) => Promise<import('@/db/queries/recommendations').ExportableRecommendationRow[]>
   getRecommendation: (id: number) => Promise<RecommendationWithArtist | null>
   updateRecommendationStatus: (
     id: number,
@@ -133,7 +147,7 @@ export interface RecommendationDeps {
   ) => Promise<void>
   rejectRecommendation: (
     params: import('@/db/queries/recommendations').RejectRecommendationParams,
-  ) => Promise<number | null>
+  ) => Promise<{ artistId: number; blockCreated: boolean } | null>
   // Reverse (unapprove) support: remove the Lidarr artist digarr added when an
   // approval is explicitly reversed. deleteFiles is always false from every
   // caller - undo unwinds the monitoring decision, it never destroys media
@@ -154,6 +168,9 @@ export interface RecommendationDeps {
     artistId: number
   }) => Promise<boolean>
   bulkUpdateStatus: (ids: number[], status: string) => Promise<void>
+  bulkRejectRecommendations: (
+    params: import('@/db/queries/recommendations').BulkRejectParams,
+  ) => Promise<{ rejected: number; blocksCreated: number }>
   filterOwnedIds: (ids: number[], userId: number | undefined) => Promise<number[]>
   listBatches: (opts?: { limit?: number; cursor?: Cursor | null }) => Promise<BatchRow[]>
   getBatch: (id: number) => Promise<BatchRow | null>
@@ -281,17 +298,13 @@ export interface DiscoveryDeps {
 // ---- Playlist / search (already externalised) ----
 
 export interface OptionalRouteDeps {
+  approvalRequests?: import('@/db/queries/approval-requests').ApprovalRequestQueries
+  notifyApprovalRequestResolved?: (
+    request: typeof import('@/db/schema').approvalRequests.$inferSelect,
+  ) => Promise<void>
+  scrobblerWriteBack?: import('@/core/scrobbler-write-back').ScrobblerWriteBack
   playlistDeps?: PlaylistDeps
   search?: SearchDeps
-}
-
-// ---- API keys ----
-
-// A single store, rather than flat per-function deps like the rest of this
-// file: the same object also becomes authGuard's `apiKeys` option, so there
-// is one wiring path instead of two (routes + guard separately).
-export interface ApiKeyDeps {
-  apiKeyStore: ApiKeyStore
 }
 
 // Full app dependencies. Intersecting the per-domain slices keeps the
@@ -309,5 +322,4 @@ export type AppDependencies = DbDeps &
   SlskdDeps &
   DashboardDeps &
   DiscoveryDeps &
-  OptionalRouteDeps &
-  ApiKeyDeps
+  OptionalRouteDeps

@@ -13,8 +13,8 @@ import { readStoredVolume } from '../lib/preview-volume'
 import { cn, hueFromName } from '../lib/utils'
 import { ArtistEnrichmentPanel } from './artist-enrichment-panel'
 import { ArtistThumb } from './artist-thumb'
-import { Hint } from './hint'
 import { LibraryAlbumCoverageBadge } from './library-album-coverage-badge'
+import { MissingAlbumsDialog } from './missing-albums-dialog'
 import { StreamingLinks } from './streaming-links'
 import { Button } from './ui/button'
 
@@ -26,9 +26,13 @@ export type Recommendation = {
   aiReasoning: string | null
   sources: Record<string, number> | null
   lidarrError: string | null
-  targetActions?: Record<string, { status?: string; error?: string } | null> | null
+  targetActions?: Record<
+    string,
+    { status?: string; error?: string; retry?: { nextAttemptAt: string } } | null
+  > | null
   recommendedReleaseGroupId: string | null
   recommendedReleaseGroupTitle: string | null
+  recommendedRecordingTitle?: string | null
   recommendedRecordingMbid?: string | null
   recommendedTrackTitle?: string | null
   recommendedTrackAlbum?: string | null
@@ -46,6 +50,26 @@ export type Recommendation = {
     beginYear?: number | null
     endYear?: number | null
   }
+}
+
+/** Accessible/display name: album recs carry the album title so two albums by one artist differ. */
+export function recommendationDisplayName(
+  rec: Pick<
+    Recommendation,
+    'kind' | 'recommendedReleaseGroupTitle' | 'recommendedTrackTitle' | 'artist'
+  >,
+  t: (key: MessageKey) => string,
+): string {
+  // Fork (MUSIC-114): song recs are named by the song.
+  if (rec.kind === 'track' && rec.recommendedTrackTitle) {
+    return `${rec.artist.name} - ${rec.recommendedTrackTitle}`
+  }
+  if (rec.kind === 'album' && rec.recommendedReleaseGroupTitle) {
+    return t('recommendation.albumByArtist')
+      .replace('{album}', rec.recommendedReleaseGroupTitle)
+      .replace('{artist}', rec.artist.name)
+  }
+  return rec.artist.name
 }
 
 type RecommendationCardProps = {
@@ -70,6 +94,8 @@ type RecommendationCardProps = {
   approveNode?: React.ReactNode
   targets?: Array<{ id: number; type: string; name: string }>
   onApproveToTarget?: (recId: number, targetId: string) => void
+  /** Grid cards lead with the artist image; list rows keep a thumbnail. */
+  layout?: 'grid' | 'list'
 }
 
 const SOURCE_COLORS: Record<string, { label: string; color: string }> = {
@@ -98,7 +124,7 @@ const SLSKD_STATUS_LABELS: Partial<Record<string, MessageKey>> = {
 
 function getSourceBadgeClass(sourceKey: string): string {
   const prefix = sourceKey.split(':')[0] ?? sourceKey
-  return SUBSCRIPTION_COLORS[prefix] ?? 'bg-zinc-500/20 text-zinc-400'
+  return SUBSCRIPTION_COLORS[prefix] ?? 'bg-muted/20 text-muted'
 }
 
 const ANALYTICS_SOURCE_KEYS: Partial<Record<string, MessageKey>> = {
@@ -145,7 +171,10 @@ function StatusBadge({
 }: {
   status: string
   lidarrError: string | null
-  targetActions?: Record<string, { status?: string; error?: string } | null> | null
+  targetActions?: Record<
+    string,
+    { status?: string; error?: string; retry?: { nextAttemptAt: string } } | null
+  > | null
   onRetry?: (id: number) => void
   onRetryFailed?: (id: number, failedTargetIds: string[]) => void
   id: number
@@ -163,6 +192,37 @@ function StatusBadge({
   })?.[1]?.status
   const slskdStatusLabel = slskdStatus ? SLSKD_STATUS_LABELS[slskdStatus] : undefined
 
+  const waiting = Object.values(targetActions ?? {}).filter((a) => a?.status === 'waiting')
+  if (status === 'waiting') {
+    const nextRetry = waiting
+      .map((a) => a?.retry?.nextAttemptAt)
+      .filter((v): v is string => Boolean(v))
+      .sort()[0]
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-accent-text font-medium">
+          {t('recommendation.waitingForLidarr')}
+        </span>
+        {nextRetry && (
+          <span className="text-xs text-muted">
+            {t('recommendation.nextRetry').replace('{0}', new Date(nextRetry).toLocaleString())}
+          </span>
+        )}
+        {onRetry && (
+          <button
+            type="button"
+            className="text-xs text-accent-text underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRetry(id)
+            }}
+          >
+            {t('recommendation.retry')}
+          </button>
+        )}
+      </div>
+    )
+  }
   if (status === 'added_to_lidarr') {
     return (
       <div className="flex items-center gap-2 flex-wrap">
@@ -170,7 +230,7 @@ function StatusBadge({
           {t('recommendation.addedToLidarr')}
         </span>
         {slskdStatusLabel && (
-          <span className="text-xs text-accent font-medium">{t(slskdStatusLabel)}</span>
+          <span className="text-xs text-accent-text font-medium">{t(slskdStatusLabel)}</span>
         )}
         {failedTargetError && (
           <span className="text-xs text-muted truncate max-w-[200px]" title={failedTargetError}>
@@ -184,7 +244,7 @@ function StatusBadge({
               e.stopPropagation()
               onRetryFailed(id, failedTargetIds)
             }}
-            className="text-xs text-accent underline"
+            className="text-xs text-accent-text underline"
           >
             {t('recommendation.retryFailed')}
           </button>
@@ -212,7 +272,7 @@ function StatusBadge({
               e.stopPropagation()
               onRetry(id)
             }}
-            className="text-xs text-accent underline"
+            className="text-xs text-accent-text underline"
           >
             {t('recommendation.retry')}
           </button>
@@ -221,7 +281,7 @@ function StatusBadge({
     )
   }
   if (slskdStatusLabel) {
-    return <span className="text-xs text-accent font-medium">{t(slskdStatusLabel)}</span>
+    return <span className="text-xs text-accent-text font-medium">{t(slskdStatusLabel)}</span>
   }
   return null
 }
@@ -278,6 +338,7 @@ function ApproveDropdown({
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
   useClickOutside(ref, () => setOpen(false), open)
   const actionableTargets = targets.filter((target) => canApproveArtistToTarget(target.type))
 
@@ -296,6 +357,7 @@ function ApproveDropdown({
           {t('recommendation.approve')}
         </Button>
         <Button
+          ref={toggleRef}
           size="sm"
           variant="outline"
           className="text-approve border-approve/40 hover:bg-approve/10 hover:text-approve rounded-l-none border-l-0 px-1.5"
@@ -315,8 +377,10 @@ function ApproveDropdown({
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                onApproveToTarget?.(recId, `${target.type}-${target.id}`)
+                // Focus the toggle first so a dialog opened next restores focus here
+                toggleRef.current?.focus()
                 setOpen(false)
+                onApproveToTarget?.(recId, `${target.type}-${target.id}`)
               }}
               className="w-full text-left px-3 py-1.5 text-sm text-text hover:bg-accent/10 flex items-center gap-2"
             >
@@ -347,6 +411,12 @@ function ActionButtons({
   bulkMode: boolean
   isPending: boolean
   isApproved: boolean
+  // `prevStatus` is the row's status BEFORE the action. Undo restores it
+  // verbatim, and for an approve it also decides whether the undo is an
+  // unapprove that may remove the Lidarr artist - so every call site must pass
+  // `rec.status` rather than let the handler's 'pending' default stand in. The
+  // approve/reject controls render for approved rows too (see `isPending`
+  // below), where that default is both wrong and destructive.
   onApprove: (id: number, prevStatus?: string) => void
   onReject: (id: number, prevStatus?: string) => void
   approveNode?: React.ReactNode
@@ -553,7 +623,7 @@ function TopTracks({ artistId }: { artistId: number }) {
                 e.stopPropagation()
                 if (track.previewUrl) handlePlay(track.previewUrl)
               }}
-              className="text-accent hover:text-accent/80 transition-colors shrink-0 w-4 text-center"
+              className="text-accent-text hover:text-accent-text/80 transition-colors shrink-0 w-4 text-center"
               aria-label={
                 playingUrl === track.previewUrl
                   ? t('recommendation.stopPreview')
@@ -600,16 +670,27 @@ export function RecommendationCard({
   approveNode,
   targets,
   onApproveToTarget,
+  layout = 'list',
 }: RecommendationCardProps) {
   const { t } = useI18n()
   const preview = usePreviewContext()
+  const [missingAlbumsOpen, setMissingAlbumsOpen] = useState(false)
   const pct = `${Math.round(rec.score * 100)}%`
+  // Fork (MUSIC-114): song recs show their release's cover instead of the artist photo.
+  const trackCoverUrl =
+    rec.kind === 'track' && rec.recommendedCoverReleaseMbid
+      ? `https://coverartarchive.org/release/${rec.recommendedCoverReleaseMbid}/front-250`
+      : undefined
   const isPending = rec.status === 'pending' || rec.status === 'approved'
   const isActed = rec.status !== 'pending'
   const isApproved =
-    rec.status === 'added_to_lidarr' || rec.status === 'add_failed' || rec.status === 'approved'
+    rec.status === 'waiting' ||
+    rec.status === 'added_to_lidarr' ||
+    rec.status === 'add_failed' ||
+    rec.status === 'approved'
   const artistIsPlaying = preview.playing && preview.currentMbid === rec.artist.mbid
   const hasPreview = preview.hasPreview(rec.artist.streamingUrls)
+  const hasFailure = rec.status === 'add_failed'
 
   function handlePlayClick(e: React.MouseEvent) {
     e.stopPropagation()
@@ -628,90 +709,42 @@ export function RecommendationCard({
     }
   }
 
+  const displayName = recommendationDisplayName(rec, t)
+  const titleButton = (title: string) => (
+    <button
+      type="button"
+      data-testid="rec-card-expand"
+      aria-label={displayName}
+      aria-expanded={bulkMode ? undefined : expanded}
+      aria-pressed={bulkMode ? isChecked : undefined}
+      onClick={(e) => {
+        e.stopPropagation()
+        handleCardClick()
+      }}
+      className="text-left rounded-sm focus-ring"
+    >
+      {title}
+    </button>
+  )
+
   return (
     <div className="relative group">
       {/* Bulk mode checkbox overlay */}
       {bulkMode && (
-        <button
-          type="button"
-          className="absolute top-2 left-2 z-20 bg-transparent border-none p-0"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleSelect?.(rec.id)
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={() => onToggleSelect?.(rec.id)}
-            className="w-4 h-4 accent-accent cursor-pointer"
-            aria-label={`${t('recommendation.select')} ${rec.artist.name}`}
-            tabIndex={-1}
-          />
-        </button>
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => onToggleSelect?.(rec.id)}
+          className="absolute top-2 left-2 z-20 w-4 h-4 accent-accent cursor-pointer"
+          aria-label={`${t('recommendation.select')} ${displayName}`}
+        />
       )}
-      {/* Hover edge buttons - desktop only, pending cards, not when expanded */}
-      {!bulkMode && isPending && !expanded && (
-        <>
-          {/* Left edge: reject */}
-          <button
-            type="button"
-            className="hidden md:group-hover:flex absolute left-0 top-0 bottom-0 z-10 items-center justify-center w-10 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-150 bg-transparent border-none p-0"
-            onClick={(e) => {
-              e.stopPropagation()
-              onReject(rec.id, rec.status)
-            }}
-            aria-label={t('recommendation.reject')}
-          >
-            <span className="w-8 h-8 rounded-full bg-surface border border-reject/40 text-reject hover:bg-reject/30 transition-colors flex items-center justify-center shadow-lg">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-4 h-4"
-                aria-hidden="true"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </span>
-          </button>
-          {/* Right edge: approve */}
-          <button
-            type="button"
-            className="hidden md:group-hover:flex absolute right-0 top-0 bottom-0 z-10 items-center justify-center w-10 translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-150 bg-transparent border-none p-0"
-            onClick={(e) => {
-              e.stopPropagation()
-              onApprove(rec.id, rec.status)
-            }}
-            aria-label={t('recommendation.approve')}
-          >
-            <span className="w-8 h-8 rounded-full bg-surface border border-approve/40 text-approve hover:bg-approve/30 transition-colors flex items-center justify-center shadow-lg">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-4 h-4"
-                aria-hidden="true"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </span>
-          </button>
-        </>
-      )}
-      {/* biome-ignore lint/a11y/useSemanticElements: intentional div[role=button] - nesting <button> inside <button> is invalid HTML */}
+      {/* Mouse convenience only: the title button is the keyboard/AT expand control, so the
+          action buttons stay siblings instead of nesting inside an interactive wrapper. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: see above */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
       <div
-        role="button"
-        tabIndex={0}
         data-testid="rec-card-button"
         className={cn(
           'bg-surface border rounded-lg transition-all cursor-pointer w-full text-left flex flex-col relative',
@@ -721,40 +754,70 @@ export function RecommendationCard({
               ? 'border-accent'
               : 'border-border hover:border-border/80',
         )}
-        onClick={handleCardClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            handleCardClick()
-          }
+        onClick={(e) => {
+          // Links, buttons and embeds inside the expanded card must not collapse it.
+          const control =
+            e.target instanceof Element
+              ? e.target.closest('a, button, input, select, textarea, label, iframe')
+              : null
+          if (control && e.currentTarget.contains(control)) return
+          handleCardClick()
         }}
       >
-        {/* Compact layout (always shown) */}
-        <div className="p-4 space-y-3 flex-1">
-          {/* Header row */}
-          <div className="flex items-start gap-3">
+        {layout === 'grid' && (
+          <div
+            className={cn(
+              'relative w-full overflow-hidden rounded-t-surface',
+              expanded ? 'h-48' : rec.artist.imageUrl ? 'aspect-[16/10]' : 'h-24',
+            )}
+          >
             <ArtistThumb
               name={rec.artist.name}
-              imageUrl={
-                rec.kind === 'track' && rec.recommendedCoverReleaseMbid
-                  ? `https://coverartarchive.org/release/${rec.recommendedCoverReleaseMbid}/front-250`
-                  : rec.artist.imageUrl
-              }
-              size={expanded ? 14 : 10}
+              imageUrl={trackCoverUrl ?? rec.artist.imageUrl}
+              fill
+              className="rounded-none text-3xl"
             />
+            <span className="absolute top-2 right-2 rounded-control bg-black/65 px-2 py-0.5 text-caption font-semibold text-white">
+              {pct}
+            </span>
+            {rec.kind === 'album' && (
+              <span
+                data-testid="rec-kind-album"
+                className={cn(
+                  'absolute left-2 rounded-control bg-black/65 px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-white',
+                  hasFailure ? 'bottom-8' : 'bottom-2',
+                )}
+              >
+                {t('recommendation.albumBadge')}
+              </span>
+            )}
+            {hasFailure && (
+              <span className="absolute inset-x-0 bottom-0 bg-reject/90 px-3 py-1 text-caption font-medium text-bg">
+                {t('recommendation.addFailed')}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="p-4 space-y-3 flex-1">
+          <div className="flex items-start gap-3">
+            {layout === 'list' && (
+              <ArtistThumb
+                name={rec.artist.name}
+                imageUrl={trackCoverUrl ?? rec.artist.imageUrl}
+                size={expanded ? 14 : 10}
+              />
+            )}
             <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
               {rec.kind === 'track' ? (
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      data-testid="rec-kind-track"
-                      className="bg-accent/15 text-accent text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
-                    >
-                      {t('recommendation.trackBadge')}
-                    </span>
-                  </div>
+                <div className="min-w-0">
+                  <span
+                    data-testid="rec-kind-track"
+                    className="bg-accent/5 text-accent-text text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                  >
+                    {t('recommendation.trackBadge')}
+                  </span>
                   <h3 className="text-lg font-semibold text-text leading-tight mt-0.5">
-                    {rec.recommendedTrackTitle ?? rec.artist.name}
+                    {titleButton(rec.recommendedTrackTitle ?? rec.artist.name)}
                   </h3>
                   <p className="text-xs text-muted mt-0.5">
                     {rec.recommendedTrackAlbum
@@ -763,24 +826,24 @@ export function RecommendationCard({
                   </p>
                 </div>
               ) : rec.kind === 'album' ? (
-                <div>
-                  <div className="flex items-center gap-1.5">
+                <div className="min-w-0">
+                  {layout === 'list' && (
                     <span
                       data-testid="rec-kind-album"
-                      className="bg-accent/15 text-accent text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                      className="bg-accent/5 text-accent-text text-micro font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
                     >
                       {t('recommendation.albumBadge')}
                     </span>
-                  </div>
+                  )}
                   <h3 className="text-lg font-semibold text-text leading-tight mt-0.5">
-                    {rec.recommendedReleaseGroupTitle ?? rec.artist.name}
+                    {titleButton(rec.recommendedReleaseGroupTitle ?? rec.artist.name)}
                   </h3>
                   <p className="text-xs text-muted mt-0.5">{rec.artist.name}</p>
                 </div>
               ) : (
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-lg font-semibold text-text leading-tight">
-                    {rec.artist.name}
+                    {titleButton(rec.artist.name)}
                   </h3>
                   {rec.artist.disambiguation && (
                     <p className="text-xs text-muted mt-0.5">{rec.artist.disambiguation}</p>
@@ -791,38 +854,57 @@ export function RecommendationCard({
                       <span className="italic">{rec.recommendedReleaseGroupTitle}</span>
                     </p>
                   )}
+                  {rec.recommendedRecordingTitle && (
+                    <p data-testid="rec-recommended-track" className="text-xs text-muted mt-0.5">
+                      {t('recommendation.recommendedTrack')}:{' '}
+                      <span className="italic">{rec.recommendedRecordingTitle}</span>
+                    </p>
+                  )}
                 </div>
               )}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {warmStatus === 'warm' && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-approve"
-                    title={t('recommendation.metadataCached')}
-                    role="img"
-                    aria-label={t('recommendation.metadataCached')}
-                  />
-                )}
-                {warmStatus === 'warming' && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-warning animate-pulse"
-                    title={t('recommendation.warmingCache')}
-                    role="img"
-                    aria-label={t('recommendation.warmingCache')}
-                  />
-                )}
-                <span className="bg-accent/20 text-accent text-xs font-semibold px-2 py-0.5 rounded">
+              {layout === 'list' && (
+                <span className="shrink-0 bg-accent/5 text-accent-text text-xs font-semibold px-2 py-0.5 rounded">
                   {pct}
                 </span>
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Genre tags */}
           <div className="flex items-center gap-1.5 overflow-hidden">
-            <GenrePills genres={rec.artist.genres} max={expanded ? 8 : 3} compact={!expanded} />
+            <GenrePills genres={rec.artist.genres} max={expanded ? 8 : 2} compact={!expanded} />
           </div>
 
-          {/* Streaming links (compact) + play button */}
+          {rec.artist.mbid && (
+            <div className="flex flex-wrap items-center gap-2">
+              <LibraryAlbumCoverageBadge artistMbid={rec.artist.mbid} />
+              {!bulkMode && (expanded || rec.kind === 'album' || isApproved) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    event.currentTarget.focus()
+                    setMissingAlbumsOpen(true)
+                  }}
+                >
+                  {t('missingAlbums.action')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {isActed && !expanded && (
+            <StatusBadge
+              status={rec.status}
+              lidarrError={rec.lidarrError}
+              targetActions={rec.targetActions}
+              onRetry={onRetry}
+              onRetryFailed={onRetryFailed}
+              id={rec.id}
+            />
+          )}
+
+          {/* One decision row: preview, then the actions */}
           {!expanded && (
             <div className="flex items-center gap-2">
               {hasPreview && !bulkMode && (
@@ -834,7 +916,7 @@ export function RecommendationCard({
                       : t('recommendation.playPreview')
                   }
                   onClick={handlePlayClick}
-                  className="shrink-0 text-muted hover:text-text transition-colors"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted transition-colors hover:text-text focus-ring"
                 >
                   {artistIsPlaying ? (
                     <Pause size={14} aria-hidden="true" />
@@ -843,31 +925,6 @@ export function RecommendationCard({
                   )}
                 </button>
               )}
-              <StreamingLinks
-                streamingUrls={rec.artist.streamingUrls}
-                artistName={rec.artist.name}
-                compact
-              />
-            </div>
-          )}
-
-          {/* Status for acted-on recs */}
-          {isActed && (
-            <StatusBadge
-              status={rec.status}
-              lidarrError={rec.lidarrError}
-              targetActions={rec.targetActions}
-              onRetry={onRetry}
-              onRetryFailed={onRetryFailed}
-              id={rec.id}
-            />
-          )}
-
-          {rec.artist.mbid && <LibraryAlbumCoverageBadge artistMbid={rec.artist.mbid} />}
-
-          {/* Action buttons - compact mode only, hidden in bulk mode */}
-          {!expanded && (
-            <>
               <ActionButtons
                 rec={rec}
                 bulkMode={bulkMode}
@@ -879,54 +936,69 @@ export function RecommendationCard({
                 targets={targets}
                 onApproveToTarget={onApproveToTarget}
               />
-              <Hint id="rec-card-click-tip" type="inline">
-                {t('recommendation.clickHint')}
-              </Hint>
-            </>
+            </div>
           )}
         </div>
 
         {/* Expanded-only section */}
         {expanded && (
           <div className="border-t border-border pb-4 space-y-4">
-            {/* Hero banner with artist image or gradient fallback */}
-            <div
-              className="relative h-40 w-full bg-cover bg-center"
-              style={
-                rec.artist.imageUrl
-                  ? { backgroundImage: `url(${rec.artist.imageUrl.replace(/[()'"]/g, '')})` }
-                  : {
-                      background: `hsl(${hueFromName(rec.artist.name)}, 40%, 25%)`,
-                    }
-              }
-            >
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-              {rec.artist.logoUrl ? (
-                <img
-                  src={rec.artist.logoUrl}
-                  alt={rec.artist.name}
-                  className="absolute bottom-3 left-4 h-10 max-w-[60%] object-contain object-left drop-shadow-lg"
-                />
-              ) : (
-                <span className="absolute bottom-3 left-4 text-white font-bold text-xl drop-shadow-lg">
-                  {rec.artist.name}
-                </span>
-              )}
-              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5 flex items-baseline gap-0.5">
-                <span className="text-accent text-lg font-bold leading-none">{pct}</span>
-                <span className="text-white/50 text-micro-sm ml-1 uppercase tracking-wider">
-                  {t('recommendation.match')}
-                </span>
+            {/* Hero banner with artist image or gradient fallback; grid cards already lead with it */}
+            {layout === 'list' && (
+              <div
+                className="relative h-40 w-full bg-cover bg-center"
+                style={
+                  rec.artist.imageUrl
+                    ? { backgroundImage: `url(${rec.artist.imageUrl.replace(/[()'"]/g, '')})` }
+                    : {
+                        background: `hsl(${hueFromName(rec.artist.name)}, 40%, 25%)`,
+                      }
+                }
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                {rec.artist.logoUrl ? (
+                  <img
+                    src={rec.artist.logoUrl}
+                    alt={rec.artist.name}
+                    className="absolute bottom-3 left-4 h-10 max-w-[60%] object-contain object-left drop-shadow-lg"
+                  />
+                ) : (
+                  <span className="absolute bottom-3 left-4 text-white font-bold text-xl drop-shadow-lg">
+                    {rec.artist.name}
+                  </span>
+                )}
+                <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5 flex items-baseline gap-0.5">
+                  <span className="text-accent-text text-lg font-bold leading-none">{pct}</span>
+                  <span className="text-white/50 text-micro ml-1 uppercase tracking-wider">
+                    {t('recommendation.match')}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* MusicBrainz link */}
+            {/* MusicBrainz link and metadata cache state */}
             <div className="px-4 flex items-center gap-2">
+              {warmStatus === 'warm' && (
+                <span
+                  className="w-2 h-2 rounded-full bg-approve"
+                  title={t('recommendation.metadataCached')}
+                  role="img"
+                  aria-label={t('recommendation.metadataCached')}
+                />
+              )}
+              {warmStatus === 'warming' && (
+                <span
+                  className="w-2 h-2 rounded-full bg-warning animate-pulse"
+                  title={t('recommendation.warmingCache')}
+                  role="img"
+                  aria-label={t('recommendation.warmingCache')}
+                />
+              )}
               <a
                 href={`https://musicbrainz.org/artist/${rec.artist.mbid}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-accent underline"
+                className="text-xs text-accent-text underline"
                 onClick={(e) => e.stopPropagation()}
               >
                 {t('recommendation.viewOnMusicBrainz')}
@@ -1039,6 +1111,13 @@ export function RecommendationCard({
           </div>
         )}
       </div>
+      <MissingAlbumsDialog
+        open={missingAlbumsOpen}
+        onClose={() => setMissingAlbumsOpen(false)}
+        artistId={rec.artist.id}
+        artistMbid={rec.artist.mbid}
+        artistName={rec.artist.name}
+      />
     </div>
   )
 }

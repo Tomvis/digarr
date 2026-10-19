@@ -1,18 +1,15 @@
 import { Cron } from 'croner'
 import { musicBrainzDeferralReason } from '@/core/clients/musicbrainz'
 import { isMaintenance } from '@/core/ops/maintenance'
+import { buildCronPattern } from './scheduler'
 
 export type LibraryHealthSchedulerDeps = {
   intervalHours: number
   libraryHealth: {
     startScan: () => void
   }
-}
-
-function buildCronPattern(intervalHours: number): string {
-  if (intervalHours < 1) return '*/5 * * * *'
-  const hours = Math.min(23, Math.round(intervalHours))
-  return `0 */${hours} * * *`
+  // Scheduled scans are Lidarr-only; discovery-only installs skip them instead of failing every tick.
+  isConfigured: () => Promise<boolean>
 }
 
 export function startLibraryHealthScheduler(deps: LibraryHealthSchedulerDeps): Cron {
@@ -20,7 +17,7 @@ export function startLibraryHealthScheduler(deps: LibraryHealthSchedulerDeps): C
   console.log(
     `[library-health-scheduler] started, interval=${deps.intervalHours}h, pattern="${pattern}"`,
   )
-  return new Cron(pattern, () => {
+  return new Cron(pattern, async () => {
     if (isMaintenance()) {
       console.log('[library-health-scheduler] tick skipped: maintenance in progress')
       return
@@ -37,6 +34,7 @@ export function startLibraryHealthScheduler(deps: LibraryHealthSchedulerDeps): C
       return
     }
     try {
+      if (!(await deps.isConfigured())) return
       deps.libraryHealth.startScan()
     } catch (err: unknown) {
       console.error('[library-health-scheduler] tick failed:', err)

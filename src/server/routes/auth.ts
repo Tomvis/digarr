@@ -1,18 +1,32 @@
 import { lookup } from 'node:dns/promises'
-import { type Context, Hono } from 'hono'
+import { type Context, Hono, type MiddlewareHandler } from 'hono'
 import { getCookie } from 'hono/cookie'
 import { envConfig } from '@/config/env'
 import { hashPassword, verifyPassword } from '@/core/auth'
-import { encryptField, SENSITIVE_PREFERENCES } from '@/core/crypto'
+import {
+  encryptField,
+  isEncryptionEnabled,
+  maskChannelSecrets,
+  SENSITIVE_PREFERENCES,
+} from '@/core/crypto'
 import { isUniqueViolation } from '@/core/db-errors'
 import { normalizeLocale } from '@/core/i18n/locales'
 import { getMessages } from '@/core/i18n/messages'
-import { deleteSession, SessionRotationConflictError } from '@/core/sessions'
+import { deleteSession, getSession, SessionRotationConflictError } from '@/core/sessions'
 import { getLookupHostname, isHttpUrl, isPrivateIp, isPrivateUrl } from '@/core/validation'
+import { apiTokenQueries } from '@/db/queries/api-tokens'
+import { getLastWriteBackError } from '@/db/queries/jobs'
+import { getOAuthToken } from '@/db/queries/oauth-tokens'
 import { PasswordCredentialConflictError, sessionQueries } from '@/db/queries/sessions'
-import { FirstUserRequiredError, updateUserPreferences } from '@/db/queries/users'
+import {
+  FirstUserRequiredError,
+  getUserConnections,
+  toUserResponse,
+  updateUserPreferences,
+} from '@/db/queries/users'
 import { mergePreferences, type Preferences } from '@/db/schema'
 import type { AppDependencies } from '@/server'
+import { adminRequired, sessionAuthRequired } from '@/server/helpers/auth-problems'
 import { problem } from '@/server/helpers/problem'
 import { requireSessionUser } from '@/server/helpers/require-user'
 import {
@@ -24,16 +38,18 @@ import {
   prepareSessionCookie,
 } from '@/server/helpers/session-auth'
 import { resolveRequestLocale } from '@/server/locale'
+import { effectiveIsAdmin } from '@/server/middleware/admin-guard'
 import { SESSION_COOKIE_NAME } from '@/server/middleware/session-cookie'
 import {
   changePasswordSchema,
+  createApiTokenSchema,
   registerSchema,
   updateEmailSchema,
   updateLocaleSchema,
   updatePreferencesSchema,
 } from '@/server/schemas/auth'
-import { preferredGenreListSchema } from '@/server/schemas/settings'
-import { zJson } from '@/server/schemas/validator'
+import { preferencesSchema, preferredGenreListSchema } from '@/server/schemas/settings'
+import { idParamSchema, zJson, zParam } from '@/server/schemas/validator'
 import type { HonoEnv } from '@/server/types'
 
 // Pre-computed at module load so "username not found" still pays the scrypt
@@ -43,6 +59,7 @@ const DUMMY_PASSWORD_HASH = hashPassword(
 )
 
 const ALLOWED_PREF_KEYS = new Set([
+  'dashboardLayout',
   'scoreThreshold',
   'scoringWeights',
   'rejectionCooldownDays',
@@ -66,10 +83,61 @@ const ALLOWED_PREF_KEYS = new Set([
   'fanartApiKey',
   'metadataFallbackUrl',
   'netNewAlbumDiscovery',
+  'excludeRecentlyPlayed',
+  'listenbrainzLoveEnabled',
+  'listenbrainzPlaylistEnabled',
+  'lastfmLoveEnabled',
+  'spotifyAutoloadDashboard',
 ])
 
 export function authRoutes(deps: AppDependencies) {
   const router = new Hono<HonoEnv>()
+
+  const tokens = apiTokenQueries(deps.db)
+  const cookieSessionRequired: MiddlewareHandler<HonoEnv> = async (c, next) => {
+    if (c.get('authMethod') !== 'session-cookie') {
+      const cookieToken = getCookie(c, SESSION_COOKIE_NAME)
+      const session =
+        c.get('authMethod') === 'proxy' && cookieToken ? await getSession(cookieToken) : null
+      if (!session || session.userId !== c.get('userId')) return sessionAuthRequired(c)
+    }
+    c.header('Cache-Control', 'no-store')
+    return next()
+  }
+  router.use('/api/v1/auth/tokens', cookieSessionRequired)
+  router.use('/api/v1/auth/tokens/*', cookieSessionRequired)
+  router.get('/api/v1/auth/tokens', async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    return c.json(await tokens.list(auth.userId))
+  })
+  router.post('/api/v1/auth/tokens', zJson(createApiTokenSchema), async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const { name, scope, expiresInDays } = c.req.valid('json')
+    const user = await deps.getUserById(auth.userId)
+    if (!user) return sessionAuthRequired(c)
+    if (scope === 'admin' && !effectiveIsAdmin(c, user)) return adminRequired(c)
+    const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : null
+    return c.json(await tokens.create(auth.userId, name, scope, expiresAt), 201)
+  })
+  router.delete('/api/v1/auth/tokens/:id', zParam(idParamSchema), async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const { id } = c.req.valid('param')
+    if (!(await tokens.revoke(auth.userId, id))) {
+      return problem(
+        c,
+        'token-not-found',
+        'Token not found',
+        404,
+        undefined,
+        undefined,
+        'tokens.notFoundError',
+      )
+    }
+    return c.body(null, 204)
+  })
 
   const passwordSessions = deps.passwordSessions ?? sessionQueries(deps.db)
 
@@ -151,7 +219,8 @@ export function authRoutes(deps: AppDependencies) {
       revokeTokens: cookie && existingCookie ? [existingCookie] : undefined,
     })
 
-    return cookie ? c.json({ user }, 201) : c.json({ user, token }, 201)
+    const publicUser = toUserResponse(user)
+    return cookie ? c.json({ user: publicUser }, 201) : c.json({ user: publicUser, token }, 201)
   })
 
   // Login with username + password.
@@ -219,7 +288,7 @@ export function authRoutes(deps: AppDependencies) {
       throw error
     }
 
-    const { passwordHash: _, ...publicUser } = user
+    const publicUser = toUserResponse(user)
     return cookie ? c.json({ user: publicUser }) : c.json({ user: publicUser, token })
   })
 
@@ -297,7 +366,7 @@ export function authRoutes(deps: AppDependencies) {
     if (!user) {
       return c.json({ error: 'User not found' }, 404)
     }
-    return c.json(user)
+    return c.json(toUserResponse(user))
   })
 
   router.get('/api/v1/auth/validate', (c) => {
@@ -441,6 +510,37 @@ export function authRoutes(deps: AppDependencies) {
     }
   })
 
+  router.get('/api/v1/auth/me/write-back', async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const [connections, token, listenbrainzError, lastfmError] = await Promise.all([
+      getUserConnections(deps.db, auth.userId),
+      getOAuthToken(deps.db, auth.userId, 'lastfm'),
+      getLastWriteBackError(deps.db, auth.userId, 'listenbrainz'),
+      getLastWriteBackError(deps.db, auth.userId, 'lastfm'),
+    ])
+    const configured = Boolean(
+      connections?.lastfmApiKey && envConfig.lastfmSharedSecret && isEncryptionEnabled(),
+    )
+    return c.json({
+      listenbrainz: {
+        configured: Boolean(connections?.listenbrainzToken),
+        lastError: listenbrainzError,
+      },
+      lastfm: {
+        configured,
+        connected: Boolean(
+          configured &&
+            token?.accessToken &&
+            token.clientId === connections?.lastfmApiKey &&
+            token.clientSecret === envConfig.lastfmSharedSecret &&
+            !token.accessToken.startsWith('enc:'),
+        ),
+        lastError: lastfmError,
+      },
+    })
+  })
+
   // Get the authenticated user's merged preferences
   router.get('/api/v1/auth/me/preferences', async (c) => {
     const userId = c.get('userId')
@@ -458,7 +558,10 @@ export function authRoutes(deps: AppDependencies) {
     if (!user) return c.json({ error: 'User not found' }, 404)
     const merged = mergePreferences(user.preferences)
     // Decrypt sensitive fields, then mask for the response
-    const response = { ...merged } as Record<string, unknown>
+    const response = { ...merged, channels: maskChannelSecrets(merged.channels ?? []) } as Record<
+      string,
+      unknown
+    >
     for (const key of SENSITIVE_PREFERENCES) {
       const val = response[key]
       if (typeof val === 'string' && val) {
@@ -497,6 +600,29 @@ export function authRoutes(deps: AppDependencies) {
           'errors.preferences.invalidGenres',
         )
       filtered[key] = parsed.data
+    }
+
+    const validated = preferencesSchema.safeParse(filtered)
+    if (!validated.success) {
+      return problem(c, 'invalid-preferences', 'Invalid preference values', 400)
+    }
+    Object.assign(filtered, validated.data)
+
+    if (filtered.lastfmLoveEnabled === true) {
+      const [connections, token] = await Promise.all([
+        getUserConnections(deps.db, auth.userId),
+        getOAuthToken(deps.db, auth.userId, 'lastfm'),
+      ])
+      if (
+        !isEncryptionEnabled() ||
+        !envConfig.lastfmSharedSecret ||
+        !token?.accessToken ||
+        token.accessToken.startsWith('enc:') ||
+        token.clientId !== connections?.lastfmApiKey ||
+        token.clientSecret !== envConfig.lastfmSharedSecret
+      ) {
+        return c.json({ error: 'Connect Last.fm in Account settings before enabling loves' }, 400)
+      }
     }
 
     // SSRF protection: validate metadataFallbackUrl against private IP ranges

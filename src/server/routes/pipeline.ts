@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { envConfig } from '@/config/env'
+import { requiresApprovalRequest } from '@/core/approvals/policy'
 import { createLastFmClient } from '@/core/clients/lastfm'
 import { createLidarrClient } from '@/core/clients/lidarr'
 import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
@@ -21,6 +22,7 @@ import type { PipelineDeps } from '@/core/pipeline/orchestrator'
 import { fetchArtistImage, resolve } from '@/core/pipeline/resolve'
 import { score } from '@/core/pipeline/score'
 import { store } from '@/core/pipeline/store'
+import { getAudioMuseConfig } from '@/core/plugins/audiomuse'
 import { resolveProviderToken } from '@/core/provider-auth'
 import type { ScoredArtist } from '@/core/types'
 import { errMsg, logAndSanitize } from '@/core/validation'
@@ -32,7 +34,7 @@ import { notAuthenticated } from '@/server/helpers/auth-problems'
 import { resolveUserPreferences } from '@/server/helpers/preferences'
 import { problem } from '@/server/helpers/problem'
 import { resolveRequestLocale } from '@/server/locale'
-import { adminGuard } from '@/server/middleware/admin-guard'
+import { adminGuard, resolveAdmin } from '@/server/middleware/admin-guard'
 import { discoveryModeRunSchema, quickDiscoverSchema } from '@/server/schemas/pipeline'
 import { zJson } from '@/server/schemas/validator'
 import { createPipelineSSEStream } from '@/server/sse'
@@ -42,7 +44,6 @@ let rescanRunning = false
 
 export function pipelineRoutes(deps: AppDependencies) {
   const router = new Hono<HonoEnv>()
-
   // Intentionally NOT admin-gated: "Run Scan" is a core regular-user action,
   // reachable from the dashboard (TodaysPick) and discover surfaces. Any
   // authenticated user may start a run; single-flight is preserved by the
@@ -96,6 +97,10 @@ export function pipelineRoutes(deps: AppDependencies) {
       getEnabledTargets: () =>
         userId ? deps.getEnabledTargetsForUser(userId) : Promise.resolve([]),
       userId,
+      jobRecorder: deps.jobRecorder,
+      ...(user && user.approvalPolicy !== 'direct'
+        ? { canApprove: async (score: number) => !requiresApprovalRequest(user, score) }
+        : {}),
       updateRecommendationStatus: (id, status, extra) =>
         deps.updateRecommendationStatus(id, status, extra),
       warmArtist: deps.skyhookWarmer
@@ -109,7 +114,12 @@ export function pipelineRoutes(deps: AppDependencies) {
     // Start now, or queue behind the in-flight run (single-flight preserved).
     const enqueued = deps.orchestrator.enqueue({
       db: deps.storeDb,
-      settings: { ...settings, preferences: userPreferences, spotifyAccessToken },
+      settings: {
+        ...settings,
+        preferences: userPreferences,
+        spotifyAccessToken,
+        audiomuse: getAudioMuseConfig(settings.preferences),
+      },
       userId,
       providerRegistry: deps.providerRegistry,
       userConnections,
@@ -142,8 +152,18 @@ export function pipelineRoutes(deps: AppDependencies) {
   })
 
   // The current write and its bookkeeping drain before the pipeline stops.
-  router.post('/api/v1/pipeline/cancel', (c) => {
-    const result = deps.orchestrator.cancel()
+  router.post('/api/v1/pipeline/cancel', async (c) => {
+    const userId = c.get('userId')
+    const isAdmin = await resolveAdmin(c, deps.getUserById)
+    const result = deps.orchestrator.cancel(userId, { canStopOthers: isAdmin })
+    if (result.forbidden) {
+      return problem(
+        c,
+        'pipeline-cancel-forbidden',
+        'Only the user who started this run or an admin can stop it',
+        403,
+      )
+    }
     return c.json(
       {
         cancelled: result.cancelled,
@@ -211,14 +231,18 @@ export function pipelineRoutes(deps: AppDependencies) {
   })
 
   router.get('/api/v1/pipeline/status', async (c) => {
-    const lastBatch = await deps.getLastBatch()
     const userId = c.get('userId')
+    const isAdmin = await resolveAdmin(c, deps.getUserById)
+    const queuePosition = userId ? deps.orchestrator.queuePositionFor(userId) : 0
+    // Non-admins see only their own run and queue entry; batches carry no owner.
+    const ownRun = deps.orchestrator.isRunning && deps.orchestrator.currentUserId === userId
+    const lastBatch = isAdmin ? await deps.getLastBatch() : null
     return c.json({
-      running: deps.orchestrator.isRunning,
-      stage: deps.orchestrator.stage,
-      message: deps.orchestrator.stageMessage,
-      queueLength: deps.orchestrator.queueLength,
-      queuePosition: userId ? deps.orchestrator.queuePositionFor(userId) : 0,
+      running: isAdmin ? deps.orchestrator.isRunning : ownRun,
+      stage: isAdmin || ownRun ? deps.orchestrator.stage : null,
+      message: isAdmin || ownRun ? deps.orchestrator.stageMessage : null,
+      queueLength: isAdmin ? deps.orchestrator.queueLength : queuePosition > 0 ? 1 : 0,
+      queuePosition,
       lastRun: lastBatch
         ? {
             batchId: lastBatch.id,
@@ -229,8 +253,8 @@ export function pipelineRoutes(deps: AppDependencies) {
     })
   })
 
-  router.get('/api/v1/pipeline/events', (_c) => {
-    const stream = createPipelineSSEStream(deps.orchestrator)
+  router.get('/api/v1/pipeline/events', (c) => {
+    const stream = createPipelineSSEStream(deps.orchestrator, c.get('userId'))
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -337,8 +361,12 @@ export function pipelineRoutes(deps: AppDependencies) {
         const blockedMbids = quickDiscoverUserId
           ? await deps.storeDb.getBlockedMbids(quickDiscoverUserId)
           : new Set<string>()
-        const seedExistingMbids =
-          await deps.storeDb.getExistingRecommendationMbids(quickDiscoverUserId)
+        const seedExistingMbids = await deps.storeDb.getExistingRecommendationMbids(
+          quickDiscoverUserId,
+          {
+            rejectionCooldownDays: prefs.rejectionCooldownDays,
+          },
+        )
         for (const mbid of seedExistingMbids) libraryMbids.add(mbid)
 
         let artistsStored = 0
@@ -445,8 +473,12 @@ export function pipelineRoutes(deps: AppDependencies) {
             ? await deps.storeDb.getFeedbackHistory(quickDiscoverUserId)
             : await deps.storeDb.getFeedbackHistory()
           const scored = score(resolved, [], prefs.scoringWeights, feedbackHistory)
-          const existingMbids =
-            await deps.storeDb.getExistingRecommendationMbids(quickDiscoverUserId)
+          const existingMbids = await deps.storeDb.getExistingRecommendationMbids(
+            quickDiscoverUserId,
+            {
+              rejectionCooldownDays: prefs.rejectionCooldownDays,
+            },
+          )
           for (const mbid of existingMbids) libraryMbids.add(mbid)
 
           const filtered = filter(

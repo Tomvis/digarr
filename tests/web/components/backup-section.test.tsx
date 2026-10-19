@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackupSection } from '@/web/components/admin/backup-section'
 import { ApiError, getLastAutoBackup, restoreBackupApi } from '@/web/lib/api'
 import { I18nProvider } from '@/web/lib/i18n'
+import { loadMessages } from '@/web/lib/locale-catalogs'
+import { createTestQueryClient } from '../helpers/query'
+import { installMemoryLocalStorage } from '../helpers/storage'
 
 vi.mock('@/web/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/web/lib/api')>()),
@@ -14,9 +17,7 @@ vi.mock('@/web/lib/api', async (importOriginal) => ({
   restoreBackupApi: vi.fn(),
 }))
 
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
-}))
+vi.mock('sonner', async () => (await import('../helpers/sonner')).sonnerMock())
 
 const restored = {
   tablesRestored: { users: 2, settings: 1 },
@@ -26,7 +27,7 @@ const restored = {
 }
 
 function setup() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = createTestQueryClient()
   const view = render(
     <I18nProvider>
       <QueryClientProvider client={client}>
@@ -59,13 +60,15 @@ describe('BackupSection restore confirmation', () => {
 
   it.each(['cancel', 'Escape'])(
     'discards selection on %s without uploading and allows the same file again',
-    (action) => {
+    async (action) => {
       const { input, select } = setup()
       select()
 
       expect(restoreBackupApi).not.toHaveBeenCalled()
       const dialog = screen.getByRole('dialog', { name: 'Restore backup?' })
-      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+      await waitFor(() =>
+        expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus(),
+      )
       if (action === 'cancel') {
         fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
       } else {
@@ -140,7 +143,9 @@ describe('BackupSection restore confirmation', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Encryption key mismatch' })
     expect(restoreBackupApi).toHaveBeenCalledExactlyOnceWith(file, false)
     expect(within(dialog).getByText(/settings.apiKey/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus(),
+    )
 
     fireEvent.click(
       within(dialog).getByRole('button', {
@@ -187,4 +192,18 @@ describe('BackupSection restore confirmation', () => {
       expect(toast.success).not.toHaveBeenCalled()
     },
   )
+
+  it('formats the last auto backup timestamp with the active locale', async () => {
+    installMemoryLocalStorage({ 'digarr-locale': 'fr' })
+    await loadMessages('fr')
+    vi.mocked(getLastAutoBackup).mockResolvedValue({
+      lastAutoBackup: { filename: 'auto.json', createdAt: '2025-12-31T14:05:00.000Z' },
+    })
+
+    setup()
+
+    expect(await screen.findByText(/Dernière sauvegarde auto/)).toHaveTextContent(
+      `Dernière sauvegarde auto : ${new Date('2025-12-31T14:05:00.000Z').toLocaleString('fr')}`,
+    )
+  })
 })

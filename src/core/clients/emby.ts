@@ -2,6 +2,7 @@ import type { LibraryTrack, ServiceTestResult } from '@/core/types'
 import { errMsg } from '@/core/validation'
 import { createHttpClient } from './http'
 import {
+  artistListPath,
   type MediaBrowserLibrary,
   type MediaBrowserLibraryAlbum,
   type MediaBrowserLibraryArtist,
@@ -80,7 +81,11 @@ export function createEmbyClient(
         TotalRecordCount?: unknown
       }>(pathForPage(startIndex))
       const items = res.Items ?? []
-      total = getTotalRecordCount(res.TotalRecordCount, items.length)
+      // Without a count, a full page means there may be more; only a short page ends paging.
+      total = getTotalRecordCount(
+        res.TotalRecordCount,
+        startIndex + items.length + (items.length >= LIBRARY_PAGE_SIZE ? 1 : 0),
+      )
       all.push(...items.map(mapItem))
       if (items.length === 0) break
       startIndex += items.length
@@ -98,25 +103,12 @@ export function createEmbyClient(
   }
 
   async function getTopArtists(limit = 50) {
-    let path: string
-    if (configuredLibraryId) {
-      path = scopedArtistsPath(userId, configuredLibraryId, {
-        SortBy: 'PlayCount',
-        SortOrder: 'Descending',
-        Fields: 'UserData,Genres,ProviderIds',
-        Limit: String(limit),
-      })
-    } else {
-      const params = new URLSearchParams({
-        SortBy: 'PlayCount',
-        SortOrder: 'Descending',
-        IncludeItemTypes: 'MusicArtist',
-        Recursive: 'true',
-        Fields: 'UserData,Genres,ProviderIds',
-        Limit: String(limit),
-      })
-      path = `/Users/${userId}/Items?${params.toString()}`
-    }
+    const path = artistListPath(
+      userId,
+      configuredLibraryId,
+      { SortBy: 'PlayCount', SortOrder: 'Descending' },
+      limit,
+    )
     const res = await get<{ Items: Array<Record<string, unknown>> }>(path)
     return (res.Items ?? []).map((item) => mapArtist(item, false))
   }
@@ -178,27 +170,13 @@ export function createEmbyClient(
   async function getFavoriteArtists(limit = 50) {
     // Match the Jellyfin client's query style. Both engines share the same
     // Items endpoint and accept the top-level IsFavorite=true form.
-    let path: string
-    if (configuredLibraryId) {
-      path = scopedArtistsPath(userId, configuredLibraryId, {
-        SortBy: 'SortName',
-        SortOrder: 'Ascending',
-        IsFavorite: 'true',
-        Fields: 'UserData,Genres,ProviderIds',
-        Limit: String(limit),
-      })
-    } else {
-      const params = new URLSearchParams({
-        SortBy: 'SortName',
-        SortOrder: 'Ascending',
-        IncludeItemTypes: 'MusicArtist',
-        Recursive: 'true',
-        IsFavorite: 'true',
-        Fields: 'UserData,Genres,ProviderIds',
-        Limit: String(limit),
-      })
-      path = `/Users/${userId}/Items?${params.toString()}`
-    }
+    const path = artistListPath(
+      userId,
+      configuredLibraryId,
+      { SortBy: 'SortName', SortOrder: 'Ascending' },
+      limit,
+      true,
+    )
     const res = await get<{ Items: Array<Record<string, unknown>> }>(path)
     return (res.Items ?? []).map((item) => mapArtist(item, true))
   }

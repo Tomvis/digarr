@@ -4,6 +4,8 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Lets the release workflow run CI on the digest-sync branch; PRs opened with the workflow token do not trigger pull_request runs (#938).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -92,7 +94,7 @@ jobs:
     needs: build
     services:
       postgres:
-        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -119,10 +121,24 @@ jobs:
         run: bun run db:migrate
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/digarr_test
-      - name: Run PostgreSQL concurrency tests
-        run: bunx vitest run tests/db/session-queries.test.ts tests/db/oidc-link-postgres.test.ts tests/db/migrate-backend-postgres.test.ts tests/db/oidc-issuer-upgrade-postgres.test.ts tests/core/ops/upgrade-old-schema.test.ts
+      - name: Run PostgreSQL integration tests
+        run: >-
+          bunx vitest run --no-file-parallelism
+          tests/db/require-test-db.test.ts
+          tests/db/session-queries.test.ts
+          tests/db/oidc-link-postgres.test.ts
+          tests/db/migrate-backend-postgres.test.ts
+          tests/db/oidc-issuer-upgrade-postgres.test.ts
+          tests/db/oidc-token-retirement.test.ts
+          tests/core/ops/upgrade-old-schema.test.ts
+          tests/core/ops/backup-integration.test.ts
+          tests/core/library/sync-flow.test.ts
+          tests/core/library/reconciler-cache.test.ts
+          tests/core/clients/rate-limiter.test.ts
+          tests/db/queries/reject-block-created.test.ts
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/digarr_test
+          DIGARR_REQUIRE_TEST_DB: "1"
       - name: Run API route contract tests
         run: bun run test:api-routes
         env:
@@ -152,7 +168,7 @@ jobs:
     needs: api-route-test
     services:
       postgres:
-        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -190,7 +206,7 @@ jobs:
     continue-on-error: true
     services:
       postgres:
-        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -219,3 +235,33 @@ jobs:
         run: bun run test:e2e:a11y
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/digarr_test
+
+  i18n-spell:
+    # Advisory only: dictionaries miss product names and compounds, so the
+    # report goes to the job summary and never fails the build.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.3"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Install hunspell dictionaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends hunspell hunspell-de-de hunspell-es \
+            hunspell-fr hunspell-it hunspell-nl hunspell-pl hunspell-pt-br hunspell-ro \
+            hunspell-ru hunspell-tr hunspell-uk
+      - name: Spell check translations
+        run: |
+          {
+            echo '### Translation spell check (advisory)'
+            echo '```'
+            bun run --silent i18n:spell
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

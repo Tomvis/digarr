@@ -103,9 +103,10 @@ function makeDeps(overrides: Partial<SlskdAppDeps> = {}): SlskdAppDeps {
     completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -114,6 +115,7 @@ function makeDeps(overrides: Partial<SlskdAppDeps> = {}): SlskdAppDeps {
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -185,16 +187,6 @@ function makeDeps(overrides: Partial<SlskdAppDeps> = {}): SlskdAppDeps {
       warmup: vi.fn(async () => {}),
       getActiveJobs: vi.fn(async () => []),
     },
-    apiKeyStore: {
-      create: vi.fn(async () => {
-        throw new Error('apiKeyStore.create not stubbed')
-      }),
-      verify: vi.fn(async () => null),
-      listForUser: vi.fn(async () => []),
-      listAll: vi.fn(async () => []),
-      revoke: vi.fn(async () => false),
-      touchLastUsed: vi.fn(async () => {}),
-    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }

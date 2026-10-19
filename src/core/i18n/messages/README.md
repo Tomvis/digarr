@@ -9,6 +9,17 @@ Translations for digarr's 15 supported locales.
   `pt-BR`, `ro`, `ru`, `tr`, `uk`, `zh-CN`) -- full translated catalog.
 - `types.ts` -- `MessageKey` and `MessageCatalog` types derived from `en`.
 - `index.ts` -- `getMessages(locale)` resolver.
+- `source-lock.json` -- a hash of each English value the translations were
+  last written against. Maintained by `bun run i18n:stamp`; never edit by hand.
+
+## Conventions
+
+- Address the user informally in every locale, matching the casual English
+  voice: du (de), tu (fr, es, it, ro), je (nl), ty (pl), ты (ru), ти (uk),
+  sen (tr), você (pt-BR). Japanese, Korean and Chinese keep their usual polite
+  UI register.
+- Use a plain hyphen for a dash in user-visible text (`Setup failed - try
+  again`, `2-50`), never an em dash, en dash or `--`.
 
 ## Resolution order
 
@@ -34,21 +45,38 @@ reviewable source of truth.
 2. Add a translation directly to each of the 14 non-English locale catalogs.
    Proper nouns and protocol terms may remain identical only when covered by
    the validator's allowlist.
-3. Run `bun run i18n:check`; missing, empty, orphaned, or untranslated authored values
-   block the change.
+3. Run `bun run i18n:stamp`, then `bun run i18n:check`; missing, empty,
+   orphaned, or untranslated authored values block the change.
+
+## Changing English text
+
+Editing an English value makes `i18n:check` fail until the change is stamped,
+so translations cannot silently fall behind the English.
+
+1. Edit the value in `en.ts`.
+2. Update the same key in all 14 locale catalogs, by hand or with
+   `bun run i18n:translate --stale --write`, which translates only the keys
+   whose English changed since the last stamp (set `TRANSLATION_BASE_URL`,
+   `TRANSLATION_API_KEY` and optionally `TRANSLATION_MODEL` for any
+   OpenAI-compatible endpoint). Review machine output before stamping.
+3. Run `bun run i18n:stamp`. It refuses to stamp a key whose English changed
+   while some translation of it did not (compared with the merge base of
+   `develop`; override with `--base <ref>`).
+4. If the English edit needs no translation change (a typo or casing fix),
+   stamp it explicitly: `bun run i18n:stamp --source-only <key>[,<key>]`.
 
 ## Renaming a key
 
 1. Rename in `en.ts`.
 2. Update callers (`t('new.key')`).
 3. Rename the key in every locale catalog.
-4. Run `bun run i18n:check` to confirm nothing regressed.
+4. Run `bun run i18n:stamp` and `bun run i18n:check` to confirm nothing regressed.
 
 ## Removing a key
 
 1. Remove from `en.ts`.
 2. Remove all callers (`t('old.key')`).
-3. `bun run i18n:check` reports orphaned keys that still exist in
+3. `bun run i18n:stamp`, then `bun run i18n:check` reports orphaned keys that still exist in
    locale catalogs but no longer appear in `en.ts`. Delete those
    entries from each locale file.
 
@@ -72,6 +100,16 @@ reviewable source of truth.
   spelling (`Kuenstler`, `Configuracion`, `Sanatci`) instead of native
   characters (`Künstler`, `Configuración`, `Sanatçı`). The high-confidence
   regression markers live in `scripts/i18n-check.ts`.
+- **Unstamped English changes** -- an English value, added key, or removed
+  key that `source-lock.json` does not match yet.
+- **Formal address** -- per-locale formal pronouns (`Sie`, `vous`, `u`, `вы`,
+  ...). A word that only looks formal (German "Sie" meaning "they") goes in
+  `FORMAL_ADDRESS_ALLOWLIST` as `locale:key`.
+- **Dash style** -- em dashes, en dashes or `--` in any catalog. The same rule
+  covers `src/web` source: a `'--'` placeholder, a spaced ` -- ` dash, an
+  em or en dash, or `&mdash;`/`&ndash;` in a string or JSX text fails. Use a
+  plain hyphen or a catalog key such as `common.notAvailable`. Comments are
+  ignored.
 - **Orphaned keys** -- keys present in `en.ts` but not referenced
   anywhere in `src/**/*.{ts,tsx}` outside `i18n/messages/`. Template
   literal access is resolved to exact live keys from the discovery, rejection,
@@ -88,6 +126,18 @@ Catalog tests also require every raw locale file to contain the complete English
 key set.
 
 Run locally: `bun run i18n:check`.
+
+## Spell check (advisory)
+
+`bun run i18n:spell [<locale>...]` runs hunspell over the translated catalogs
+and lists each unknown word once per language, with the key it appears in. It
+catches typos and stripped accents the ASCII-marker list misses. It needs
+`hunspell` plus the dictionaries (Debian/Ubuntu `hunspell-de-de`,
+`hunspell-fr`, ...; or set `DICPATH` to a folder of `.aff`/`.dic` files);
+languages without a dictionary are skipped and named. Japanese, Korean and
+Chinese are not checked. Correct words the dictionary does not know go in
+`scripts/i18n-spell-allowlist.txt`. CI runs it in the non-blocking
+`i18n-spell` job and posts the report to the job summary.
 
 ## Accented characters
 

@@ -1,6 +1,6 @@
 # Authentication
 
-Digarr supports four authentication modes. Most deployments only need one.
+Digarr supports per-user sessions, personal API tokens, OIDC, trusted proxy authentication, and a legacy deployment token. Most deployments only need one interactive sign-in method.
 
 ## Users and targets
 
@@ -14,7 +14,25 @@ The first user becomes admin; admins can promote additional users in Settings > 
 
 In Settings > Targets, admins choose **Assigned user** when adding or editing a target. Each user's approvals use only their assigned targets. Create separate targets if several users need the same Lidarr instance. Admins manage the connection; ordinary users can test and use it without seeing saved credentials.
 
-Deleting a user removes all their owned data, including recommendations, subscriptions, targets, sessions, provider credentials, playlists, blocks, and library records. Shared artists and batch history remain.
+Deleting a user removes all their owned data, including recommendations, subscriptions, targets, sessions, personal API tokens, provider credentials, playlists, blocks, and library records. Job history entries for the user (including their errors, metadata, and source results) are deleted with them. Shared artists and batch history remain.
+
+## Approval policies
+
+Approval remains direct by default. Existing accounts and single-user installations keep their current behavior. In **Settings > Users**, an admin can choose a policy for each account:
+
+- **Approve directly** sends approvals to that user's assigned targets immediately.
+- **Request only** records a request for review without contacting acquisition targets.
+- **Auto-approve above a score** permits direct approval at or above the admin-set threshold and requests review below it. The threshold uses the existing 0-1 recommendation score, with 0.8 as the default.
+
+An optional maximum limits pending requests per account. Leave it empty for unlimited requests. A duplicate pending request does not consume another slot. At the limit, the server returns a translated problem response; resolving a request frees its slot. After a decline, requesting the same recommendation again returns a translated 409 for 24 hours. This also applies to the same missing album if its temporary recommendation has been removed.
+
+Admins review the **Requests** section in user management. It shows the requester, recommendation score and reasons, and an optional decision note. Approval runs the normal artist or album approval with the saved choices, using the requester's currently assigned targets. An added or approved target outcome resolves the request as approved. A waiting Lidarr outcome also resolves it as approved, with a notification explaining that it is waiting for Lidarr. An add failure keeps the request pending, displays its error in the admin queue, and sends no outcome notification; the admin can retry or decline. Declining records the note without adding anything.
+
+Missing-album requests use temporary recommendations marked separately from scored discovery. They never appear in Pending or contribute to feedback, taste, or analytics. Declining or failing to create the request deletes the temporary recommendation and its batch if empty; request history keeps the album identity. Pending lists and dashboard counts also exclude scored recommendations with an open request.
+
+Members see their pending and declined requests, including decision notes, on their own **Discover > Approved** tab. To receive outcomes through webhooks, ntfy, Telegram, or Apprise, add a personal channel in **Settings > Account** and opt it into the request-outcome event. It is off by default in templates. These channels receive only your own request decisions, in your language; global admin channels are not used as a fallback. Notifications omit private decision notes. Personal destinations cannot opt out of the private-address protection.
+
+Policies apply to individual and bulk approvals, missing-album batches, Quick Discover results, MCP tools, and personal API tokens. Changing authentication method does not bypass a policy. Only admins can read the shared queue, decide requests, or change policies, thresholds, and limits. A policy does not grant additional targets or access to another user's recommendations.
 
 ## Session auth (default)
 
@@ -111,7 +129,7 @@ and privacy precautions.
 
 ### Provider OAuth transaction state
 
-Spotify, Deezer, and TIDAL connect flows keep their in-flight state in a dedicated `oauth_pending_auths` table, never in the live `oauth_tokens` row. An abandoned or failed connect therefore cannot drop a working connection.
+Spotify, Deezer, TIDAL, and Last.fm connect flows keep their in-flight state in a dedicated `oauth_pending_auths` table, never in the live `oauth_tokens` row. An abandoned or failed connect therefore cannot drop a working connection.
 
 The pending row stores SHA-256 digests of the opaque `state` and browser binding, plus encrypted callback payloads and client secrets when supplied. It expires after 10 minutes and is deleted when its `state` is redeemed, whether or not the exchange succeeds. Starting a new flow replaces any earlier unfinished one for the same user and provider. Expired rows are swept every 6 hours.
 
@@ -166,69 +184,6 @@ Registration is closed by default after the first user has been created. To
 open registration in a fresh install or internal deployment, set
 `DIGARR_DISABLE_REGISTRATION=false`.
 
-## API keys (optional)
-
-Any signed-in user can create long-lived API keys via `POST /api/v1/api-keys`,
-for third-party integrations (for example Music Assistant) that should not
-share a browser session or a bearer token that expires in 30 days.
-
-A key looks like `dgr_<prefix>_<secret>` (the `dgr_` prefix identifies it as an
-API key rather than a session token). Send it the same way as a bearer
-session, `Authorization: Bearer <token>` - never as a `?token=` query
-parameter. Only pipeline SSE and the preview-audio proxy accept query-string
-tokens at all, and API keys are excluded from that allowance because a
-long-lived credential has no business appearing in a URL, a server log, or
-browser history.
-
-Keys carry one of three ordered scopes, each granted at creation and fixed for
-the life of the key:
-
-- `read` - read-only access
-- `write` - implies `read`
-- `admin` - implies `write` and `read`
-
-Enforcement is global and fail-closed: every non-safe method (anything other
-than `GET`, `HEAD`, `OPTIONS`) on an `/api/v1/` path requires the `write`
-scope, and `admin`-gated routes additionally require the `admin` scope. A key
-that lacks the scope gets `403` with `type: /problems/insufficient-scope`. The
-gate is mounted once, next to the CSRF guard, rather than annotated per route,
-so a mutating route added later is covered the moment it exists instead of
-being silently unenforced until someone remembers it.
-
-Scopes only ever narrow what a key can do; they never grant anything beyond
-what the authenticated user could already do through a session. Session,
-cookie and proxy auth are unscoped and unaffected by the gate. A scope is
-meaningless without an underlying user account, and deleting the user revokes
-every key it owns along with everything else the user owns.
-
-Creating, listing, and revoking API keys (`GET`/`POST /api/v1/api-keys`,
-`DELETE /api/v1/api-keys/:id`) requires session authentication - cookie or
-bearer session - and explicitly rejects both API-key auth and the deprecated
-`DIGARR_AUTH_TOKEN`. This is not an oversight: if a key could manage keys, a
-leaked `write` key could mint itself a new `admin` key and escalate its own
-privileges. Key management is therefore a strictly session-only surface, the
-same restriction already applied to changing your password or email.
-
-An admin may additionally list every user's API keys via
-`GET /api/v1/api-keys/all`, to spot a stale or forgotten one without needing
-database access. That route requires both the session-only check and the
-admin check to pass (order between them doesn't matter); it is specifically
-the session-only check that matters, since an admin's own `admin`-scoped API
-key would otherwise satisfy the admin check on its own and could list every
-user's keys. The route is also read-only: an admin can see that a key exists
-but has no route to revoke or otherwise act on a key they do not own. Only
-the owner can revoke their own key.
-
-The plaintext token is shown exactly once, in the response to
-`POST /api/v1/api-keys`, and cannot be retrieved again afterward. Only its
-SHA-256 digest is ever stored; losing the plaintext means revoking the key and
-creating a new one, the same as losing a password.
-
-Revoking a key (`DELETE /api/v1/api-keys/:id`) takes effect immediately: the
-next request presenting that key fails authentication rather than waiting on a
-cache or token expiry. Revoking a key that belongs to another user returns
-`404`, not `403`, so ownership cannot be probed by status code.
-
 ## OIDC (optional)
 
 OIDC discovery and provider requests reject hosts that resolve to private/internal IPs, including split-DNS identity providers. The diagnostic is `OIDC issuer resolves to a private/internal IP`. Opening Kubernetes egress does not bypass this application check; use a publicly resolving, reachable issuer.
@@ -271,7 +226,9 @@ callback requires it. The transaction is one-time (consumed on the callback),
 expires after 10 minutes, and is safe across multiple concurrent tabs, since
 each login mints its own state-scoped entry. Pending transactions are
 capacity-capped so an unbounded stream of login redirects cannot exhaust
-memory. `GET /api/v1/auth/oidc/login` is rate limited to 10 requests per minute
+memory. All in-memory rate limiters key on the client IP, with the authenticated user ID appended when available. Behind a reverse proxy, set `PROXY_AUTH_TRUSTED_PROXIES` to the proxy socket IPs or CIDRs so clients get separate budgets. Only a trusted socket peer may supply `X-Forwarded-For`; Digarr uses the right-most untrusted hop. Direct or untrusted peers, missing headers, and invalid forwarded chains use the socket IP. Limits and windows are unchanged.
+
+`GET /api/v1/auth/oidc/login` is rate limited to 10 requests per minute
 per IP; `GET /api/v1/auth/oidc/callback` is not rate limited, because it
 consumes the one-time transaction cookie the login step set.
 
@@ -425,12 +382,27 @@ The CIDR parser validates strictly. Misconfigured entries crash boot with a
 clear error rather than silently widening trust. Use tight ranges that match
 your actual reverse-proxy network.
 
+## Personal API tokens
+
+For scripts and automation, open **Settings > Account > API tokens**. Create a token with a name, scope, and an optional expiry (never, 30, 90, or 365 days). Copy the value while it is shown: closing the dialog hides it permanently. The list shows its prefix, scope, creation time, last use, and expiry. Revoke a token to stop its access immediately; deleting its user also deletes it. Password changes and browser logout do not revoke personal tokens. Revoke them separately when retiring a script or if your password was compromised.
+
+Send `Authorization: Bearer dga_<secret>` on API requests. Personal tokens are accepted only through that header, never through cookies or query parameters. They need no CSRF header. Browser cookies keep their existing same-origin and CSRF requirements. An explicit personal token takes precedence over sign-in proxy headers and browser cookies, so its permissions still apply behind a trusted proxy.
+
+- `read` allows only GET and HEAD, with the user's ordinary permissions. The [MCP endpoint](MCP.md) also accepts POST for protocol messages and read tools; mutating tools remain denied.
+- `write` allows ordinary user actions, including writes, but never admin privileges, even when the owner is an admin.
+- `admin` can be created only by admins and permits admin operations only while the owner is currently an admin. Demotion removes that access on the next request; it does not turn the token into a read-only token.
+
+Personal tokens can use ordinary per-user account and library actions; OIDC account linking still requires a cookie session. Listing, creating, and revoking tokens always require an active **cookie session**; personal tokens, bearer sessions, and proxy-only requests cannot manage tokens. On a proxy deployment, the cookie issued during sign-in must already be present and valid for the same user. There is no cross-user admin token listing or revocation endpoint; an owner manages their own tokens.
+
+Only a SHA-256 hash is stored, alongside an eight-character display prefix. The full `dga_` value contains 32 random bytes encoded as base64url and is returned only on creation. Expired, revoked, unknown, and deleted-user tokens return the usual `401` problem details. Failed personal-token authentication is limited to 20 attempts per minute per client IP, in memory in one process, with `429` and `Retry-After` once exhausted. Behind a proxy, configure `PROXY_AUTH_TRUSTED_PROXIES`: only trusted socket peers may supply `X-Forwarded-For`, and the right-most entry outside the trusted proxy CIDRs identifies the client. Missing or malformed headers fall back to the socket IP. The failure budget is checked before any credential lookup; once exhausted, all personal-token attempts from that IP return `429` until the window resets. Successful requests do not consume the budget. Browser sessions remain available. Last-used updates happen at most once per minute per token.
+
+Personal API tokens are not backed up or copied between backends. JSON exports omit the token table, and restore ignores any `apiTokens` data in older or newer files. A restore that replaces or removes users deletes those users' tokens by cascade; tokens remain valid when their users are left unchanged. Recreate tokens after restoring onto a fresh instance. Native database snapshots include the token table and can reactivate revoked credentials when restored; review and revoke them after native recovery. See [the migration and rollback instructions](guides/switching-backends.md#personal-api-token-migration) before upgrading.
+
 ## Legacy token auth (deprecated)
 
 `DIGARR_AUTH_TOKEN` authenticates as `userId=1` without admin rights. It is
 retained for backwards compatibility with older deployments and will be
-removed in a future release. Migrate to a per-user bearer session, browser
-session auth, or OIDC.
+removed in a future release. Its behavior is unchanged. Migrate scripts to [personal API tokens](#personal-api-tokens); use browser sessions or OIDC for interactive access. Startup logs this deprecation once when the variable is configured.
 
 ## Generate a new encryption key
 
@@ -461,7 +433,7 @@ Without a qualifying Spotify app, use Plex, Jellyfin, Emby, Subsonic, Last.fm, o
    ```
 
    Spotify does not accept `localhost` redirect URIs. For local HTTP use `http://127.0.0.1:3000/api/v1/auth/oauth/spotify/callback`, open Digarr at `http://127.0.0.1:3000`, and set `ALLOWED_ORIGIN` to that same origin. For a remote instance, use its public HTTPS URL, such as `https://digarr.example.com/api/v1/auth/oauth/spotify/callback`. See [Spotify redirect URI requirements](https://developer.spotify.com/documentation/web-api/concepts/redirect_uri).
-3. In Digarr, open **Settings > Connections > Your Connections > Spotify**, paste your **Client ID** and **Client Secret**, then click **Connect with Spotify**. The connect form shows the exact Redirect URI to register (with a copy button), so you can match it without guessing.
+3. In Digarr, open **Settings > Connections > Add connection > Spotify** (or expand the saved Spotify row), paste your **Client ID** and **Client Secret**, then click **Connect with Spotify**. The connect form shows the exact Redirect URI to register (with a copy button), so you can match it without guessing.
 
 Spotify playlist imports use the current items endpoint, which Spotify restricts to playlists owned by the connected user or playlists they collaborate on. A `403` fails the subscription run; reconnecting does not grant playlist ownership. See [pagination and artist limits](API.md#subscriptions) and [Spotify's endpoint reference](https://developer.spotify.com/documentation/web-api/reference/get-playlists-items).
 
@@ -478,10 +450,10 @@ TIDAL uses a single app registered by an admin, which every user then authorizes
    <your-digarr-url>/api/v1/auth/oauth/tidal/callback
    ```
 
-   Digarr builds this URI from `ALLOWED_ORIGIN`, not from the URL your browser happens to be on. Set `ALLOWED_ORIGIN` first, then register exactly the URI it produces -- a mismatched scheme or a trailing slash makes TIDAL reject the authorization with no useful error. Production requires `ALLOWED_ORIGIN`. Without it, only non-production loopback callback URLs are accepted.
+   Digarr builds this URI from `ALLOWED_ORIGIN`, not from the URL your browser happens to be on. Set `ALLOWED_ORIGIN` first, then register exactly the URI it produces - a mismatched scheme or a trailing slash makes TIDAL reject the authorization with no useful error. Production requires `ALLOWED_ORIGIN`. Without it, only non-production loopback callback URLs are accepted.
 
-2. The admin pastes the **Client ID** and **Client Secret** into **Settings > Connections > TIDAL** (the same credentials that power experimental TIDAL search).
-3. Each user then opens **Settings > Connections > Your Connections > TIDAL** and clicks **Connect TIDAL**. The flow is Authorization Code + PKCE and requests the `user.read` and `collection.read` scopes, which grant read-only access to your TIDAL collection.
+2. The admin opens **Settings > Connections > Add connection**, enables **Show experimental integrations** at the bottom, selects **TIDAL app** in the server group, and pastes the **Client ID** and **Client Secret** (the same credentials that power experimental TIDAL search).
+3. Each user then selects **Settings > Connections > Add connection > TIDAL** (or expands the saved TIDAL row) and clicks **Connect TIDAL**. The flow is Authorization Code + PKCE and requests the `user.read` and `collection.read` scopes, which grant read-only access to your TIDAL collection.
 
 Once connected, the **TIDAL Favorite Artists** discovery mode seeds recommendations from the artists in your collection. TIDAL's public API exposes no separate followed-artists list, so favorites are the only user-artist signal.
 
@@ -491,7 +463,7 @@ Each user's connection stores a copy of the app credentials it was made with. Ch
 
 Live TIDAL testing is deferred because no account is available. This is an accepted release limitation, not a successful validation. The original [validation request (#553)](https://github.com/iuliandita/digarr/issues/553) records the decision; please [open a new issue](https://github.com/iuliandita/digarr/issues/new/choose) with your results so failures can be investigated individually.
 
-After [connecting TIDAL](#tidal-app-setup), run **Discover > Discovery Modes > TIDAL Favorite Artists**. Try again after the connection's access token expires, without disconnecting first, to exercise refresh. The read-only `GET /api/v1/auth/oauth/tidal/status` endpoint reports `expiresAt`; a connected status alone does not prove refresh or discovery works.
+After [connecting TIDAL](#tidal-app-setup), run **Discover > Discovery Modes > Run a mode > TIDAL Favorite Artists**. Try again after the connection's access token expires, without disconnecting first, to exercise refresh. The read-only `GET /api/v1/auth/oauth/tidal/status` endpoint reports `expiresAt`; a connected status alone does not prove refresh or discovery works.
 
 Please include:
 
@@ -508,7 +480,7 @@ Deezer connection requires your own working app credentials; Digarr does not reg
 
 1. Register the callback `<ALLOWED_ORIGIN>/api/v1/auth/oauth/deezer/callback` with your app, using the exact public origin.
 2. Set `DEEZER_APP_ID` and `DEEZER_APP_SECRET` in the deployment environment and restart Digarr. These are deployment-wide credentials, not fields accepted from the browser.
-3. Each user opens **Settings > Connections > Your Connections > Deezer** and selects **Connect Deezer**. Authorization requests `basic_access,email,listening_history`.
+3. Each user opens **Settings > Connections > Add connection > Deezer** (or expands the saved Deezer row) and selects **Connect Deezer**. Authorization requests `basic_access,email,listening_history`.
 
 Deezer has no refresh-token flow in Digarr. Reconnect if its stored token becomes unusable. Flow discovery and favorites/followed-artist/playlist subscription feeds depend on this connection. Missing connections, token-resolution failures and provider error responses record failed subscription runs with Settings/reconnect guidance instead of successful empty feeds. The subscription row refreshes its saved error after a failed manual run; genuine empty feeds remain successful. Check Job History and reconnect in Settings when needed before retrying ([#774](https://github.com/iuliandita/digarr/issues/774)). Playlist feeds collect at most 500 distinct artists across the selected playlists.
 
@@ -527,3 +499,23 @@ docker compose -f docker-compose.pglite.yml run --rm --no-deps app \
 For the bundled PostgreSQL installation, use `docker-compose.yml` and include every override file used by that installation. From the repository root of a source checkout at the same revision, the equivalent command is `bun scripts/prepare-rollback-backup.ts <input> <output>`.
 
 The input must be the automatic pre-migration backup, use backup version 1, and have no existing `data.oidcTokens` key. The output path must not exist. Provision a separate fresh database with the older image so it creates the old schema, then restore the output copy; never point the old image at the migrated database. The helper writes the copy with mode `0600`, adds only an empty `data.oidcTokens` key, refuses an existing output, and never overwrites the source. It cannot recover retired provider tokens.
+
+
+## Scrobbler write-back
+
+Write-back is off by default. In **Settings > Connections**, each user controls ListenBrainz track loves and generated playlists on the ListenBrainz card, and Last.fm track loves on the Last.fm card, independently. Saving a connection alone does not consent to sending feedback.
+
+Only successful approvals of exact tracks from previews or Audition send loves. ListenBrainz receives the recording MBID; Last.fm receives the artist and track title. A track without a recording MBID cannot send a ListenBrainz love. Artist-only approvals, rejects, and blocks stay local. Turning a switch off stops future sends and does not remove remote loves or playlists already sent. Generated playlists need the separate ListenBrainz playlist switch and are sent only when you generate them manually. Scheduled regenerations never send playlists. This sends the playlist title, artist/track names, and known recording MBIDs as a private ListenBrainz playlist. Tracks without recording MBIDs are skipped; no usable recordings produces a visible failure. Provider failures appear in Account settings and do not turn a local approval into a failure. A stale or ambiguous Audition track reference sends nothing and the approval still succeeds.
+
+For ListenBrainz, save your token under **Settings > Connections > Your connections**, then enable the intended switches in Account. No other user's or shared fallback token grants write access.
+
+For Last.fm:
+
+1. The operator sets `LASTFM_SHARED_SECRET` (or `LASTFM_SHARED_SECRET_FILE` pointing to a readable secret file), retains `DIGARR_ENCRYPTION_KEY`, sets `ALLOWED_ORIGIN` to the public Digarr origin, and restarts Digarr. The secret must belong to the Last.fm API application whose key users configure. It stays server-side.
+2. Each user saves that Last.fm API key in their own Connections settings. Read-only listening-history access does not require a write session.
+3. In Account, turn on Last.fm track loves to start authorization. Digarr sends `{}` to its initiate endpoint and redirects the browser to Last.fm. Complete authorization in the same browser. The callback carries the one-time state in `/api/v1/auth/oauth/lastfm/callback/<state>`, leaving Last.fm to append only `?token=`. The transaction binds the callback to the initiating account and browser; changing credentials invalidates it.
+4. On return to Account, check the connected message and turn on track loves again. Authorization stores an encrypted per-user session key but never enables sending. A pending callback cannot override an off choice. If Last.fm revokes a stored session, use **Reconnect Last.fm** in Account. Reconnecting preserves your existing sending preference, including an off choice.
+
+For non-production loopback API use without `ALLOWED_ORIGIN`, initiation can accept a loopback `redirectUri`; the bundled Account UI uses the configured public origin. Missing API key, shared secret, or encryption key disables connection in Account. Treat session keys and the shared secret as credentials: never include them in reports, URLs you share, or logs. Keep the database backup and matching encryption key for recovery; disconnecting or disabling sending does not undo remote writes.
+
+On Unraid, these are optional manual environment variables for write access; read-only Last.fm setup and the baseline template do not need them. Add the secret and encryption key privately rather than publishing their values in a template. Before upgrade, keep a consistent database backup and its matching encryption key. Rollback to an earlier image removes the write-back controls and processing; restore the matching backup if its schema requires it. Existing read-only connections remain the fallback when write-back is unavailable.

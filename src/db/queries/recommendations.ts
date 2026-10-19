@@ -1,10 +1,26 @@
-import { and, count, desc, eq, gte, inArray, isNull, ne, or, type SQL, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm'
 import type { GenreFeedback } from '@/core/pipeline/score'
 import type { RejectionReason } from '@/core/recommendations/rejection-reasons'
-import { isValidStatus, parseStatusFilter } from '@/core/recommendations/statuses'
+import { parseStatusFilter } from '@/core/recommendations/statuses'
 import type { RecommendationKind } from '@/core/types'
 import type { Database, DbOrTx } from '@/db'
 import {
+  albumBlocks,
+  approvalRequests,
   artistBlocks,
   artistMetadata,
   artists,
@@ -17,6 +33,32 @@ type RecommendationRow = typeof recommendations.$inferSelect
 type ArtistRow = typeof artists.$inferSelect
 
 export type RecommendationWithArtist = RecommendationRow & { artist: ArtistRow }
+
+// Heavy cache columns the list view never reads; the detail endpoints serve them.
+const {
+  topTracks: _topTracks,
+  description: _description,
+  externalLinks: _externalLinks,
+  wikidataId: _wikidataId,
+  wikidataFetchedAt: _wikidataFetchedAt,
+  wikidataFailedAt: _wikidataFailedAt,
+  cachedAt: _cachedAt,
+  genresCachedAt: _genresCachedAt,
+  ...listArtistColumns
+} = getTableColumns(artists)
+
+export type ListedArtist = Omit<
+  ArtistRow,
+  | 'topTracks'
+  | 'description'
+  | 'externalLinks'
+  | 'wikidataId'
+  | 'wikidataFetchedAt'
+  | 'wikidataFailedAt'
+  | 'cachedAt'
+  | 'genresCachedAt'
+>
+export type ListedRecommendation = RecommendationRow & { artist: ListedArtist }
 
 const DECADE_RANGES: Record<string, [number, number]> = {
   '60s': [1960, 1969],
@@ -50,7 +92,7 @@ export type ListRecommendationsFilters = {
 }
 
 export type ListRecommendationsResult = {
-  items: RecommendationWithArtist[]
+  items: ListedRecommendation[]
   total: number
 }
 
@@ -72,16 +114,18 @@ export async function listRecommendations(
     offset = 0,
   } = filters
 
-  const conditions = []
+  const conditions = [
+    sql`(${recommendations.status} <> 'pending' OR coalesce(${recommendations.sources}->>'album_request', '') <> '0')`,
+  ]
   if (status !== undefined) {
-    if (status.includes(',')) {
-      const filtered = parseStatusFilter(status)
-      if (filtered.length > 0) {
-        conditions.push(inArray(recommendations.status, filtered))
-      }
-    } else if (isValidStatus(status)) {
-      conditions.push(eq(recommendations.status, status))
-    }
+    const filtered = parseStatusFilter(status)
+    if (filtered.includes('pending'))
+      conditions.push(sql`(${recommendations.status} <> 'pending' OR NOT EXISTS (
+      SELECT 1 FROM ${approvalRequests}
+      WHERE ${approvalRequests.recommendationId} = ${recommendations.id}
+        AND ${approvalRequests.status} = 'pending'
+    ))`)
+    if (filtered.length > 0) conditions.push(inArray(recommendations.status, filtered))
   }
   if (batchId !== undefined) conditions.push(eq(recommendations.batchId, batchId))
   if (userId !== undefined) conditions.push(eq(recommendations.userId, userId))
@@ -133,7 +177,7 @@ export async function listRecommendations(
     db
       .select({
         recommendation: recommendations,
-        artist: artists,
+        artist: listArtistColumns,
       })
       .from(recommendations)
       .innerJoin(artists, eq(recommendations.artistId, artists.id))
@@ -156,6 +200,72 @@ export async function listRecommendations(
   return { items, total }
 }
 
+export type ExportableRecommendationRow = {
+  score: number | null
+  status: string | null
+  aiReasoning: string | null
+  createdAt: Date
+  recommendedReleaseGroupTitle: string | null
+  recommendedRecordingMbid: string | null
+  recommendedRecordingTitle: string | null
+  recommendedTrackTitle: string | null
+  recommendedTrackAlbum: string | null
+  artist: {
+    name: string
+    mbid: string
+    genres: string[] | null
+    imageUrl: string | null
+    streamingUrls: Record<string, string> | null
+  }
+}
+
+export async function listRecommendationsForExport(
+  db: Database,
+  filters: Pick<ListRecommendationsFilters, 'status' | 'batchId' | 'userId' | 'limit'> = {},
+): Promise<ExportableRecommendationRow[]> {
+  const { status, batchId, userId, limit = 20 } = filters
+  const conditions = [
+    sql`(${recommendations.status} <> 'pending' OR coalesce(${recommendations.sources}->>'album_request', '') <> '0')`,
+  ]
+  if (status !== undefined) {
+    const filtered = parseStatusFilter(status)
+    if (filtered.includes('pending'))
+      conditions.push(sql`(${recommendations.status} <> 'pending' OR NOT EXISTS (
+      SELECT 1 FROM ${approvalRequests}
+      WHERE ${approvalRequests.recommendationId} = ${recommendations.id}
+        AND ${approvalRequests.status} = 'pending'
+    ))`)
+    if (filtered.length > 0) conditions.push(inArray(recommendations.status, filtered))
+  }
+  if (batchId !== undefined) conditions.push(eq(recommendations.batchId, batchId))
+  if (userId !== undefined) conditions.push(eq(recommendations.userId, userId))
+
+  return db
+    .select({
+      score: recommendations.score,
+      status: recommendations.status,
+      aiReasoning: recommendations.aiReasoning,
+      createdAt: recommendations.createdAt,
+      recommendedReleaseGroupTitle: recommendations.recommendedReleaseGroupTitle,
+      recommendedRecordingMbid: recommendations.recommendedRecordingMbid,
+      recommendedRecordingTitle: recommendations.recommendedRecordingTitle,
+      recommendedTrackTitle: recommendations.recommendedTrackTitle,
+      recommendedTrackAlbum: recommendations.recommendedTrackAlbum,
+      artist: {
+        name: artists.name,
+        mbid: artists.mbid,
+        genres: artists.genres,
+        imageUrl: artists.imageUrl,
+        streamingUrls: artists.streamingUrls,
+      },
+    })
+    .from(recommendations)
+    .innerJoin(artists, eq(recommendations.artistId, artists.id))
+    .where(and(...conditions))
+    .orderBy(desc(recommendations.score))
+    .limit(limit)
+}
+
 export async function getRecommendation(
   db: Database,
   id: number,
@@ -173,6 +283,7 @@ export async function getRecommendation(
 }
 
 export type StatusUpdateExtra = {
+  preserveActedOnAt?: boolean
   lidarrArtistId?: number | null
   lidarrError?: string | null
   targetActions?: Record<string, unknown> | null
@@ -188,10 +299,20 @@ export async function updateRecommendationStatus(
   status: string,
   extra: StatusUpdateExtra = {},
 ): Promise<void> {
-  const { actedOnAt, ...rest } = extra
+  const { preserveActedOnAt = false, actedOnAt, ...values } = extra
   await db
     .update(recommendations)
-    .set({ status, actedOnAt: actedOnAt !== undefined ? actedOnAt : new Date(), ...rest })
+    .set({
+      status,
+      // An explicit actedOnAt wins (reverting to 'pending' clears it); otherwise
+      // stamp "now" unless the caller asked to keep the existing value.
+      ...(actedOnAt !== undefined
+        ? { actedOnAt }
+        : preserveActedOnAt
+          ? {}
+          : { actedOnAt: new Date() }),
+      ...values,
+    })
     .where(eq(recommendations.id, id))
 }
 
@@ -210,12 +331,13 @@ export type RejectRecommendationParams = {
  * artist_blocks otherwise. A track-kind rec blocks nothing: one rejected song
  * says nothing about the artist as a whole.
  *
- * Returns the artistId of the rejected recommendation, or null if no row matched.
+ * Returns the artistId of the rejected recommendation and whether this reject
+ * created the block (false when it already existed), or null if no row matched.
  */
 export async function rejectRecommendation(
   db: Database,
   params: RejectRecommendationParams,
-): Promise<number | null> {
+): Promise<{ artistId: number; blockCreated: boolean } | null> {
   return db.transaction(async (tx) => {
     const conditions = [eq(recommendations.id, params.recommendationId)]
     if (params.userId !== undefined) {
@@ -234,24 +356,27 @@ export async function rejectRecommendation(
         artistId: recommendations.artistId,
         kind: recommendations.kind,
         releaseGroupMbid: recommendations.recommendedReleaseGroupId,
+        releaseGroupTitle: recommendations.recommendedReleaseGroupTitle,
       })
     if (!rec) return null
 
+    let blockCreated = false
     if (params.permanent && params.userId !== undefined && rec.kind !== 'track') {
       // Album recs without a release group (e.g. legacy rows) can't be
       // album-blocked, so fall back to the artist block rather than silently
       // dropping the permanent-reject intent.
       if (rec.kind === 'album' && rec.releaseGroupMbid) {
-        await createAlbumBlock(tx, {
+        blockCreated = await createAlbumBlock(tx, {
           userId: params.userId,
           artistId: rec.artistId,
           releaseGroupMbid: rec.releaseGroupMbid,
+          albumTitle: rec.releaseGroupTitle,
           reason: params.reason ?? undefined,
           reasonText: params.reasonText ?? undefined,
           source: 'rejection',
         })
       } else {
-        await tx
+        const [row] = await tx
           .insert(artistBlocks)
           .values({
             userId: params.userId,
@@ -260,17 +385,102 @@ export async function rejectRecommendation(
             reasonText: params.reasonText,
             source: 'rejection',
           })
-          .onConflictDoUpdate({
-            target: [artistBlocks.userId, artistBlocks.artistId],
-            set: {
-              reason: params.reason,
-              reasonText: params.reasonText,
-              blockedAt: new Date(),
-            },
-          })
+          // An existing block (manual or earlier) keeps its own reason and date.
+          .onConflictDoNothing({ target: [artistBlocks.userId, artistBlocks.artistId] })
+          .returning({ id: artistBlocks.id })
+        blockCreated = row !== undefined
       }
     }
-    return rec.artistId
+    return { artistId: rec.artistId, blockCreated }
+  })
+}
+
+export type BulkRejectParams = {
+  ids: number[]
+  userId: number | undefined
+  reason: RejectionReason | null
+  reasonText: string | null
+  permanent: boolean
+}
+
+/** Same semantics as rejectRecommendation applied to many ids in one transaction. */
+export async function bulkRejectRecommendations(
+  db: Database,
+  params: BulkRejectParams,
+): Promise<{ rejected: number; blocksCreated: number }> {
+  if (params.ids.length === 0) return { rejected: 0, blocksCreated: 0 }
+  return db.transaction(async (tx) => {
+    const conditions = [inArray(recommendations.id, params.ids)]
+    if (params.userId !== undefined) conditions.push(eq(recommendations.userId, params.userId))
+    const returned = await tx
+      .update(recommendations)
+      .set({
+        status: 'rejected',
+        rejectionReason: params.reason,
+        rejectionReasonText: params.reasonText,
+        actedOnAt: new Date(),
+      })
+      .where(and(...conditions))
+      .returning({
+        id: recommendations.id,
+        artistId: recommendations.artistId,
+        kind: recommendations.kind,
+        releaseGroupMbid: recommendations.recommendedReleaseGroupId,
+        releaseGroupTitle: recommendations.recommendedReleaseGroupTitle,
+      })
+
+    let blocksCreated = 0
+    if (params.permanent && params.userId !== undefined) {
+      const userId = params.userId
+      const order = new Map(params.ids.map((id, i) => [id, i]))
+      const rows = [...returned].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+      const albumRows = new Map<string, (typeof rows)[number]>()
+      const artistIds = new Set<number>()
+      for (const rec of rows) {
+        // Album recs without a release group can't be album-blocked, so they
+        // fall back to the artist block like the single reject path.
+        if (rec.kind === 'album' && rec.releaseGroupMbid) {
+          if (!albumRows.has(rec.releaseGroupMbid)) albumRows.set(rec.releaseGroupMbid, rec)
+        } else {
+          artistIds.add(rec.artistId)
+        }
+      }
+      if (albumRows.size > 0) {
+        const created = await tx
+          .insert(albumBlocks)
+          .values(
+            [...albumRows.entries()].map(([releaseGroupMbid, rec]) => ({
+              userId,
+              artistId: rec.artistId,
+              releaseGroupMbid,
+              albumTitle: rec.releaseGroupTitle ?? null,
+              reason: params.reason ?? undefined,
+              reasonText: params.reasonText ?? undefined,
+              source: 'rejection',
+            })),
+          )
+          .onConflictDoNothing({ target: [albumBlocks.userId, albumBlocks.releaseGroupMbid] })
+          .returning({ id: albumBlocks.id })
+        blocksCreated += created.length
+      }
+      if (artistIds.size > 0) {
+        const created = await tx
+          .insert(artistBlocks)
+          .values(
+            [...artistIds].map((artistId) => ({
+              userId,
+              artistId,
+              reason: params.reason,
+              reasonText: params.reasonText,
+              source: 'rejection',
+            })),
+          )
+          .onConflictDoNothing({ target: [artistBlocks.userId, artistBlocks.artistId] })
+          .returning({ id: artistBlocks.id })
+        blocksCreated += created.length
+      }
+    }
+    return { rejected: returned.length, blocksCreated }
   })
 }
 
@@ -303,6 +513,7 @@ export async function getGenreFeedbackHistory(
     JOIN artists a ON a.id = r.artist_id
     CROSS JOIN LATERAL unnest(a.genres) AS genre
     WHERE r.acted_on_at IS NOT NULL
+      AND coalesce(r.sources->>'album_request', '') <> '0'
       AND a.genres IS NOT NULL
       AND r.kind <> 'track'
       ${userFilter}
@@ -336,9 +547,7 @@ export async function filterOwnedIds(
 
   const conditions = [inArray(recommendations.id, ids)]
   if (userId !== undefined) {
-    conditions.push(
-      sql`(${recommendations.userId} IS NULL OR ${recommendations.userId} = ${userId})`,
-    )
+    conditions.push(eq(recommendations.userId, userId))
   }
 
   const rows = await db
@@ -347,6 +556,45 @@ export async function filterOwnedIds(
     .where(and(...conditions))
 
   return rows.map((r) => r.id)
+}
+
+/** Unacted rejections (null actedOnAt) stay deduped; only rejections past the cooldown are released. */
+function notExpiredRejection(rejectionCooldownDays: number): SQL {
+  const cutoff = new Date(Date.now() - rejectionCooldownDays * 24 * 60 * 60 * 1000)
+  // biome-ignore lint/style/noNonNullAssertion: or() with non-null args always returns SQL, never undefined
+  return or(
+    ne(recommendations.status, 'rejected'),
+    isNull(recommendations.actedOnAt),
+    gte(recommendations.actedOnAt, cutoff),
+  )!
+}
+
+/**
+ * MBIDs of existing recommendations that should block a new one for the user
+ * (plus legacy null-user recs; all users when `userId` is omitted). With
+ * `rejectionCooldownDays`, rejections acted on before the cooldown cutoff no
+ * longer count, so the artist can be recommended again. Track recs are
+ * excluded: an artist with only a song rec stays discoverable as an artist rec.
+ */
+export async function getExistingRecommendationMbids(
+  db: Database,
+  userId?: number,
+  options: { rejectionCooldownDays?: number } = {},
+): Promise<Set<string>> {
+  const conditions: SQL[] = [ne(recommendations.kind, 'track')]
+  if (userId !== undefined) {
+    // biome-ignore lint/style/noNonNullAssertion: or() with two non-null args always returns SQL, never undefined
+    conditions.push(or(eq(recommendations.userId, userId), isNull(recommendations.userId))!)
+  }
+  if (options.rejectionCooldownDays !== undefined) {
+    conditions.push(notExpiredRejection(options.rejectionCooldownDays))
+  }
+  const rows = await db
+    .select({ mbid: artists.mbid })
+    .from(recommendations)
+    .innerJoin(artists, eq(recommendations.artistId, artists.id))
+    .where(and(...conditions))
+  return new Set(rows.map((r) => r.mbid))
 }
 
 /**
@@ -375,28 +623,6 @@ export async function getRejectedArtistMbids(
       ),
     )
 
-  return new Set(rows.map((r) => r.mbid))
-}
-
-/**
- * Artist MBIDs already recommended to this user (or unowned), for artist
- * discovery dedupe. Track recs are excluded: an artist with only a song rec
- * stays discoverable as an artist rec.
- */
-export async function getExistingRecommendationMbids(
-  db: Database,
-  userId?: number,
-): Promise<Set<string>> {
-  const conditions: SQL[] = [ne(recommendations.kind, 'track')]
-  if (userId !== undefined) {
-    const owned = or(eq(recommendations.userId, userId), isNull(recommendations.userId))
-    if (owned) conditions.push(owned)
-  }
-  const rows = await db
-    .select({ mbid: artists.mbid })
-    .from(recommendations)
-    .innerJoin(artists, eq(recommendations.artistId, artists.id))
-    .where(and(...conditions))
   return new Set(rows.map((r) => r.mbid))
 }
 
@@ -432,9 +658,10 @@ export async function getGenreArtists(
     )`,
     ne(recommendations.kind, 'track'),
   )
+  const originCondition = sql`coalesce(${recommendations.sources}->>'album_request', '') <> '0'`
+  const userCondition = userId ? eq(recommendations.userId, userId) : sql`TRUE`
 
   if (view === 'recommended') {
-    const userCondition = userId ? eq(recommendations.userId, userId) : sql`TRUE`
     const rows = await db
       .select({
         name: artists.name,
@@ -447,7 +674,9 @@ export async function getGenreArtists(
       })
       .from(recommendations)
       .innerJoin(artists, eq(recommendations.artistId, artists.id))
-      .where(and(genreCondition, eq(recommendations.status, 'approved'), userCondition))
+      .where(
+        and(originCondition, genreCondition, eq(recommendations.status, 'approved'), userCondition),
+      )
       .orderBy(desc(recommendations.score))
       .limit(limit)
     return rows
@@ -468,7 +697,14 @@ export async function getGenreArtists(
       .from(recommendations)
       .innerJoin(artists, eq(recommendations.artistId, artists.id))
       .innerJoin(recommendationBatches, eq(recommendations.batchId, recommendationBatches.id))
-      .where(and(genreCondition, gte(recommendationBatches.createdAt, cutoff)))
+      .where(
+        and(
+          originCondition,
+          genreCondition,
+          userCondition,
+          gte(recommendationBatches.createdAt, cutoff),
+        ),
+      )
       .orderBy(desc(recommendations.score))
       .limit(limit)
     return rows
@@ -493,7 +729,9 @@ export async function getGenreArtists(
     .leftJoin(artistMetadata, sql`${artistMetadata.nameNormalized} = lower(${artists.name})`)
     .where(
       and(
+        originCondition,
         genreCondition,
+        userCondition,
         eq(recommendations.status, 'pending'),
         sql`(
           ${artistMetadata.spotifyPopularity} IS NULL
@@ -520,6 +758,7 @@ export type InsertRecommendationData = {
   recommendedReleaseGroupTitle?: string
   kind?: RecommendationKind
   recommendedRecordingMbid?: string
+  recommendedRecordingTitle?: string
   recommendedTrackTitle?: string
   recommendedTrackAlbum?: string
   recommendedCoverReleaseMbid?: string
@@ -539,8 +778,9 @@ export async function insertRecommendation(
     userId: data.userId,
     recommendedReleaseGroupId: data.recommendedReleaseGroupId,
     recommendedReleaseGroupTitle: data.recommendedReleaseGroupTitle,
-    kind: data.kind ?? 'artist',
     recommendedRecordingMbid: data.recommendedRecordingMbid,
+    recommendedRecordingTitle: data.recommendedRecordingTitle,
+    kind: data.kind ?? 'artist',
     recommendedTrackTitle: data.recommendedTrackTitle,
     recommendedTrackAlbum: data.recommendedTrackAlbum,
     recommendedCoverReleaseMbid: data.recommendedCoverReleaseMbid,
@@ -555,11 +795,15 @@ export async function insertRecommendation(
 export async function getExistingAlbumReleaseGroupMbids(
   db: Database,
   userId?: number,
+  options: { rejectionCooldownDays?: number } = {},
 ): Promise<Set<string>> {
   const conditions: SQL[] = [eq(recommendations.kind, 'album')]
   if (userId !== undefined) {
     // biome-ignore lint/style/noNonNullAssertion: or() with two non-null args always returns SQL, never undefined
     conditions.push(or(eq(recommendations.userId, userId), isNull(recommendations.userId))!)
+  }
+  if (options.rejectionCooldownDays !== undefined) {
+    conditions.push(notExpiredRejection(options.rejectionCooldownDays))
   }
   const rows = await db
     .select({ rg: recommendations.recommendedReleaseGroupId })
@@ -583,4 +827,71 @@ export async function getRecommendedRecordingMbids(
       ),
     )
   return new Set(rows.map((r) => r.mbid).filter((m): m is string => Boolean(m)))
+}
+
+export async function listWaitingApprovals(db: Database): Promise<RecommendationWithArtist[]> {
+  const rows = await db
+    .select({ recommendation: recommendations, artist: artists })
+    .from(recommendations)
+    .innerJoin(artists, eq(recommendations.artistId, artists.id))
+    .where(
+      or(
+        eq(recommendations.status, 'waiting'),
+        and(
+          inArray(recommendations.status, ['approved', 'added_to_lidarr', 'add_failed']),
+          sql`exists (
+            select 1 from jsonb_each(coalesce(${recommendations.targetActions}, '{}'::jsonb)) action
+            where action.value->>'status' = 'waiting'
+          )`,
+        ),
+      ),
+    )
+    .orderBy(asc(recommendations.actedOnAt), asc(recommendations.id))
+  return rows.map((row) => ({ ...row.recommendation, artist: row.artist }))
+}
+
+export type RecommendationTabCounts = {
+  all: number
+  pending: number
+  approved: number
+  rejected: number
+}
+
+const APPROVED_TAB_STATUSES = ['added_to_lidarr', 'add_failed', 'approved', 'waiting']
+
+/** Discover tab badges in one pass, each with the same filters listRecommendations applies for that tab. */
+export async function countRecommendationsByTab(
+  db: Database,
+  userId?: number,
+): Promise<RecommendationTabCounts> {
+  const conditions = [
+    sql`(${recommendations.status} <> 'pending' OR coalesce(${recommendations.sources}->>'album_request', '') <> '0')`,
+  ]
+  if (userId !== undefined) conditions.push(eq(recommendations.userId, userId))
+  const [row] = await db
+    .select({
+      all: count(),
+      // Uncorrelated on purpose: select-list columns render unqualified, so a
+      // correlated "id" would bind to approval_requests.
+      pending:
+        sql<number>`count(*) filter (where ${recommendations.status} = 'pending' and ${recommendations.id} not in (
+        select ${approvalRequests.recommendationId} from ${approvalRequests}
+        where ${approvalRequests.status} = 'pending' and ${approvalRequests.recommendationId} is not null
+      ))`.mapWith(Number),
+      approved:
+        sql<number>`count(*) filter (where ${inArray(recommendations.status, APPROVED_TAB_STATUSES)})`.mapWith(
+          Number,
+        ),
+      rejected: sql<number>`count(*) filter (where ${recommendations.status} = 'rejected')`.mapWith(
+        Number,
+      ),
+    })
+    .from(recommendations)
+    .where(and(...conditions))
+  return {
+    all: row?.all ?? 0,
+    pending: row?.pending ?? 0,
+    approved: row?.approved ?? 0,
+    rejected: row?.rejected ?? 0,
+  }
 }

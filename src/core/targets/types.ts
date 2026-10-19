@@ -1,4 +1,5 @@
 import type { ServiceTestResult } from '@/core/types'
+import type { ReleaseGroupTypes } from './lidarr-metadata-profile'
 
 export type TargetCapability = 'addArtist' | 'addAlbum' | 'addTrack' | 'createPlaylist'
 
@@ -16,11 +17,16 @@ export const TARGET_TYPES = [
 export type TargetType = (typeof TARGET_TYPES)[number]
 
 export type TargetAddOptions = {
-  monitorOption?: 'all' | 'new' | 'none' | 'selected'
+  followUpTargetId?: string
+  retryExisting?: boolean
+  monitorOption?: 'all' | 'new' | 'missing' | 'existing' | 'latest' | 'first' | 'none' | 'selected'
+  tags?: number[]
   selectedAlbumIds?: string[]
   qualityProfileId?: number
   metadataProfileId?: number
   rootFolderId?: number
+  /** Lidarr target the profile/folder IDs above were picked for (e.g. `lidarr-3`). */
+  lidarrOptionsTargetId?: string
   userId?: number
   recommendationId?: number
   lidarrArtistId?: number
@@ -68,6 +74,7 @@ export type PlaylistExportSession = {
     onCreated: (playlistId: string) => Promise<void>,
   ): Promise<PlaylistResult>
   replacePlaylist(playlistId: string, name: string): Promise<PlaylistResult>
+  readBackTrackCount?(playlistId: string): Promise<number>
 }
 
 export interface DestinationTarget {
@@ -98,6 +105,11 @@ export interface DestinationTarget {
     options?: { description?: string; public?: boolean; replace?: boolean },
   ): Promise<PlaylistResult>
 
+  /** Release-group MBIDs this target would never list, so `addAlbum` could not add them. */
+  unaddableAlbums?(
+    albums: Array<{ artistMbid: string; releaseGroupMbid: string; types: ReleaseGroupTypes }>,
+  ): Promise<Set<string>>
+
   openPlaylistExportSession?(items: PlaylistItem[]): Promise<PlaylistExportSession>
 
   testConnection(): Promise<ServiceTestResult>
@@ -116,6 +128,8 @@ export type ExportableRecommendation = {
   suggestedAlbum?: string
   trackTitle?: string
   trackAlbum?: string
+  recordingMbid?: string
+  recordingTitle?: string
 }
 
 /** Resolve the best streaming URL for a recommendation, falling back to MusicBrainz. */
@@ -126,4 +140,10 @@ export function getStreamingUrl(rec: ExportableRecommendation): string {
     rec.streamingUrls.deezer ??
     `https://musicbrainz.org/artist/${rec.artistMbid}`
   )
+}
+
+/** DB row id of a target; destination ids are `<type>-<row id>`. */
+export function targetDbId(destinationId: string): number | undefined {
+  const id = Number(destinationId.slice(destinationId.lastIndexOf('-') + 1))
+  return Number.isSafeInteger(id) ? id : undefined
 }

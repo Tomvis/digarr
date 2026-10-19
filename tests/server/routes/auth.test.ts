@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { envConfig } from '@/config/env'
 import { hashPassword } from '@/core/auth'
+import { SENSITIVE_USER_CONNECTIONS } from '@/core/crypto'
 import {
   clearAllSessions,
   clearUserSessions,
@@ -28,6 +29,7 @@ import type { AppDependencies } from '@/server'
 import { createApp } from '@/server'
 import { authRoutes } from '@/server/routes/auth'
 import type { HonoEnv } from '@/server/types'
+import { makeUser } from '../helpers/user-fixture'
 
 const APP_ORIGIN = 'http://localhost'
 
@@ -43,6 +45,10 @@ const sameOriginHeaders = {
   Origin: APP_ORIGIN,
   'Sec-Fetch-Site': 'same-origin',
 } as const
+
+function makeCredentials(passwordHash: string) {
+  return { id: 1, username: 'testuser', passwordHash, isAdmin: false }
+}
 
 function makeMockOrchestrator() {
   const emitter = new EventEmitter()
@@ -65,9 +71,10 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     lidarrRemoveArtist: vi.fn(async () => {}),
     lidarrArtistHasFiles: vi.fn(async () => false),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -76,89 +83,18 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
     getArtistById: vi.fn(async () => null),
     restartScheduler: vi.fn(),
     restartPlaylistScheduler: vi.fn(),
-    createUser: vi.fn(async (data) => ({
-      id: 1,
-      username: data.username,
-      isAdmin: data.isAdmin ?? false,
-      preferences: null,
-      preferredLocale: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      subsonicMusicFolderId: null,
-      musicRaterUrl: null,
-      musicRaterApiKey: null,
-      createdAt: new Date(),
-    })),
+    createUser: vi.fn(async (data) =>
+      makeUser({ username: data.username, isAdmin: data.isAdmin ?? false }),
+    ),
     getUserByUsername: vi.fn(async () => null),
-    getUserById: vi.fn(async () => ({
-      id: 1,
-      username: 'testuser',
-      isAdmin: false,
-      preferences: null,
-      preferredLocale: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      subsonicMusicFolderId: null,
-      musicRaterUrl: null,
-      musicRaterApiKey: null,
-      createdAt: new Date(),
-    })),
+    getUserById: vi.fn(async () => makeUser()),
     getUserCount: vi.fn(async () => 0),
     passwordSessions: {
       createForPassword: vi.fn(
@@ -233,16 +169,6 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       }),
       getJobsForSubscription: vi.fn().mockResolvedValue([]),
     },
-    apiKeyStore: {
-      create: vi.fn(async () => {
-        throw new Error('apiKeyStore.create not stubbed')
-      }),
-      verify: vi.fn(async () => null),
-      listForUser: vi.fn(async () => []),
-      listAll: vi.fn(async () => []),
-      revoke: vi.fn(async () => false),
-      touchLastUsed: vi.fn(async () => {}),
-    } as unknown as AppDependencies['apiKeyStore'],
     ...overrides,
   }
 }
@@ -289,109 +215,44 @@ describe('createApp insecure-cookie warning', () => {
     else process.env.NODE_ENV = previousNodeEnv
   })
 
-  it('warns when production explicitly permits insecure cookies', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = true
+  it.each([
+    ['production', true, true],
+    ['production', false, false],
+    ['test', true, false],
+  ] as const)('reports insecure cookies for env=%s allowed=%s: %s', (nodeEnv, allowed, warns) => {
+    process.env.NODE_ENV = nodeEnv
+    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = allowed
     createApp(makeDeps())
-    expect(warnSpy).toHaveBeenCalledWith(INSECURE_WARNING)
+    if (warns) expect(warnSpy).toHaveBeenCalledWith(INSECURE_WARNING)
+    else expect(warnSpy).not.toHaveBeenCalledWith(INSECURE_WARNING)
   })
 
-  it('does not warn when production keeps secure cookies', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = false
-    createApp(makeDeps())
-    expect(warnSpy).not.toHaveBeenCalledWith(INSECURE_WARNING)
-  })
-
-  it('does not warn outside production even when insecure cookies are allowed', () => {
-    process.env.NODE_ENV = 'test'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = true
-    createApp(makeDeps())
-    expect(warnSpy).not.toHaveBeenCalledWith(INSECURE_WARNING)
-  })
-
-  it('warns that Secure-only cookies will block remote logins on an http origin', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = false
-    setOrigin('http://192.168.1.50:3000')
-    createApp(makeDeps())
-    expect(warnSpy).toHaveBeenCalledWith(SECURE_ONLY_WARNING)
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('http://192.168.1.50:3000'))
-  })
-
-  it('warns about Secure-only cookies when ALLOWED_ORIGIN is unset in production', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = false
-    setOrigin(undefined)
-    createApp(makeDeps())
-    expect(warnSpy).toHaveBeenCalledWith(SECURE_ONLY_WARNING)
-  })
-
-  it('stays quiet when production serves an https origin', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = false
-    setOrigin('https://digarr.example.com')
-    createApp(makeDeps())
-    expect(warnSpy).not.toHaveBeenCalledWith(SECURE_ONLY_WARNING)
-  })
-
-  it('stays quiet about Secure-only cookies when the http opt-in is set', () => {
-    process.env.NODE_ENV = 'production'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = true
-    setOrigin('http://192.168.1.50:3000')
-    createApp(makeDeps())
-    expect(warnSpy).not.toHaveBeenCalledWith(SECURE_ONLY_WARNING)
-  })
-
-  it('stays quiet about Secure-only cookies outside production', () => {
-    process.env.NODE_ENV = 'test'
-    ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = false
-    setOrigin('http://192.168.1.50:3000')
-    createApp(makeDeps())
-    expect(warnSpy).not.toHaveBeenCalledWith(SECURE_ONLY_WARNING)
-  })
+  it.each([
+    ['production', false, 'http://192.168.1.50:3000', true],
+    ['production', false, undefined, true],
+    ['production', false, 'https://digarr.example.com', false],
+    ['production', true, 'http://192.168.1.50:3000', false],
+    ['test', false, 'http://192.168.1.50:3000', false],
+  ] as const)(
+    'reports Secure-only cookies for env=%s allowed=%s origin=%s: %s',
+    (nodeEnv, allowed, origin, warns) => {
+      process.env.NODE_ENV = nodeEnv
+      ;(envConfig as { allowInsecureCookies: boolean }).allowInsecureCookies = allowed
+      setOrigin(origin)
+      createApp(makeDeps())
+      if (warns) {
+        expect(warnSpy).toHaveBeenCalledWith(SECURE_ONLY_WARNING)
+        if (origin) expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(origin))
+      } else expect(warnSpy).not.toHaveBeenCalledWith(SECURE_ONLY_WARNING)
+    },
+  )
 })
 
 describe('POST /api/v1/auth/register', () => {
   it('creates the first user as admin', async () => {
-    const createUser = vi.fn(async (data: { username: string; isAdmin?: boolean }) => ({
-      id: 1,
-      username: data.username,
-      isAdmin: true,
-      preferences: null,
-      preferredLocale: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      subsonicMusicFolderId: null,
-      musicRaterUrl: null,
-      musicRaterApiKey: null,
-      createdAt: new Date(),
-    }))
+    const createUser = vi.fn(async (data: { username: string; isAdmin?: boolean }) =>
+      makeUser({ username: data.username, isAdmin: true }),
+    )
     const app = createApp(makeDeps({ createUser, getUserCount: vi.fn(async () => 0) }))
 
     const res = await app.request('/api/v1/auth/register', {
@@ -411,44 +272,9 @@ describe('POST /api/v1/auth/register', () => {
   })
 
   it('creates subsequent users as non-admin', async () => {
-    const createUser = vi.fn(async (data: { username: string; isAdmin?: boolean }) => ({
-      id: 2,
-      username: data.username,
-      isAdmin: false,
-      preferences: null,
-      preferredLocale: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      subsonicMusicFolderId: null,
-      musicRaterUrl: null,
-      musicRaterApiKey: null,
-      createdAt: new Date(),
-    }))
+    const createUser = vi.fn(async (data: { username: string; isAdmin?: boolean }) =>
+      makeUser({ id: 2, username: data.username }),
+    )
     const app = createApp(makeDeps({ createUser, getUserCount: vi.fn(async () => 1) }))
 
     const res = await app.request('/api/v1/auth/register', {
@@ -538,32 +364,16 @@ describe('POST /api/v1/auth/register', () => {
     expect(res.headers.get('set-cookie')).toBeNull()
   })
 
-  it('returns 400 for missing username or password', async () => {
+  it.each([
+    ['missing password', { username: 'test' }],
+    ['short password', { username: 'test', password: 'short' }],
+    ['short username', { username: 'x', password: 'password1234' }],
+  ])('rejects registration with %s', async (_case, body) => {
     const app = createApp(makeDeps())
     const res = await app.request('/api/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'test' }),
-    })
-    expect(res.status).toBe(400)
-  })
-
-  it('returns 400 for short password', async () => {
-    const app = createApp(makeDeps())
-    const res = await app.request('/api/v1/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'test', password: 'short' }),
-    })
-    expect(res.status).toBe(400)
-  })
-
-  it('returns 400 for short username', async () => {
-    const app = createApp(makeDeps())
-    const res = await app.request('/api/v1/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'x', password: 'password1234' }),
+      body: JSON.stringify(body),
     })
     expect(res.status).toBe(400)
   })
@@ -593,12 +403,7 @@ describe('POST /api/v1/auth/login', () => {
     const storedHash = hashPassword('correctpassword')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
 
@@ -621,12 +426,7 @@ describe('POST /api/v1/auth/login', () => {
     const storedHash = hashPassword('correctpassword')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
     await createSession(1, 'old-browser-session')
@@ -661,12 +461,7 @@ describe('POST /api/v1/auth/login', () => {
     const storedHash = hashPassword('correctpassword')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
 
@@ -695,12 +490,7 @@ describe('POST /api/v1/auth/login', () => {
     const storedHash = hashPassword('correct-password')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         passwordSessions: { createForPassword, changePasswordAndReset: vi.fn() },
       }),
     )
@@ -800,12 +590,7 @@ describe('session token authentication', () => {
     const storedHash = hashPassword('password1234')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -957,12 +742,7 @@ describe('POST /api/v1/auth/logout', () => {
     const storedHash = hashPassword('password1234')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -994,12 +774,7 @@ describe('POST /api/v1/auth/logout', () => {
     const storedHash = hashPassword('password1234')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -1029,12 +804,7 @@ describe('POST /api/v1/auth/logout', () => {
     const storedHash = hashPassword('password1234')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -1110,50 +880,8 @@ describe('GET /api/v1/auth/me', () => {
     const storedHash = hashPassword('password1234')
     const app = createApp(
       makeDeps({
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
-        getUserById: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          isAdmin: false,
-          preferences: null,
-          preferredLocale: null,
-          email: null,
-          oidcSubject: null,
-          oidcIssuer: null,
-          authProvider: 'local',
-          listenbrainzUsername: null,
-          listenbrainzToken: null,
-          lastfmUsername: null,
-          lastfmApiKey: null,
-          plexUrl: null,
-          plexToken: null,
-          plexSectionId: null,
-          plexAccountId: null,
-          plexAccountName: null,
-          plexMachineIdentifier: null,
-          jellyfinUrl: null,
-          jellyfinApiKey: null,
-          jellyfinUserId: null,
-          jellyfinLibraryId: null,
-          embyUrl: null,
-          embyApiKey: null,
-          embyUserId: null,
-          embyLibraryId: null,
-          discogsToken: null,
-          discogsUsername: null,
-          subsonicUrl: null,
-          subsonicUsername: null,
-          subsonicPassword: null,
-          subsonicMusicFolderId: null,
-          musicRaterUrl: null,
-          musicRaterApiKey: null,
-          createdAt: new Date(),
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
+        getUserById: vi.fn(async () => makeUser()),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -1176,44 +904,7 @@ describe('GET /api/v1/auth/me', () => {
   it('returns preferredLocale from /api/auth/me', async () => {
     const app = createApp(
       makeDeps({
-        getUserById: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          isAdmin: false,
-          preferences: null,
-          preferredLocale: 'de',
-          email: null,
-          oidcSubject: null,
-          oidcIssuer: null,
-          authProvider: 'local',
-          listenbrainzUsername: null,
-          listenbrainzToken: null,
-          lastfmUsername: null,
-          lastfmApiKey: null,
-          plexUrl: null,
-          plexToken: null,
-          plexSectionId: null,
-          plexAccountId: null,
-          plexAccountName: null,
-          plexMachineIdentifier: null,
-          jellyfinUrl: null,
-          jellyfinApiKey: null,
-          jellyfinUserId: null,
-          jellyfinLibraryId: null,
-          embyUrl: null,
-          embyApiKey: null,
-          embyUserId: null,
-          embyLibraryId: null,
-          discogsToken: null,
-          discogsUsername: null,
-          subsonicUrl: null,
-          subsonicUsername: null,
-          subsonicPassword: null,
-          subsonicMusicFolderId: null,
-          musicRaterUrl: null,
-          musicRaterApiKey: null,
-          createdAt: new Date(),
-        })),
+        getUserById: vi.fn(async () => makeUser({ preferredLocale: 'de' })),
         getUserCount: vi.fn(async () => 1),
       }),
     )
@@ -1357,12 +1048,7 @@ describe('POST /api/v1/auth/change-password', () => {
       makeDeps({
         passwordSessions: { createForPassword: vi.fn(), changePasswordAndReset },
         getUserCount: vi.fn(async () => 1),
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
 
@@ -1406,12 +1092,7 @@ describe('POST /api/v1/auth/change-password', () => {
     const app = createApp(
       makeDeps({
         getUserCount: vi.fn(async () => 1),
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
     await createSession(1, 'cookie-session')
@@ -1454,12 +1135,7 @@ describe('POST /api/v1/auth/change-password', () => {
       '/',
       authRoutes(
         makeDeps({
-          getUserByUsername: vi.fn(async () => ({
-            id: 1,
-            username: 'testuser',
-            passwordHash: storedHash,
-            isAdmin: false,
-          })),
+          getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
         }),
       ),
     )
@@ -1519,12 +1195,7 @@ describe('POST /api/v1/auth/change-password', () => {
       makeDeps({
         passwordSessions: { createForPassword: vi.fn(), changePasswordAndReset },
         getUserCount: vi.fn(async () => 1),
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
     await createSession(1, 'cookie-session')
@@ -1598,12 +1269,7 @@ describe('POST /api/v1/auth/change-password', () => {
       makeDeps({
         passwordSessions: { createForPassword: vi.fn(), changePasswordAndReset },
         getUserCount: vi.fn(async () => 1),
-        getUserByUsername: vi.fn(async () => ({
-          id: 1,
-          username: 'testuser',
-          passwordHash: storedHash,
-          isAdmin: false,
-        })),
+        getUserByUsername: vi.fn(async () => makeCredentials(storedHash)),
       }),
     )
 
@@ -1705,6 +1371,32 @@ describe('PATCH /api/v1/auth/me/preferences', () => {
     expect(set).toHaveBeenCalledTimes(2)
   })
 
+  it.each([
+    { rejectionCooldownDays: 'soon' },
+    { rejectionCooldownDays: -1 },
+    { scoreThreshold: 2 },
+    { topArtistsLimit: 1.5 },
+    { autoApproveMonitorOption: 'some' },
+    { scoringWeights: { consensus: 'high' } },
+  ])('rejects invalid preference value %j before writing', async (body) => {
+    const update = vi.fn()
+    const app = new Hono<HonoEnv>()
+    app.use('*', async (c, next) => {
+      c.set('userId', 1)
+      await next()
+    })
+    app.route('/', authRoutes(makeDeps({ db: { update } as unknown as AppDependencies['db'] })))
+
+    const res = await app.request('/api/v1/auth/me/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    expect(res.status).toBe(400)
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('rejects legacy read-only token auth', async () => {
     const app = new Hono<HonoEnv>()
     app.use('*', async (c, next) => {
@@ -1736,23 +1428,17 @@ describe('PATCH /api/v1/auth/me/preferences', () => {
 })
 
 describe('GET /api/v1/auth/status', () => {
-  it('reports hasUsers: false when no users exist', async () => {
-    const app = createApp(makeDeps({ getUserCount: vi.fn(async () => 0) }))
-    const res = await app.request('/api/v1/auth/status')
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.hasUsers).toBe(false)
-    expect(body.required).toBe(true)
-  })
-
-  it('reports hasUsers: true and required: true when users exist', async () => {
-    const app = createApp(makeDeps({ getUserCount: vi.fn(async () => 2) }))
-    const res = await app.request('/api/v1/auth/status')
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.hasUsers).toBe(true)
-    expect(body.required).toBe(true)
-  })
+  it.each([0, 2])(
+    'reports user availability with %s users and always requires auth',
+    async (count) => {
+      const app = createApp(makeDeps({ getUserCount: vi.fn(async () => count) }))
+      const res = await app.request('/api/v1/auth/status')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.hasUsers).toBe(count > 0)
+      expect(body.required).toBe(true)
+    },
+  )
 })
 
 describe('PATCH /api/v1/auth/me/email', () => {
@@ -1769,74 +1455,35 @@ describe('PATCH /api/v1/auth/me/email', () => {
     })
   }
 
-  it('sets the email for a session-authenticated user', async () => {
-    const updateUser = vi.fn(async () => {})
-    const res = await emailRequest(makeDeps({ updateUser, getUserCount: vi.fn(async () => 1) }), {
-      email: 'me@example.com',
-    })
-    expect(res.status).toBe(200)
-    expect(updateUser).toHaveBeenCalledWith(1, { email: 'me@example.com' })
-  })
-
-  it('clears the email when given an empty string', async () => {
-    const updateUser = vi.fn(async () => {})
-    const res = await emailRequest(makeDeps({ updateUser, getUserCount: vi.fn(async () => 1) }), {
-      email: '',
-    })
-    expect(res.status).toBe(200)
-    expect(updateUser).toHaveBeenCalledWith(1, { email: null })
-  })
-
-  it('returns 400 for an invalid email', async () => {
-    const updateUser = vi.fn(async () => {})
-    const res = await emailRequest(makeDeps({ updateUser, getUserCount: vi.fn(async () => 1) }), {
-      email: 'not-an-email',
-    })
-    expect(res.status).toBe(400)
-    expect(updateUser).not.toHaveBeenCalled()
-  })
-
-  it('returns 409 when the email belongs to another user', async () => {
-    const updateUser = vi.fn(async () => {})
-    const res = await emailRequest(
-      makeDeps({
-        updateUser,
-        getUserByEmail: vi.fn(async () => ({ id: 2, username: 'other' })),
-        getUserCount: vi.fn(async () => 2),
-      }),
-      { email: 'taken@example.com' },
-    )
-    expect(res.status).toBe(409)
-    expect(updateUser).not.toHaveBeenCalled()
-  })
-
-  it('allows re-saving an email the user already owns', async () => {
-    const updateUser = vi.fn(async () => {})
-    const res = await emailRequest(
-      makeDeps({
-        updateUser,
-        getUserByEmail: vi.fn(async () => ({ id: 1, username: 'testuser' })),
-        getUserCount: vi.fn(async () => 1),
-      }),
-      { email: 'me@example.com' },
-    )
-    expect(res.status).toBe(200)
-    expect(updateUser).toHaveBeenCalledWith(1, { email: 'me@example.com' })
-  })
-
-  it('normalizes the email to lowercase before the uniqueness check and storage', async () => {
-    const updateUser = vi.fn(async () => {})
-    const getUserByEmail = vi.fn(async () => null)
-    const res = await emailRequest(
-      makeDeps({ updateUser, getUserByEmail, getUserCount: vi.fn(async () => 1) }),
-      { email: 'Mixed@Case.COM' },
-    )
-    expect(res.status).toBe(200)
-    // Case-insensitive: storing and checking both use the lowercased form, so
-    // Mixed@Case.COM and mixed@case.com cannot become two distinct rows.
-    expect(getUserByEmail).toHaveBeenCalledWith('mixed@case.com')
-    expect(updateUser).toHaveBeenCalledWith(1, { email: 'mixed@case.com' })
-  })
+  it.each([
+    { email: 'me@example.com', ownerId: null, status: 200, stored: 'me@example.com' },
+    { email: '', ownerId: null, status: 200, stored: null },
+    { email: 'not-an-email', ownerId: null, status: 400, stored: null },
+    { email: 'taken@example.com', ownerId: 2, status: 409, stored: null },
+    { email: 'me@example.com', ownerId: 1, status: 200, stored: 'me@example.com' },
+    { email: 'Mixed@Case.COM', ownerId: null, status: 200, stored: 'mixed@case.com' },
+  ])(
+    'handles email=$email owner=$ownerId with $status',
+    async ({ email, ownerId, status, stored }) => {
+      const updateUser = vi.fn(async () => {})
+      const getUserByEmail = vi.fn(async () =>
+        ownerId === null ? null : { id: ownerId, username: ownerId === 1 ? 'testuser' : 'other' },
+      )
+      const res = await emailRequest(
+        makeDeps({
+          updateUser,
+          getUserByEmail,
+          getUserCount: vi.fn(async () => (ownerId === 2 ? 2 : 1)),
+        }),
+        { email },
+      )
+      expect(res.status).toBe(status)
+      if (status === 200) {
+        expect(updateUser).toHaveBeenCalledWith(1, { email: stored })
+        if (stored) expect(getUserByEmail).toHaveBeenCalledWith(stored)
+      } else expect(updateUser).not.toHaveBeenCalled()
+    },
+  )
 
   it('rate-limits the email endpoint (blunts the email-collision enumeration oracle)', async () => {
     const app = createApp(makeDeps({ getUserCount: vi.fn(async () => 1) }))
@@ -1851,4 +1498,51 @@ describe('PATCH /api/v1/auth/me/email', () => {
     for (let i = 0; i < 5; i++) expect((await fire()).status).toBe(200)
     expect((await fire()).status).toBe(429)
   })
+})
+
+describe('user response projection', () => {
+  const secrets = Object.fromEntries(SENSITIVE_USER_CONNECTIONS.map((f) => [f, `secret-${f}`]))
+
+  it('omits stored connection values from login and /auth/me', async () => {
+    const row = {
+      id: 1,
+      username: 'testuser',
+      passwordHash: hashPassword('password1234'),
+      isAdmin: false,
+      preferredLocale: null,
+      plexUrl: 'http://plex.local:32400',
+      ...secrets,
+      plexToken: null,
+    }
+    const { passwordHash: _, ...publicRow } = row
+    const app = createApp(
+      makeDeps({
+        getUserByUsername: vi.fn(async () => row) as never,
+        getUserById: vi.fn(async () => publicRow) as never,
+        getUserCount: vi.fn(async () => 1),
+      }),
+    )
+
+    const loginRes = await app.request('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'testuser', password: 'password1234' }),
+    })
+    const login = await loginRes.json()
+    const meRes = await app.request('/api/v1/auth/me', {
+      headers: { Authorization: `Bearer ${login.token}` },
+    })
+    const me = await meRes.json()
+
+    for (const user of [login.user, me]) {
+      for (const field of SENSITIVE_USER_CONNECTIONS) {
+        expect(user).not.toHaveProperty(field)
+        expect(JSON.stringify(user)).not.toContain(`secret-${field}`)
+      }
+      expect(user).not.toHaveProperty('passwordHash')
+      expect(user.hasLastfmApiKey).toBe(true)
+      expect(user.hasPlexToken).toBe(false)
+      expect(user.plexUrl).toBe('http://plex.local:32400')
+    }
+  }, 15_000)
 })

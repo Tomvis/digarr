@@ -7,6 +7,9 @@ import { Hint } from '../components/hint'
 import { LibraryFirstSyncBanner } from '../components/library-first-sync-banner'
 import { LibrarySourcesPanel } from '../components/library-sources-panel'
 import { LibraryStatsDisplay } from '../components/library-stats'
+import { Button } from '../components/ui/button'
+import { Disclosure } from '../components/ui/disclosure'
+import { Notice } from '../components/ui/notice'
 import { Skeleton } from '../components/ui/skeleton'
 import {
   fixHealthCheck,
@@ -148,6 +151,7 @@ export function LibraryHealthPage() {
   const scanning = healthQuery.data?.scanning ?? false
   const checks: HealthCheckResult[] = healthQuery.data?.checks ?? []
   const lastCompletedAt = healthQuery.data?.lastCompletedAt ?? null
+  const lastError = healthQuery.data?.lastError ?? null
   const syncIntervalHours = healthQuery.data?.syncIntervalHours ?? 6
   const stats: LibraryStats | undefined = statsQuery.data
   const prefs = (settingsQuery.data?.preferences ?? {}) as Record<string, unknown>
@@ -156,10 +160,21 @@ export function LibraryHealthPage() {
   const pendingRescan = rescanTimer.current !== null
 
   return (
-    <div className="p-6 space-y-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-bold text-text">{t('libraryHealth.title')}</h1>
-      </div>
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-lead font-semibold text-text">{t('libraryHealth.title')}</h2>
+        <Button
+          onClick={() => rescanMutation.mutate()}
+          disabled={scanning || rescanMutation.isPending}
+        >
+          <RefreshCw
+            size={14}
+            className={scanning ? 'animate-spin' : undefined}
+            aria-hidden="true"
+          />
+          {scanning ? t('app.scanning') : t('libraryHealth.syncNow')}
+        </Button>
+      </header>
 
       <LibraryFirstSyncBanner />
 
@@ -167,37 +182,33 @@ export function LibraryHealthPage() {
         {t('libraryHealth.introTip')}
       </Hint>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-        <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted">
-            {t('libraryHealth.snapshotTitle')}
-          </div>
-          <div className="text-sm text-text">
-            {lastCompletedAt
-              ? `${t('libraryHealth.lastSynced')} ${formatRelativeTime(locale, lastCompletedAt)}`
-              : t('libraryHealth.neverSynced')}
-          </div>
-          <div className="text-xs text-muted">
-            {t('libraryHealth.autoSyncEvery').replace('{0}', String(syncIntervalHours))}
-          </div>
+      <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
+        <div className="text-xs uppercase tracking-wide text-muted">
+          {t('libraryHealth.snapshotTitle')}
         </div>
-        <button
-          type="button"
-          onClick={() => rescanMutation.mutate()}
-          disabled={scanning || rescanMutation.isPending}
-          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-accent text-accent-fg rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-        >
-          <RefreshCw size={14} className={scanning ? 'animate-spin' : undefined} />
-          {scanning ? t('app.scanning') : t('libraryHealth.syncNow')}
-        </button>
+        <div className="text-sm text-text">
+          {lastCompletedAt
+            ? `${t('libraryHealth.lastSynced')} ${formatRelativeTime(locale, lastCompletedAt)}`
+            : t('libraryHealth.neverSynced')}
+        </div>
+        <div className="text-xs text-muted">
+          {t('libraryHealth.autoSyncEvery').replace('{0}', String(syncIntervalHours))}
+        </div>
       </div>
 
       {/* Scanning indicator */}
       {scanning && (
-        <div className="bg-accent/10 border border-accent/30 rounded-lg px-4 py-3 text-sm text-accent flex items-center gap-2">
+        <div className="bg-accent/5 border border-accent/30 rounded-lg px-4 py-3 text-sm text-accent-text flex items-center gap-2">
           <RefreshCw size={14} className="animate-spin shrink-0" />
           {t('libraryHealth.scanningBanner')}
         </div>
+      )}
+
+      {lastError && !scanning && (
+        <Notice tone="warning">
+          <p>{t('libraryHealth.lastSyncProblem')}</p>
+          <p className="mt-1 text-caption text-muted break-words">{lastError}</p>
+        </Notice>
       )}
 
       {/* Pending rescan indicator */}
@@ -212,6 +223,8 @@ export function LibraryHealthPage() {
       <div className="space-y-3">
         {healthQuery.isLoading ? (
           <ChecksSkeleton />
+        ) : healthQuery.isError ? (
+          <Notice tone="error">{t('libraryHealth.loadFailed')}</Notice>
         ) : checks.length === 0 && !scanning ? (
           <div className="bg-surface border border-border rounded-lg px-4 py-8 text-center text-muted text-sm">
             {t('libraryHealth.noChecks')}
@@ -231,17 +244,16 @@ export function LibraryHealthPage() {
         ) : null}
       </div>
 
-      {/* Library sources */}
-      <LibrarySourcesPanel />
+      <Disclosure title={t('librarySources.title')}>
+        <LibrarySourcesPanel />
+      </Disclosure>
 
       {/* Divider */}
       <hr className="border-border" />
 
       {/* Library stats */}
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
-          {t('libraryHealth.statisticsTitle')}
-        </h2>
+        <h2 className="text-lead font-semibold text-text">{t('libraryHealth.statisticsTitle')}</h2>
         {statsQuery.isLoading ? (
           <StatsSkeleton />
         ) : stats ? (

@@ -27,18 +27,6 @@ export function sessionAuthRequired(c: Context<HonoEnv>) {
   )
 }
 
-export function insufficientScope(c: Context<HonoEnv>, required: string) {
-  return problem(
-    c,
-    'insufficient-scope',
-    'Insufficient scope',
-    403,
-    `This API key does not carry the '${required}' scope.`,
-    undefined,
-    'errors.auth.insufficientScope',
-  )
-}
-
 export function adminRequired(c: Context<HonoEnv>) {
   return problem(
     c,

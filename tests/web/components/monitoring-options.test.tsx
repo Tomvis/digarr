@@ -1,40 +1,16 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'it'),
-  getRequestLocale: vi.fn(() => 'it'),
-  getStoredLocale: vi.fn(() => 'it'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock('it'),
+)
 
 import { MonitoringOptions } from '@/web/components/monitoring-options'
 
 describe('MonitoringOptions', () => {
-  it('renders translated button and dropdown labels', () => {
-    render(
-      <I18nProvider>
-        <MonitoringOptions onApprove={vi.fn()} onOpenAlbumPicker={vi.fn()} />
-      </I18nProvider>,
-    )
-
-    expect(screen.getByRole('button', { name: 'Approva' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Opzioni di monitoraggio' }))
-
-    expect(screen.getByText('Tutti gli album')).toBeInTheDocument()
-    expect(screen.getByText('Monitora e cerca tutti gli album')).toBeInTheDocument()
-    expect(screen.getByText('Solo uscite future')).toBeInTheDocument()
-    expect(screen.getByText('Monitora solo le nuove uscite da ora in poi')).toBeInTheDocument()
-    expect(screen.getByText('Album selezionati')).toBeInTheDocument()
-    expect(screen.getByText('Scegli quali album monitorare')).toBeInTheDocument()
-    expect(screen.getByText('Nessuno')).toBeInTheDocument()
-    expect(screen.getByText('Aggiungi senza monitoraggio (solo tracciamento)')).toBeInTheDocument()
-  })
-
   it('keeps all options enabled when popularAvailable defaults to true', () => {
     render(
       <I18nProvider>
@@ -84,10 +60,10 @@ describe('MonitoringOptions', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     const menu = screen.getByRole('menu')
     expect(menu).toBeInTheDocument()
-    expect(screen.getAllByRole('menuitem')).toHaveLength(5)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(9)
   })
 
-  it('focuses the first menuitem when opened', () => {
+  it('focuses the first menuitem when opened', async () => {
     render(
       <I18nProvider>
         <MonitoringOptions onApprove={vi.fn()} onOpenAlbumPicker={vi.fn()} />
@@ -95,10 +71,10 @@ describe('MonitoringOptions', () => {
     )
     openMenu()
     const items = screen.getAllByRole('menuitem')
-    expect(document.activeElement).toBe(items[0])
+    await waitFor(() => expect(document.activeElement).toBe(items[0]))
   })
 
-  it('moves focus with ArrowDown/ArrowUp and wraps around', () => {
+  it('moves focus with ArrowDown/ArrowUp and wraps around', async () => {
     render(
       <I18nProvider>
         <MonitoringOptions onApprove={vi.fn()} onOpenAlbumPicker={vi.fn()} />
@@ -107,19 +83,20 @@ describe('MonitoringOptions', () => {
     openMenu()
     const menu = screen.getByRole('menu')
     const items = screen.getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
 
     fireEvent.keyDown(menu, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(items[1])
+    await waitFor(() => expect(document.activeElement).toBe(items[1]))
 
     fireEvent.keyDown(menu, { key: 'ArrowUp' })
-    expect(document.activeElement).toBe(items[0])
+    await waitFor(() => expect(document.activeElement).toBe(items[0]))
 
     // ArrowUp from the first item wraps to the last.
     fireEvent.keyDown(menu, { key: 'ArrowUp' })
-    expect(document.activeElement).toBe(items[items.length - 1])
+    await waitFor(() => expect(document.activeElement).toBe(items[items.length - 1]))
   })
 
-  it('skips disabled items during arrow navigation', () => {
+  it('skips disabled items during arrow navigation', async () => {
     render(
       <I18nProvider>
         <MonitoringOptions
@@ -133,6 +110,7 @@ describe('MonitoringOptions', () => {
     const menu = screen.getByRole('menu')
     const items = screen.getAllByRole('menuitem')
     const popularIndex = items.findIndex((b) => (b as HTMLButtonElement).disabled)
+    await waitFor(() => expect(items[0]).toHaveFocus())
 
     // Walk down to the item just before the disabled one, then once more: focus
     // must land past it, never on the disabled item.
@@ -141,7 +119,7 @@ describe('MonitoringOptions', () => {
     expect(document.activeElement).not.toBe(items[popularIndex])
   })
 
-  it('closes on Escape and returns focus to the toggle', () => {
+  it('closes on Escape and returns focus to the toggle', async () => {
     render(
       <I18nProvider>
         <MonitoringOptions onApprove={vi.fn()} onOpenAlbumPicker={vi.fn()} />
@@ -151,6 +129,6 @@ describe('MonitoringOptions', () => {
     const menu = screen.getByRole('menu')
     fireEvent.keyDown(menu, { key: 'Escape' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(document.activeElement).toBe(toggle)
+    await waitFor(() => expect(document.activeElement).toBe(toggle))
   })
 })

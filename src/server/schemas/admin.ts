@@ -14,12 +14,18 @@ export const backupDataSchema = z.strictObject({
   settings: tableArray,
   users: tableArray,
   oauthTokens: tableArray,
+  // Accept and discard credentials from older exports, regardless of their shape.
+  apiTokens: z
+    .unknown()
+    .transform(() => undefined)
+    .optional(),
   oidcTokens: tableArray.optional(),
   targets: tableArray,
   subscriptions: tableArray,
   jobRuns: tableArray,
   recommendationBatches: tableArray,
   recommendations: tableArray,
+  approvalRequests: tableArray.optional(),
   playlists: tableArray,
   playlistTracks: tableArray,
   playlistExports: tableArray.optional(),

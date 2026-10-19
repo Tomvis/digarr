@@ -2,8 +2,14 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  compareAdminAuth,
+  compareOpenapi,
   compareRouteDocs,
+  extractAdminPrefixes,
+  extractAdminRoutes,
+  extractDocumentedAuth,
   extractDocumentedPaths,
+  extractOpenapiRoutes,
   extractRouteDeclarations,
   normalizePath,
 } from '../../scripts/check-api-docs'
@@ -61,5 +67,66 @@ describe('API docs drift checker', () => {
 
     expect(issues.undocumented).toEqual([{ method: 'POST', path: '/api/v1/users' }])
     expect(issues.stale).toEqual([{ method: 'DELETE', path: '/api/v1/users/:id' }])
+  })
+
+  it('detects admin guards in route arguments, handlers, and prefix middleware', () => {
+    const source = `
+      app.use('/api/v1/admin/*', adminGuard(getUser))
+      router.get('/api/v1/stats', adminGuard(getUser), async (c) => c.json({}))
+      router.post('/api/v1/gate', async (c) => {
+        const auth = await adminGate(c)
+        return c.json({})
+      })
+      router.get('/api/v1/open', async (c) => c.json({}))
+      router.get('/api/v1/admin/tools', async (c) => c.json({}))
+    `
+
+    const admin = extractAdminRoutes(source, extractAdminPrefixes(source))
+    expect([...admin].sort()).toEqual([
+      'GET /api/v1/admin/tools',
+      'GET /api/v1/stats',
+      'POST /api/v1/gate',
+    ])
+  })
+
+  it('fails a wrong Auth cell in either direction', () => {
+    const markdown = `
+      | GET | \`/api/v1/stats\` | Yes | Guarded in code, documented as Yes |
+      | GET | \`/api/v1/open\` | Admin | Open in code, documented as Admin |
+      | POST | \`/api/v1/gate\` | Admin, or owner | Fine |
+    `
+
+    const result = compareAdminAuth(
+      new Set(['GET /api/v1/stats', 'POST /api/v1/gate']),
+      extractDocumentedAuth(markdown),
+    )
+
+    expect(result.missingAdmin).toEqual(['GET /api/v1/stats (documented: Yes)'])
+    expect(result.unguardedAdmin).toEqual(['GET /api/v1/open'])
+  })
+
+  it('fails missing, stale, and mismarked OpenAPI operations', () => {
+    const operations = extractOpenapiRoutes({
+      '/api/v1/users/{id}': { get: { description: 'Admin only.' } },
+      '/api/v1/stats': { get: {} },
+      '/api/v1/gone': { delete: {} },
+    })
+
+    const result = compareOpenapi(
+      [
+        { method: 'GET', path: '/api/v1/users/:id' },
+        { method: 'GET', path: '/api/v1/stats' },
+        { method: 'POST', path: '/api/v1/new' },
+      ],
+      new Set(['GET /api/v1/stats']),
+      operations,
+    )
+
+    expect(result).toEqual({
+      missing: ['POST /api/v1/new'],
+      stale: ['DELETE /api/v1/gone'],
+      missingAdmin: ['GET /api/v1/stats'],
+      unguardedAdmin: ['GET /api/v1/users/:id'],
+    })
   })
 })

@@ -1,6 +1,9 @@
 import { createJellyfinClient } from '@/core/clients/jellyfin'
+import { createLidarrClient } from '@/core/clients/lidarr'
 import { createSlskdClient } from '@/core/clients/slskd'
 import { createSongpickClient } from '@/core/clients/songpick'
+import type { MessageKey } from '@/core/i18n/messages/types'
+import { createTranslator } from '@/core/i18n/translator'
 import type { ServiceTestResult } from '@/core/types'
 import { errMsg, redactSecrets } from '@/core/validation'
 import { createEmbyPlaylistTarget } from './emby-playlist'
@@ -18,6 +21,7 @@ function skipTlsVerify(config: TargetConnectionConfig): boolean {
 export async function testTargetConnection(
   type: string,
   config: TargetConnectionConfig,
+  linkedLidarrConfig?: TargetConnectionConfig,
 ): Promise<ServiceTestResult> {
   try {
     if (type === 'lidarr') {
@@ -79,11 +83,25 @@ export async function testTargetConnection(
     }
 
     if (type === 'slskd') {
-      return createSlskdClient(
+      const result = await createSlskdClient(
         config.url as string,
         config.apiKey as string,
         skipTlsVerify(config),
       ).testConnection()
+      if (!result.success || config.lidarrTargetId == null || !config.lidarrDownloadPath)
+        return result
+      const path = String(config.lidarrDownloadPath)
+      if (/(^|[\\/])(?:incomplete|incompleted|in-progress|in_progress)([\\/]|$)/i.test(path)) {
+        return pathResult(false, 'settings.slskdPathIncomplete')
+      }
+      try {
+        const lidarr = linkedLidarrClient(linkedLidarrConfig)
+        if (!lidarr || !(await lidarr.canListPath(path)))
+          return pathResult(false, 'settings.slskdPathUnavailable')
+        return pathResult(true, 'settings.slskdPathOk')
+      } catch {
+        return pathResult(false, 'settings.slskdPathUnavailable')
+      }
     }
 
     if (type === 'songpick') {
@@ -94,4 +112,13 @@ export async function testTargetConnection(
   } catch (error) {
     return { success: false, message: redactSecrets(errMsg(error)) }
   }
+}
+
+function linkedLidarrClient(config?: TargetConnectionConfig) {
+  if (typeof config?.url !== 'string' || typeof config.apiKey !== 'string') return null
+  return createLidarrClient(config.url, config.apiKey, skipTlsVerify(config))
+}
+
+function pathResult(success: boolean, messageKey: MessageKey): ServiceTestResult {
+  return { success, message: createTranslator('en')(messageKey), details: { messageKey } }
 }

@@ -60,6 +60,9 @@ export function ImportArtists({
         ? t('importArtists.importingCsvTruncated').replace('{0}', String(res.artistCount))
         : t('importArtists.importingCsv').replace('{0}', String(res.artistCount))
       toast.success(msg)
+      if (res.unreadable > 0) {
+        toast.warning(t('importArtists.unreadable').replace('{0}', String(res.unreadable)))
+      }
       onImportStarted?.()
     } catch {
       toast.error(t('importArtists.failedCsv'))
@@ -104,7 +107,7 @@ export function ImportArtists({
             ) : (
               <p className="text-xs text-muted italic">
                 {t('importArtists.connectSpotifyFirst').split('{0}')[0]}
-                <Link to="/settings" className="text-accent underline">
+                <Link to="/settings" className="text-accent-text underline">
                   {t('nav.settings')}
                 </Link>
                 {t('importArtists.connectSpotifyFirst').split('{0}')[1]}
@@ -143,7 +146,7 @@ export function ImportArtists({
             ) : (
               <p className="text-xs text-muted italic">
                 {t('importArtists.connectSpotifyFirst').split('{0}')[0]}
-                <Link to="/settings" className="text-accent underline">
+                <Link to="/settings" className="text-accent-text underline">
                   {t('nav.settings')}
                 </Link>
                 {t('importArtists.connectSpotifyFirst').split('{0}')[1]}
@@ -161,7 +164,7 @@ export function ImportArtists({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".csv,.txt,.m3u,.m3u8,.xspf"
               onChange={handleCsvUpload}
               className="hidden"
             />

@@ -1,6 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { MessageKey } from '@/core/i18n/messages/types'
-import type { JobRun } from '../lib/api'
+import { getJob, type JobSummary } from '../lib/api'
 import { formatDuration, formatRelativeTime } from '../lib/format-time'
 import { useI18n } from '../lib/i18n'
 
@@ -24,6 +25,39 @@ const SOURCE_REASON_KEYS: Record<string, MessageKey> = {
   no_seeds: 'jobHistory.sourceNoSeeds',
   explicit_run: 'jobHistory.sourceExplicitRun',
   not_configured: 'jobHistory.sourceNotConfigured',
+  audiomuse_invalid_url: 'audiomuse.invalid_url',
+  audiomuse_token_unreadable: 'audiomuse.token_unreadable',
+  audiomuse_unreachable: 'audiomuse.unreachable',
+  audiomuse_not_indexed: 'audiomuse.not_indexed',
+  audiomuse_artist_unknown: 'audiomuse.artist_unknown',
+  audiomuse_authentication_required: 'audiomuse.authentication_required',
+  audiomuse_invalid_response: 'audiomuse.invalid_response',
+  audiomuse_request_failed: 'audiomuse.request_failed',
+}
+
+const RECENTLY_PLAYED_STATUS_KEYS: Record<string, MessageKey> = {
+  ok: 'jobHistory.recentlyPlayedOk',
+  missing: 'jobHistory.recentlyPlayedMissing',
+  capped: 'jobHistory.recentlyPlayedCapped',
+  partial: 'jobHistory.recentlyPlayedPartial',
+}
+
+const STATUS_BADGES: Record<string, { key: MessageKey; className: string }> = {
+  completed: { key: 'jobHistory.statusCompleted', className: 'bg-approve/15 text-approve' },
+  failed: { key: 'jobHistory.statusFailed', className: 'bg-reject/5 text-reject' },
+  stuck: { key: 'jobHistory.stuckLabel', className: 'bg-warning/20 text-warning' },
+  cancelled: { key: 'jobHistory.cancelledLabel', className: 'bg-muted/20 text-muted' },
+  running: { key: 'jobHistory.statusRunning', className: 'bg-info/15 text-info' },
+}
+
+// Brand names; library sync rows otherwise all read "Library Sync".
+const LIBRARY_SOURCE_NAMES: Record<string, string> = {
+  plex: 'Plex',
+  jellyfin: 'Jellyfin',
+  emby: 'Emby',
+  lidarr: 'Lidarr',
+  subsonic: 'Subsonic',
+  navidrome: 'Navidrome',
 }
 
 function sourceLabel(
@@ -35,7 +69,7 @@ function sourceLabel(
   return key ? t(key) : value
 }
 
-function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
+function jobDescription(job: JobSummary, t: (key: MessageKey) => string): string {
   const meta = job.metadata ?? {}
   switch (job.type) {
     case 'pipeline':
@@ -43,17 +77,28 @@ function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
         ? t('jobHistory.scheduledScan')
         : t('jobHistory.manualScan')
     case 'quick_discover':
-      return meta.seedArtist ? `Seed: ${meta.seedArtist}` : t('jobHistory.quickDiscoverType')
+      return meta.seedArtist
+        ? t('jobHistory.seedArtist').replace('{artist}', String(meta.seedArtist))
+        : t('jobHistory.quickDiscoverType')
     case 'subscription':
       return String(meta.adapterType ?? t('jobHistory.subscriptionRun'))
     case 'target':
-      return meta.artistName
-        ? `${meta.action ?? 'add'} "${meta.artistName}"`
-        : t('jobHistory.targetOperation')
+      if (meta.writeBackService === 'listenbrainz' || meta.writeBackService === 'lastfm') {
+        return t('jobHistory.writeBack').replace(
+          '{service}',
+          meta.writeBackService === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm',
+        )
+      }
+      if (!meta.artistName) return t('jobHistory.targetOperation')
+      return t(
+        meta.action === 'addAlbum' ? 'jobHistory.targetAddAlbum' : 'jobHistory.targetAddArtist',
+      ).replace('{artist}', String(meta.artistName))
     case 'playlist':
       return String(meta.playlistName ?? t('jobHistory.playlistGeneration'))
-    case 'library_sync':
-      return t('jobHistory.librarySync')
+    case 'library_sync': {
+      const source = typeof meta.source === 'string' ? meta.source : ''
+      return LIBRARY_SOURCE_NAMES[source] ?? (source || t('jobHistory.librarySync'))
+    }
     case 'music_rater_sync':
       return t('jobHistory.musicRaterSync')
     default:
@@ -61,7 +106,7 @@ function jobDescription(job: JobRun, t: (key: MessageKey) => string): string {
   }
 }
 
-function jobStats(job: JobRun, t: (key: MessageKey) => string): string {
+function jobStats(job: JobSummary, t: (key: MessageKey) => string): string {
   const meta = job.metadata ?? {}
   const parts: string[] = []
   if (meta.artistsDiscovered != null)
@@ -73,30 +118,41 @@ function jobStats(job: JobRun, t: (key: MessageKey) => string): string {
   return parts.join(' / ')
 }
 
-export function JobRunRow({ job }: { job: JobRun }) {
+function recentlyPlayedLine(job: JobSummary, t: (key: MessageKey) => string): string | null {
+  const recent = job.metadata?.recentlyPlayed as
+    | { status?: string; windowDays?: number; listensRead?: number; excluded?: number }
+    | undefined
+  const statusKey = recent?.status ? RECENTLY_PLAYED_STATUS_KEYS[recent.status] : undefined
+  if (!recent || !statusKey) return null
+  return t('jobHistory.recentlyPlayed')
+    .replace('{days}', String(recent.windowDays ?? 0))
+    .replace('{listens}', String(recent.listensRead ?? 0))
+    .replace('{excluded}', String(recent.excluded ?? 0))
+    .replace('{status}', t(statusKey))
+}
+
+export function JobRunRow({ job }: { job: JobSummary }) {
   const { locale, t } = useI18n()
   const [expanded, setExpanded] = useState(false)
+  const detail = useQuery({
+    queryKey: ['job', job.id],
+    queryFn: () => getJob(job.id),
+    enabled: expanded,
+    staleTime: job.status === 'running' ? 0 : 60_000,
+  })
   const typeLabelKey = TYPE_LABEL_KEYS[job.type]
-  const metadata = job.metadata ?? {}
+  const metadata = detail.data?.metadata ?? {}
 
-  const statusColor =
-    job.status === 'completed'
-      ? 'text-green-500'
-      : job.status === 'failed'
-        ? 'text-red-500'
-        : job.status === 'stuck'
-          ? 'text-amber-500'
-          : job.status === 'cancelled'
-            ? 'text-muted'
-            : 'text-blue-500'
+  const statusBadge = STATUS_BADGES[job.status]
 
   const statsText = jobStats(job, t)
+  const recentText = recentlyPlayedLine(job, t)
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: nested interactive elements require div wrapper
     <div
-      className={`cursor-pointer border-b border-border px-4 py-3 hover:bg-surface-alt ${
-        job.status === 'stuck' ? 'bg-amber-500/5' : ''
+      className={`cursor-pointer border-b border-border px-4 py-3 hover:bg-surface-2 ${
+        job.status === 'stuck' ? 'bg-warning/5' : ''
       }`}
       onClick={() => setExpanded(!expanded)}
       role="button"
@@ -105,31 +161,15 @@ export function JobRunRow({ job }: { job: JobRun }) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`font-mono text-xs ${statusColor}`}>
-            {job.status === 'completed'
-              ? '*'
-              : job.status === 'failed'
-                ? '!'
-                : job.status === 'stuck'
-                  ? '?'
-                  : job.status === 'cancelled'
-                    ? 'x'
-                    : '~'}
+          <span
+            className={`rounded px-1.5 py-0.5 text-xs ${statusBadge?.className ?? 'bg-info/15 text-info'}`}
+          >
+            {statusBadge ? t(statusBadge.key) : job.status}
           </span>
           <span className="text-sm font-medium text-text">
             {typeLabelKey ? t(typeLabelKey) : job.type}
           </span>
           <span className="text-sm text-muted">{jobDescription(job, t)}</span>
-          {job.status === 'stuck' && (
-            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-600">
-              {t('jobHistory.stuckLabel')}
-            </span>
-          )}
-          {job.status === 'cancelled' && (
-            <span className="rounded bg-muted/20 px-1.5 py-0.5 text-xs text-muted">
-              {t('jobHistory.cancelledLabel')}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
           <span>{formatDuration(job.durationMs)}</span>
@@ -138,6 +178,7 @@ export function JobRunRow({ job }: { job: JobRun }) {
       </div>
 
       {statsText && <div className="mt-1 text-xs text-muted">{statsText}</div>}
+      {recentText && <div className="mt-1 text-xs text-muted">{recentText}</div>}
 
       {job.sourceResults && !expanded && (
         <div className="mt-1 flex gap-2 text-xs">
@@ -146,9 +187,9 @@ export function JobRunRow({ job }: { job: JobRun }) {
               key={source}
               className={
                 result.status === 'ok'
-                  ? 'text-green-500'
+                  ? 'text-approve'
                   : result.status === 'error'
-                    ? 'text-red-500'
+                    ? 'text-reject'
                     : 'text-muted'
               }
             >
@@ -160,24 +201,26 @@ export function JobRunRow({ job }: { job: JobRun }) {
 
       {expanded && (
         <div className="mt-3 space-y-2 border-t border-border pt-3 text-xs">
-          {job.error && (
-            <div className="rounded bg-red-500/10 p-2 text-red-500">
-              <strong>{t('jobHistory.errorLabel')}</strong> {job.error}
+          {detail.isLoading && <div>{t('common.loading')}</div>}
+          {detail.isError && <div role="alert">{t('common.unknownError')}</div>}
+          {detail.data?.error && (
+            <div className="rounded bg-reject/5 p-2 text-reject">
+              <strong>{t('jobHistory.errorLabel')}</strong> {detail.data?.error}
             </div>
           )}
-          {job.sourceResults && (
+          {detail.data?.sourceResults && (
             <div>
               <strong className="text-muted">{t('jobHistory.sourceResultsLabel')}</strong>
               <div className="mt-1 space-y-1">
-                {Object.entries(job.sourceResults).map(([source, result]) => (
+                {Object.entries(detail.data?.sourceResults).map(([source, result]) => (
                   <div key={source} className="flex justify-between">
                     <span>{source}</span>
                     <span
                       className={
                         result.status === 'ok'
-                          ? 'text-green-500'
+                          ? 'text-approve'
                           : result.status === 'error'
-                            ? 'text-red-500'
+                            ? 'text-reject'
                             : 'text-muted'
                       }
                     >
@@ -186,6 +229,16 @@ export function JobRunRow({ job }: { job: JobRun }) {
                       {result.ms != null && ` ${result.ms}ms`}
                       {result.error && ` - ${result.error}`}
                       {result.reason && ` - ${sourceLabel(result.reason, SOURCE_REASON_KEYS, t)}`}
+                      {result.seedsQueried != null &&
+                        ` - ${t('audiomuse.seedSummary')
+                          .replace('{queried}', String(result.seedsQueried))
+                          .replace('{results}', String(result.seedsWithResults ?? 0))}`}
+                      {Object.entries(result.skipReasons ?? {})
+                        .map(
+                          ([reason, count]) =>
+                            ` - ${sourceLabel([source, reason].join('_'), SOURCE_REASON_KEYS, t)} (${count})`,
+                        )
+                        .join('')}
                     </span>
                   </div>
                 ))}
@@ -195,7 +248,7 @@ export function JobRunRow({ job }: { job: JobRun }) {
           {Object.keys(metadata).length > 0 && (
             <div>
               <strong className="text-muted">{t('jobHistory.metadataLabel')}</strong>
-              <pre className="mt-1 overflow-auto rounded bg-surface-alt p-2 text-xs">
+              <pre className="mt-1 overflow-auto rounded bg-surface-2 p-2 text-xs">
                 {JSON.stringify(metadata, null, 2)}
               </pre>
             </div>

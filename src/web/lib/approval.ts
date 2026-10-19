@@ -43,6 +43,10 @@ export function reportApprovalOutcome(
   t: Translate,
   kind?: RecommendationKind,
 ): boolean {
+  if (res.status === 'requested') {
+    toast.success(t('approvalRequests.created'))
+    return false
+  }
   const isTrack = kind === 'track'
   if (isTrack && res.status === 'duplicate') {
     toast.info(t('discover.trackAlreadyOwned'))
@@ -63,6 +67,10 @@ export function reportApprovalOutcome(
     } else {
       toast.error(t('discover.approveAllFailed').replace('{0}', names))
     }
+    return false
+  }
+  if (res.status === 'waiting') {
+    toast.info(t('recommendation.waitingForLidarr'))
     return false
   }
   // No target summary (discovery-only / no actionable targets) but the server

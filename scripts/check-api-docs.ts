@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openapiDoc } from '@/server/helpers/openapi-doc'
 
 type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'
 
@@ -27,6 +28,16 @@ const ROUTE_DECLARATION_RE = new RegExp(
 )
 
 const MARKDOWN_TABLE_ROUTE_RE = /^\s*\|\s*(GET|POST|PATCH|DELETE|PUT)\s*\|\s*`([^`]+)`\s*\|/gim
+const MARKDOWN_TABLE_AUTH_RE =
+  /^\s*\|\s*(GET|POST|PATCH|DELETE|PUT)\s*\|\s*`([^`]+)`\s*\|\s*([^|]*?)\s*\|/gim
+
+// Admin enforcement forms: an adminGuard middleware in the route's arguments, an
+// adminGate()/requireAdmin() call or a negated inline resolveAdmin() in its handler,
+// or a use() prefix guard (which may live in a different file than the route).
+const ROUTE_ADMIN_RE =
+  /\badminGuard\(|\bawait\s+(?:adminGate|requireAdmin)\(|!\s*\(\s*await\s+resolveAdmin\(/
+const USE_DECLARATION_RE = /\b(?:app|router)\.use\s*\(/g
+const PREFIX_ADMIN_RE = /\b(?:app|router)\.use\s*\(\s*(['"`])([^'"`]+)\1\s*,\s*adminGuard\(/g
 
 const IGNORED_ROUTES = new Set<string>([
   // Test-only route, registered only when NODE_ENV==='test' and tree-shaken out
@@ -83,6 +94,66 @@ export function extractDocumentedPaths(markdown: string): RouteDeclaration[] {
   return uniqueRoutes(routes)
 }
 
+export function extractAdminPrefixes(source: string): string[] {
+  return [...source.matchAll(PREFIX_ADMIN_RE)].map((match) => normalizePath(match[2] ?? ''))
+}
+
+export function extractAdminRoutes(source: string, prefixes: string[] = []): Set<string> {
+  const matches = [...source.matchAll(ROUTE_DECLARATION_RE)]
+  const useOffsets = [...source.matchAll(USE_DECLARATION_RE)].map((match) => match.index ?? 0)
+  const admin = new Set<string>()
+  matches.forEach((match, index) => {
+    const method = match[1]?.toUpperCase() as HttpMethod | undefined
+    const rawPath = match[3]
+    if (!method || !rawPath?.startsWith('/')) return
+    const path = normalizePath(rawPath)
+    const start = match.index ?? 0
+    const end = Math.min(
+      matches[index + 1]?.index ?? source.length,
+      useOffsets.find((offset) => offset > start) ?? source.length,
+    )
+    const prefixed = prefixes.some((prefix) =>
+      prefix.endsWith('/*') ? path.startsWith(prefix.slice(0, -1)) : path === prefix,
+    )
+    if (prefixed || ROUTE_ADMIN_RE.test(source.slice(start, end))) {
+      admin.add(routeKey({ method, path }))
+    }
+  })
+  return admin
+}
+
+export function extractDocumentedAuth(markdown: string): Map<string, string> {
+  const auth = new Map<string, string>()
+  for (const match of markdown.matchAll(MARKDOWN_TABLE_AUTH_RE)) {
+    const method = match[1] as HttpMethod | undefined
+    const rawPath = match[2]
+    if (!method || !rawPath) continue
+    auth.set(routeKey({ method, path: normalizePath(rawPath) }), (match[3] ?? '').trim())
+  }
+  return auth
+}
+
+/**
+ * Compare the Auth column with detectable admin guards. A route guarded in code
+ * must be documented as Admin (or "Admin, ..." / "Admin or ..."); a route
+ * documented as plain "Admin" must have a detectable guard.
+ */
+export function compareAdminAuth(
+  adminRoutes: Set<string>,
+  documentedAuth: Map<string, string>,
+  ignoredRoutes: Set<string> = IGNORED_ROUTES,
+): { missingAdmin: string[]; unguardedAdmin: string[] } {
+  const missingAdmin: string[] = []
+  const unguardedAdmin: string[] = []
+  for (const [key, cell] of documentedAuth) {
+    if (ignoredRoutes.has(key)) continue
+    const documentedAdmin = /^Admin\b/i.test(cell)
+    if (adminRoutes.has(key) && !documentedAdmin) missingAdmin.push(`${key} (documented: ${cell})`)
+    if (!adminRoutes.has(key) && cell.toLowerCase() === 'admin') unguardedAdmin.push(key)
+  }
+  return { missingAdmin, unguardedAdmin }
+}
+
 export function compareRouteDocs(
   actualRoutes: RouteDeclaration[],
   documentedRoutes: RouteDeclaration[],
@@ -101,6 +172,74 @@ export function compareRouteDocs(
   }
 }
 
+type OpenapiPaths = Record<string, Record<string, { description?: string }>>
+
+export function extractOpenapiRoutes(paths: OpenapiPaths): Map<string, string> {
+  const operations = new Map<string, string>()
+  for (const [path, item] of Object.entries(paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      operations.set(
+        routeKey({ method: method.toUpperCase() as HttpMethod, path: normalizePath(path) }),
+        operation.description ?? '',
+      )
+    }
+  }
+  return operations
+}
+
+/**
+ * Every declared route must have an OpenAPI operation, admin-guarded routes must
+ * say "Admin" in their description, and "Admin only." must match a real guard.
+ */
+export function compareOpenapi(
+  actualRoutes: RouteDeclaration[],
+  adminRoutes: Set<string>,
+  operations: Map<string, string>,
+  ignoredRoutes: Set<string> = IGNORED_ROUTES,
+): { missing: string[]; stale: string[]; missingAdmin: string[]; unguardedAdmin: string[] } {
+  const actual = uniqueRoutes(actualRoutes)
+    .map(routeKey)
+    .filter((key) => !ignoredRoutes.has(key))
+  const actualKeys = new Set(actual)
+  const missing = actual.filter((key) => !operations.has(key))
+  const stale = [...operations.keys()].filter((key) => !actualKeys.has(key))
+  const missingAdmin: string[] = []
+  const unguardedAdmin: string[] = []
+  for (const [key, description] of operations) {
+    if (adminRoutes.has(key) && !/^Admin\b/.test(description)) missingAdmin.push(key)
+    if (!adminRoutes.has(key) && description.startsWith('Admin only.')) unguardedAdmin.push(key)
+  }
+  return { missing, stale, missingAdmin, unguardedAdmin }
+}
+
+function reportOpenapi(actualRoutes: RouteDeclaration[], adminRoutes: Set<string>): boolean {
+  const result = compareOpenapi(
+    actualRoutes,
+    adminRoutes,
+    extractOpenapiRoutes(openapiDoc.paths as unknown as OpenapiPaths),
+  )
+  const sections: Array<[string, string[]]> = [
+    ['Routes missing from the OpenAPI document:', result.missing],
+    ['OpenAPI operations not found in server declarations:', result.stale],
+    [
+      'Admin-guarded OpenAPI operations whose description does not start with Admin:',
+      result.missingAdmin,
+    ],
+    [
+      'OpenAPI operations marked "Admin only." with no detectable admin guard:',
+      result.unguardedAdmin,
+    ],
+  ]
+  let failed = false
+  for (const [title, entries] of sections) {
+    if (entries.length === 0) continue
+    failed = true
+    console.error(title)
+    console.error(entries.map((entry) => `  - ${entry}`).join('\n'))
+  }
+  return failed
+}
+
 function readServerRouteSources(): string[] {
   const routeFiles = readdirSync(ROUTE_DIR)
     .filter((name) => name.endsWith('.ts'))
@@ -115,12 +254,33 @@ function formatRoutes(routes: RouteDeclaration[]): string {
 }
 
 export function main(): void {
-  const actualRoutes = readServerRouteSources().flatMap(extractRouteDeclarations)
-  const documentedRoutes = extractDocumentedPaths(readFileSync(DOC_FILE, 'utf8'))
+  const sources = readServerRouteSources()
+  const doc = readFileSync(DOC_FILE, 'utf8')
+  const actualRoutes = sources.flatMap(extractRouteDeclarations)
+  const documentedRoutes = extractDocumentedPaths(doc)
   const { undocumented, stale } = compareRouteDocs(actualRoutes, documentedRoutes)
+  const prefixes = sources.flatMap(extractAdminPrefixes)
+  const adminRoutes = new Set(
+    sources.flatMap((source) => [...extractAdminRoutes(source, prefixes)]),
+  )
+  const { missingAdmin, unguardedAdmin } = compareAdminAuth(adminRoutes, extractDocumentedAuth(doc))
+
+  if (missingAdmin.length > 0) {
+    console.error('Admin-guarded routes whose Auth column does not say Admin:')
+    console.error(missingAdmin.map((entry) => `  - ${entry}`).join('\n'))
+  }
+  if (unguardedAdmin.length > 0) {
+    console.error('Routes documented as Admin with no detectable admin guard:')
+    console.error(unguardedAdmin.map((entry) => `  - ${entry}`).join('\n'))
+  }
+  const openapiFailed = reportOpenapi(actualRoutes, adminRoutes)
+  const authFailed = missingAdmin.length > 0 || unguardedAdmin.length > 0 || openapiFailed
 
   if (undocumented.length === 0 && stale.length === 0) {
-    console.log(`API docs cover ${uniqueRoutes(actualRoutes).length} route declarations.`)
+    if (authFailed) process.exit(1)
+    console.log(
+      `API docs and OpenAPI cover ${uniqueRoutes(actualRoutes).length} route declarations.`,
+    )
     return
   }
 

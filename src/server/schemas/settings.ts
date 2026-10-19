@@ -1,5 +1,7 @@
 import * as z from 'zod'
+import { dashboardLayoutSchema } from '@/core/dashboard-layout'
 import type { NotificationChannel } from '@/core/notifications/types'
+import { cronSchema } from './subscriptions'
 
 export const preferredGenreListSchema = z
   .array(z.string().trim().min(1).max(64))
@@ -24,9 +26,14 @@ const scoringWeightsSchema = z
   .strict()
 
 // Notification channels. Secret string fields (telegram botToken, ntfy token,
-// apprise urls) stay plain z.string() so the masked '***' placeholder round-trips
+// webhook signingSecret, apprise urls) stay plain z.string() so the masked '***' placeholder round-trips
 // on save; only real URLs that are never masked get .url() validation.
-const notificationEvent = z.enum(['batch_complete', 'digest'])
+const notificationEvent = z.enum([
+  'batch_complete',
+  'digest',
+  'approval_failed',
+  'request_resolved',
+])
 const channelBase = {
   id: z.string().min(1),
   enabled: z.boolean(),
@@ -34,7 +41,12 @@ const channelBase = {
   allowPrivateTarget: z.boolean().optional(),
 }
 export const notificationChannel = z.discriminatedUnion('type', [
-  z.object({ ...channelBase, type: z.literal('webhook'), url: z.string().url() }),
+  z.object({
+    ...channelBase,
+    type: z.literal('webhook'),
+    url: z.string().url(),
+    signingSecret: z.string().optional(),
+  }),
   z.object({
     ...channelBase,
     type: z.literal('ntfy'),
@@ -59,13 +71,17 @@ export const notificationChannel = z.discriminatedUnion('type', [
   }),
 ]) satisfies z.ZodType<NotificationChannel>
 
-const preferencesSchema = z
+// Empty string clears the schedule; anything else must parse, or the boot scheduler throws on it.
+const optionalCronSchema = z.union([z.literal(''), cronSchema]).optional()
+
+export const preferencesSchema = z
   .object({
+    dashboardLayout: dashboardLayoutSchema.optional(),
     qualityProfileId: z.number().int().optional(),
     metadataProfileId: z.number().int().optional(),
     rootFolderId: z.number().int().optional(),
-    scheduleCron: z.string().optional(),
-    digestCron: z.string().optional(),
+    scheduleCron: optionalCronSchema,
+    digestCron: optionalCronSchema,
     scoreThreshold: z.number().min(0).max(1).optional(),
     scoringWeights: scoringWeightsSchema.optional(),
     rejectionCooldownDays: z.number().int().min(0).optional(),
@@ -73,19 +89,34 @@ const preferencesSchema = z
     maxResolveCandidates: z.number().int().min(10).max(5000).optional(),
     librarySeedRatio: z.number().min(0).max(1).optional(),
     netNewAlbumDiscovery: z.boolean().optional(),
+    excludeRecentlyPlayed: z
+      .object({ enabled: z.boolean(), windowDays: z.number().int().min(1).max(365) })
+      .strict()
+      .optional(),
+    listenbrainzLoveEnabled: z.boolean().optional(),
+    spotifyAutoloadDashboard: z.boolean().optional(),
+    listenbrainzPlaylistEnabled: z.boolean().optional(),
+    lastfmLoveEnabled: z.boolean().optional(),
+    showExperimentalIntegrations: z.boolean().optional(),
     primaryGenres: preferredGenreListSchema.optional(),
     secondaryGenres: preferredGenreListSchema.optional(),
     webhookUrl: z.string().optional(),
     lidarrPublicUrl: z.string().optional(),
+    lidarrRequireFiles: z.boolean().optional(),
     autoApproveEnabled: z.boolean().optional(),
     autoApproveThreshold: z.number().min(0).max(1).optional(),
-    autoApproveMonitorOption: z.enum(['all', 'new', 'none']).optional(),
+    autoApproveMonitorOption: z
+      .enum(['all', 'new', 'missing', 'existing', 'latest', 'first', 'none'])
+      .optional(),
     playlistSize: z.number().int().min(1).optional(),
-    playlistSchedule: z.string().optional(),
+    playlistSchedule: optionalCronSchema,
     playlistEnabled: z.boolean().optional(),
     dismissedHints: z.array(z.string()).optional(),
     subscriptionMode: z.enum(['active', 'ai-only']).nullable().optional(),
     fanartApiKey: z.string().optional(),
+    audiomuseUrl: z.union([z.literal(''), z.string().url().max(2048)]).optional(),
+    audiomuseToken: z.string().max(4096).optional(),
+    audiomuseSkipTlsVerify: z.boolean().optional(),
     metadataFallbackUrl: z.string().optional(),
     channels: z
       .array(notificationChannel)

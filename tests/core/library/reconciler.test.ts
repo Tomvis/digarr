@@ -140,6 +140,89 @@ describe('reconcileArtist - Step 2 (cache short-circuit)', () => {
   })
 })
 
+describe('reconcileArtist - Step 2 (alias and sort-name candidates)', () => {
+  function ctxWith(artists: unknown[]) {
+    return makeCtx({
+      mbClient: {
+        searchArtist: vi.fn().mockResolvedValue({ artists }),
+        getReleaseGroups: vi.fn().mockResolvedValue([]),
+      },
+    })
+  }
+
+  it('accepts a candidate whose alias equals the library name', async () => {
+    const ctx = ctxWith([
+      {
+        id: VALID_MBID,
+        name: 'IU',
+        'sort-name': 'IU',
+        score: 100,
+        aliases: [
+          { name: 'Lee Ji-eun', 'sort-name': 'Lee, Ji-eun', locale: 'en', primary: null },
+          {
+            name: '아이유',
+            'sort-name': '아이유',
+            locale: 'ko',
+            type: 'Artist name',
+            primary: true,
+          },
+        ],
+      },
+    ])
+    const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: '아이유' }, 'plex', ctx)
+    expect(result.mbid).toBe(VALID_MBID)
+    expect(result.matchMethod).toBe('name_exact')
+    expect(ctx.counts.matchedNameExact).toBe(1)
+  })
+
+  it('accepts a candidate whose sort name equals the library name', async () => {
+    const ctx = ctxWith([
+      { id: VALID_MBID, name: 'Nick Cave', 'sort-name': 'Cave, Nick', score: 90 },
+    ])
+    const result = await reconcileArtist(
+      { sourceArtistId: 'rk-1', name: 'Cave, Nick' },
+      'plex',
+      ctx,
+    )
+    expect(result.mbid).toBe(VALID_MBID)
+  })
+
+  it('rejects a candidate with no matching name, alias or sort name', async () => {
+    const ctx = ctxWith([
+      {
+        id: VALID_MBID,
+        name: 'BTS',
+        'sort-name': 'BTS',
+        score: 80,
+        aliases: [{ name: 'Bangtan Boys' }, { 'sort-name': null }, null, { name: 42 }],
+      },
+    ])
+    const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: '블랙핑크' }, 'plex', ctx)
+    expect(result.mbid).toBeNull()
+    expect(result.unreconciledReason).toBe('no_candidate')
+  })
+
+  it('prefers a primary-name match over an alias match', async () => {
+    const ctx = ctxWith([
+      { id: OTHER_MBID, name: 'Someone Else', score: 100, aliases: [{ name: 'Bush' }] },
+      { id: VALID_MBID, name: 'Bush', score: 90 },
+    ])
+    const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: 'Bush' }, 'plex', ctx)
+    expect(result.mbid).toBe(VALID_MBID)
+    expect(result.matchMethod).toBe('name_exact')
+  })
+
+  it('returns ambiguous when several candidates match only by alias', async () => {
+    const ctx = ctxWith([
+      { id: VALID_MBID, name: 'Artist A', score: 100, aliases: [{ name: 'Shared' }] },
+      { id: OTHER_MBID, name: 'Artist B', score: 95, 'sort-name': 'Shared' },
+    ])
+    const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: 'Shared' }, 'plex', ctx)
+    expect(result.mbid).toBeNull()
+    expect(result.unreconciledReason).toBe('ambiguous')
+  })
+})
+
 describe('reconcileArtist - Step 3 (anchoring)', () => {
   it('anchors when MB returns multiple candidates and one matches knownMbids', async () => {
     const ctx = makeCtx({
@@ -399,4 +482,82 @@ describe('reconcileArtist - MusicBrainz degradation', () => {
     expect(ctx.counts.unreconciledNoCandidate).toBe(0)
     expect(ctx.counts.unreconciledAmbiguous).toBe(0)
   })
+})
+
+describe('reconcileArtist - continuity', () => {
+  it('treats one artist cached from several sources as a cache hit', async () => {
+    const ctx = makeCtx({
+      cacheLookup: vi.fn().mockResolvedValue([
+        { mbid: VALID_MBID, name: 'Bush', source: 'lidarr' },
+        { mbid: VALID_MBID, name: 'Bush', source: 'jellyfin' },
+      ]),
+    })
+    const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: 'Bush' }, 'plex', ctx)
+    expect(result).toMatchObject({ mbid: VALID_MBID, matchMethod: 'name_anchored' })
+    expect(ctx.counts.cacheHits).toBe(1)
+    expect(ctx.mbClient.searchArtist).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['the same name', 'bush', { mbid: VALID_MBID, matchMethod: 'name_exact' }],
+    ['a renamed artist', 'someone else', { mbid: null, unreconciledReason: 'lookup_failed' }],
+  ])(
+    'on MusicBrainz failure keeps the previous match only for %s',
+    async (_label, previousName, expected) => {
+      const ctx = makeCtx({
+        cacheLookup: vi.fn().mockResolvedValue([
+          { mbid: VALID_MBID, name: 'Bush', source: 'plex' },
+          { mbid: OTHER_MBID, name: 'Bush', source: 'lidarr' },
+        ]),
+        previousMatches: new Map([
+          [
+            'rk-1',
+            {
+              nameNormalized: previousName,
+              mbid: VALID_MBID,
+              matchMethod: 'name_exact' as const,
+              matchConfidence: 0.7,
+            },
+          ],
+        ]),
+        mbClient: {
+          searchArtist: vi.fn().mockRejectedValue(new Error('MusicBrainz HTTP 503')),
+          getReleaseGroups: vi.fn(),
+        },
+      })
+      const result = await reconcileArtist({ sourceArtistId: 'rk-1', name: 'Bush' }, 'plex', ctx)
+      expect(result).toMatchObject(expected)
+      expect(ctx.counts.mbApiCallsFailed).toBe(1)
+    },
+  )
+})
+
+describe('reconcileArtist - special-purpose album disambiguation', () => {
+  it.each(['89ad4ac3-39f7-470e-963a-56509c546377', '125ec42a-7229-4250-afc5-e057484327fe'])(
+    'does not fetch release groups for special-purpose candidate %s',
+    async (mbid) => {
+      const ctx = makeCtx({
+        mbClient: {
+          searchArtist: vi.fn().mockResolvedValue({
+            artists: [
+              { id: mbid, name: 'Shared Name' },
+              { id: VALID_MBID, name: 'Shared Name' },
+            ],
+          }),
+          getReleaseGroups: vi.fn().mockResolvedValue([
+            { id: 'album-1', title: 'One' },
+            { id: 'album-2', title: 'Two' },
+          ]),
+        },
+      })
+      const result = await reconcileArtist(
+        { sourceArtistId: 'src-1', name: 'Shared Name', knownAlbumTitles: ['One', 'Two'] },
+        'plex',
+        ctx,
+      )
+      expect(result.mbid).toBe(VALID_MBID)
+      expect(ctx.mbClient.getReleaseGroups).toHaveBeenCalledExactlyOnceWith(VALID_MBID)
+      expect(ctx.counts.mbApiCallsFailed).toBe(0)
+    },
+  )
 })

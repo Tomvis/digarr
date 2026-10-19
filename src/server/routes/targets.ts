@@ -1,14 +1,21 @@
 import { type Context, Hono } from 'hono'
+import {
+  clearDefaultsOnInstanceChange,
+  type LidarrServerSettings,
+  normalizeLidarrTargetConfig,
+  resolveLidarrTargetConnection,
+} from '@/core/targets/lidarr-connection'
 import type { ServiceTestResult } from '@/core/types'
 import type { TargetInsert, TargetRow, TargetUpdate } from '@/db/queries/targets'
 import { notAuthenticated } from '@/server/helpers/auth-problems'
 import { readPagination } from '@/server/helpers/pagination'
 import { type Cursor, encodeCursor } from '@/server/helpers/pagination-cursor'
-import { notFoundProblem } from '@/server/helpers/problem'
-import { adminGuard } from '@/server/middleware/admin-guard'
+import { notFoundProblem, problem } from '@/server/helpers/problem'
+import { adminGuard, effectiveIsAdmin } from '@/server/middleware/admin-guard'
 import {
   createTargetSchema,
   targetIdParamSchema,
+  targetSaveConfigSchema,
   updateTargetSchema,
 } from '@/server/schemas/targets'
 import { zJson, zParam } from '@/server/schemas/validator'
@@ -24,9 +31,11 @@ type TargetDeps = {
     deleteTarget: (id: number) => Promise<void>
   }
   getUserById: (id: number) => Promise<{ isAdmin: boolean } | null>
+  getSettings?: () => Promise<LidarrServerSettings | null | undefined>
   testTargetConnection: (
     type: string,
     config: Record<string, unknown>,
+    linkedLidarrConfig?: Record<string, unknown>,
   ) => Promise<ServiceTestResult>
 }
 
@@ -36,7 +45,8 @@ export function targetRoutes(deps: TargetDeps) {
   const loadTargetForCaller = async (c: Context<HonoEnv>, id: number, userId: number) => {
     const target = await deps.targetQueries.getTarget(id)
     const user = await deps.getUserById(userId)
-    if (!target || (!user?.isAdmin && target.userId !== userId)) {
+    const isAdmin = effectiveIsAdmin(c, user)
+    if (!target || (!isAdmin && target.userId !== userId)) {
       return {
         ok: false as const,
         response: notFoundProblem(
@@ -69,7 +79,7 @@ export function targetRoutes(deps: TargetDeps) {
     const userId = c.get('userId')
     if (!userId) return notAuthenticated(c)
     const user = await deps.getUserById(userId)
-    const isAdmin = !!user?.isAdmin
+    const isAdmin = effectiveIsAdmin(c, user)
     const page = readPagination(c)
     const shape = (t: TargetRow) => ({
       ...t,
@@ -122,7 +132,7 @@ export function targetRoutes(deps: TargetDeps) {
       const result = await deps.targetQueries.createTarget({
         type,
         name,
-        config,
+        config: type === 'lidarr' ? normalizeLidarrTargetConfig(config) : config,
         userId: targetUserId,
       })
       return c.json(result, 201)
@@ -148,6 +158,24 @@ export function targetRoutes(deps: TargetDeps) {
       }
       if (allowed.config) {
         allowed.config = mergeConfig(loaded.target.config, allowed.config)
+        if (loaded.target.type === 'lidarr') {
+          allowed.config = normalizeLidarrTargetConfig(
+            clearDefaultsOnInstanceChange(loaded.target.config, allowed.config),
+          )
+        }
+      }
+      const configValidation = targetSaveConfigSchema.safeParse({
+        type: loaded.target.type,
+        config: allowed.config ?? loaded.target.config ?? {},
+      })
+      if (!configValidation.success) {
+        const details = configValidation.error.issues
+        const detail = details.map((issue) => issue.message).join('; ')
+        return problem(c, 'validation-failed', 'Validation failed', 400, detail, {
+          code: 'validation_failed',
+          details,
+          error: detail,
+        })
       }
       if (
         !(await validLidarrLink(
@@ -189,7 +217,19 @@ export function targetRoutes(deps: TargetDeps) {
     if (!loaded.ok) return loaded.response
     const target = loaded.target
 
-    const result = await deps.testTargetConnection(target.type, target.config)
+    let linkedConfig: Record<string, unknown> | undefined
+    if (target.type === 'slskd' && target.config.lidarrTargetId != null) {
+      const linked = await deps.targetQueries.getTarget(Number(target.config.lidarrTargetId))
+      if (linked?.type === 'lidarr' && linked.enabled && linked.userId === target.userId) {
+        // A target linked to the server connection stores no url/apiKey of its own.
+        const settings = deps.getSettings ? await deps.getSettings() : null
+        const connection = resolveLidarrTargetConnection(linked.config, settings)
+        linkedConfig = connection ? { ...linked.config, ...connection } : linked.config
+      }
+    }
+    const result = linkedConfig
+      ? await deps.testTargetConnection(target.type, target.config, linkedConfig)
+      : await deps.testTargetConnection(target.type, target.config)
     return c.json(result)
   })
 

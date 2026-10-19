@@ -2,21 +2,32 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import type { MessageKey } from '@/core/i18n/messages/types'
 import { errMsg } from '@/core/validation'
+import { ApprovalRequests } from '../components/approval-requests'
 import { ConfirmDialog } from '../components/confirm-dialog'
 import { Hint } from '../components/hint'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { PageHeader } from '../components/ui/page-header'
+import { UserApprovalPolicy, UserApprovalPolicyFields } from '../components/user-approval-policy'
 import {
   createUserApi,
   deleteUserApi,
   getCurrentUser,
   listUsers,
+  type UserApprovalSettings,
   updateUserAdmin,
 } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 
-export function UserManagementPage() {
+const AUTH_PROVIDER_KEYS: Partial<Record<string, MessageKey>> = {
+  local: 'userManagement.authProviderLocal',
+  oidc: 'userManagement.authProviderOidc',
+  proxy: 'userManagement.authProviderProxy',
+}
+
+export function UserManagementPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
@@ -27,6 +38,11 @@ export function UserManagementPage() {
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newIsAdmin, setNewIsAdmin] = useState(false)
+  const [newPolicy, setNewPolicy] = useState<UserApprovalSettings>({
+    approvalPolicy: 'direct',
+    maxOpenRequests: null,
+    approvalThreshold: null,
+  })
 
   const { data: currentUser } = useQuery({ queryKey: ['currentUser'], queryFn: getCurrentUser })
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: listUsers })
@@ -47,13 +63,19 @@ export function UserManagementPage() {
 
   const createUser = useMutation({
     mutationFn: () =>
-      createUserApi({ username: newUsername, password: newPassword, isAdmin: newIsAdmin }),
+      createUserApi({
+        username: newUsername,
+        password: newPassword,
+        isAdmin: newIsAdmin,
+        ...newPolicy,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success(`${t('userManagement.userCreated')} "${newUsername}"`)
       setNewUsername('')
       setNewPassword('')
       setNewIsAdmin(false)
+      setNewPolicy({ approvalPolicy: 'direct', maxOpenRequests: null, approvalThreshold: null })
       setShowForm(false)
     },
     onError: (err) => {
@@ -75,15 +97,23 @@ export function UserManagementPage() {
     )
   }
 
+  const addUserButton = (
+    <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+      <Plus size={14} className="mr-1" />
+      {t('userManagement.addUser')}
+    </Button>
+  )
+
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text">{t('userManagement.title')}</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-          <Plus size={14} className="mr-1" />
-          {t('userManagement.addUser')}
-        </Button>
-      </div>
+    <div className={embedded ? 'space-y-6' : 'p-6 space-y-6 max-w-6xl mx-auto'}>
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lead font-semibold text-text">{t('userManagement.title')}</h2>
+          {addUserButton}
+        </div>
+      ) : (
+        <PageHeader title={t('userManagement.title')} actions={addUserButton} />
+      )}
 
       {showForm && (
         <form
@@ -118,6 +148,7 @@ export function UserManagementPage() {
             />
             {t('userManagement.adminPrivileges')}
           </label>
+          <UserApprovalPolicyFields value={newPolicy} onChange={setNewPolicy} id="new-user" />
           <div className="flex gap-2 justify-end">
             <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
               {t('common.cancel')}
@@ -143,23 +174,28 @@ export function UserManagementPage() {
           return (
             <div
               key={user.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-border bg-surface"
+              className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-border bg-surface"
             >
-              <div>
-                <span className="font-medium text-text">{user.username}</span>
-                {user.email && <span className="text-sm text-muted ml-2">{user.email}</span>}
+              <div className="min-w-0">
+                <span className="font-medium text-text break-all">{user.username}</span>
+                {user.email && (
+                  <span className="text-sm text-muted ml-2 break-all">{user.email}</span>
+                )}
                 <div className="flex gap-2 mt-1">
                   {user.isAdmin && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-accent/5 text-accent-text">
                       {t('userManagement.adminBadge')}
                     </span>
                   )}
                   <span className="text-xs px-1.5 py-0.5 rounded bg-bg text-muted border border-border">
-                    {user.authProvider}
+                    {(() => {
+                      const key = AUTH_PROVIDER_KEYS[user.authProvider]
+                      return key ? t(key) : user.authProvider
+                    })()}
                   </span>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="outline"
@@ -195,10 +231,12 @@ export function UserManagementPage() {
                   {t('common.delete')}
                 </Button>
               </div>
+              <UserApprovalPolicy user={user} />
             </div>
           )
         })}
       </div>
+      <ApprovalRequests admin />
       {confirmDeleteUser && (
         <ConfirmDialog
           title={t('userManagement.deleteUser')}
