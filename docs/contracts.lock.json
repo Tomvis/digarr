@@ -299,7 +299,8 @@
         "src/server/routes/jobs.ts": "b0a0b4abf7f0e0c284245cd3cbcb41f1ad0d15f7d827a1b2bb17a298fd6fd02c",
         "src/server/routes/library.ts": "ea1a73179de3543ef1e599d05cc2ca0d5b392d24b0f806b452fe6dd904bfc667",
         "src/server/routes/lidarr.ts": "d2f726dcae32a8146e887724b8fc484bc8c7bff3b495f3e08f679fda59c732a0",
-        "src/server/routes/listening.ts": "bc8c37bc858b73398791982861a2c39e792edcc25ef7c41c7df80152ad6ef251",
+        "src/server/routes/listening-images.ts": "872e674cc8a9bb4cd5b1eb60160dd096e6abd6379cb85d464e484f7a6b2c36b5",
+        "src/server/routes/listening.ts": "07cc8c4f308bfaa175ca088db30b961219c729d0386f6df55732f40fded1eeb8",
         "src/server/routes/mcp.ts": "75fdba073140ce4e5e20e26cb8bafe86dc08fb525a792ebf4f499047c2ed2b26",
         "src/server/routes/media.ts": "4a46245005cf2fcd3dd2496c976a2faa76db1dc60344d6d54760d31df8cd3aff",
         "src/server/routes/mood.ts": "dc8a0dd1c576b56210b8e5d0e877f84d65ff6607d7fe160eab0927143466732c",
@@ -331,14 +332,14 @@
         "src/server/static.ts": "9b9425315642c8583fd27610b5b51697de68d0bec98420a4ceef7bba52072fc8",
         "src/server/types.ts": "83a039a9b33b0ab57bf718066a2837816eac788a3418a1b2924dd127659627c6"
       },
-      "digest": "7dc223efddc30ea378fc31107bfe486d8cd2e34b5d102160f9644fc67fb265be",
+      "digest": "fb19d06a98abdadd76dc2ea9ad3206ded3fd9fa864452a8bc1c7c179b54d6368",
       "review": {
-        "outcome": "docs-updated",
-        "docs": ["docs/API.md"],
-        "note": "Document the new GET /api/v1/recommendations/counts endpoint; existing endpoints are unchanged.",
+        "outcome": "no-impact",
+        "docs": [],
+        "note": "Listening image enrichment reads the artist cache and caches Lidarr lookups in-process; routes, responses and auth are unchanged.",
         "breaking": "none",
         "migration": "",
-        "digest": "7dc223efddc30ea378fc31107bfe486d8cd2e34b5d102160f9644fc67fb265be"
+        "digest": "fb19d06a98abdadd76dc2ea9ad3206ded3fd9fa864452a8bc1c7c179b54d6368"
       }
     },
     "interface": {
