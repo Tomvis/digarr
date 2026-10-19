@@ -459,7 +459,7 @@ Taste ordering reads only the authenticated user's optional `primaryGenres` and 
 
 Save either list through `PATCH /api/v1/auth/me/preferences`: `{"primaryGenres":["metal","jazz"],"secondaryGenres":["ambient"]}`. Each list accepts up to 24 nonempty names of at most 64 characters. Names are trimmed, lowercased, and deduplicated. Empty lists clear the preference.
 
-Each item carries a `kind` field (`artist` or `album`). For `kind: "album"`, `recommendedReleaseGroupId` / `recommendedReleaseGroupTitle` identify the album (its `artistId` still points at the album's artist), and the UI renders the album as the primary unit.
+Each item carries a `kind` field (`artist` or `album`). For `kind: "album"`, `recommendedReleaseGroupId` / `recommendedReleaseGroupTitle` identify the album (its `artistId` still points at the album's artist), and the UI renders the album as the primary unit. `recommendedRecordingMbid` / `recommendedRecordingTitle` are the MusicBrainz recording a source recommended (currently ListenBrainz Tag Radio), or `null`. They never hold provider IDs, and they do not change what approval adds. MCP recommendation results include the same two fields.
 
 **PATCH /api/v1/recommendations/:id** body:
 ```json
@@ -1142,7 +1142,7 @@ Album override notes:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/exports/:format` | Yes | Export recommendations as json/csv/m3u/xspf |
+| GET | `/api/v1/exports/:format` | Yes | Export recommendations as json/csv/m3u/xspf. A recommended recording appears as JSON `recordingMbid` / `recordingTitle`, the trailing CSV columns `recording_mbid,recording_title`, and the XSPF track title and `<identifier>` |
 
 Query params: `status`, `batchId`. Limit: 10,000 rows.
 

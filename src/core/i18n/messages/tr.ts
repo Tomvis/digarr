@@ -840,6 +840,7 @@ export const tr = {
   'recommendation.sourceListenBrainz': 'ListenBrainz',
   'recommendation.select': 'Seç',
   'recommendation.startWith': 'Şununla başla:',
+  'recommendation.recommendedTrack': 'Önerilen parça',
   'recommendation.albumBadge': 'Albüm',
   'recommendation.albumByArtist': '{artist} - {album}',
   'recommendation.metadataCached': 'Meta veriler önbelleğe alındı',
