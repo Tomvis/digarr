@@ -104,7 +104,9 @@ describe('export routes', () => {
       },
     ])
     const csv = await (await app.request('/api/v1/exports/csv')).text()
-    expect(csv.split('\n')[0]).toBe('artist,mbid,genres,score,status,date,track,track_album')
+    expect(csv.split('\n')[0]).toBe(
+      'artist,mbid,genres,score,status,date,recording_mbid,recording_title,track,track_album',
+    )
     expect(csv).toContain(',Creep,Pablo Honey')
   })
 

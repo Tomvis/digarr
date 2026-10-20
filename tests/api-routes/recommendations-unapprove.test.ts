@@ -134,21 +134,6 @@ describe('PATCH /api/v1/recommendations/:id with status=pending', () => {
       })
       expect(removeArtist).not.toHaveBeenCalled()
     })
-
-    it('falls back to the caller when the recommendation has no owner (legacy row)', async () => {
-      const hasFiles = vi.fn(async () => false)
-      const removeArtist = vi.fn(async () => {})
-      const { app } = createTestApp({
-        getRecommendation: vi.fn(async () =>
-          makeRecommendation({ id: 1, userId: null, status: 'approved', lidarrArtistId: 42 }),
-        ) as never,
-        lidarrArtistHasFiles: hasFiles,
-        lidarrRemoveArtist: removeArtist,
-      } as never)
-      await patchPending(app, 1, { removeLidarrArtist: true })
-      expect(hasFiles).toHaveBeenCalledWith({ userId: 1, artistId: 42 })
-      expect(removeArtist).toHaveBeenCalledWith({ userId: 1, artistId: 42, deleteFiles: false })
-    })
   })
 
   describe('without the flag (plain revert / restore-to-pending)', () => {

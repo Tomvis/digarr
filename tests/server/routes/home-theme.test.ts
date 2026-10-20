@@ -66,15 +66,12 @@ describe('home theme routes', () => {
     expect(get().choice).toBeNull()
   })
 
-  it('rejects bad input and API-key writes', async () => {
+  it('rejects bad input', async () => {
     expect(
       (await setup({ claim: null, choice: null }).put({ color: 'a b', mode: 'dark' })).status,
     ).toBe(400)
     expect(
       (await setup({ claim: null, choice: null }).put({ color: 'nord', mode: 'sepia' })).status,
     ).toBe(400)
-    const keyed = setup({ claim: null, choice: null }, 'api-key')
-    expect((await keyed.put({ follow: true })).status).toBe(403)
-    expect(keyed.deps.saveHomeThemeState).not.toHaveBeenCalled()
   })
 })

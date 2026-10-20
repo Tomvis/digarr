@@ -154,6 +154,20 @@ describe('personal API tokens', () => {
     },
   )
 
+  // Fork: a token is not a session, so it can't list, mint or revoke tokens.
+  it.each(['write', 'admin'] as const)('refuses token management to a %s token', async (scope) => {
+    const { token } = await mint(scope)
+    const headers = { ...bearer(token), 'Content-Type': 'application/json' }
+    expect((await app.request(root, { headers })).status).toBe(403)
+    const created = await app.request(root, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'minted', scope: 'admin' }),
+    })
+    expect(created.status).toBe(403)
+    expect(await db.select().from(apiTokens)).toHaveLength(1)
+  })
+
   it.each(['read', 'write', 'admin'] as const)(
     'limits cross-user target access to admin scope for an admin-owned %s token',
     async (scope) => {

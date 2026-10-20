@@ -63,11 +63,13 @@ describe('discovery preference resolution', () => {
       channels: [personalChannel],
     }
     const resolved = await resolveUserPreferences(lookup(preferences), globalPrefs, 1)
+    // Fork: member keys layer over the global discovery settings (no channels).
+    const { channels: _channels, ...discovery } = globalPrefs
     expect(resolved).toEqual({
+      ...discovery,
       scoreThreshold: 0.7,
       netNewAlbumDiscovery: true,
     })
-    expect(resolved).not.toHaveProperty('scheduleCron')
     expect(preferences.channels).toEqual([personalChannel])
   })
 

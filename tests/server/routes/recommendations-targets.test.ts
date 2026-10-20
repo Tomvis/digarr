@@ -413,7 +413,7 @@ describe('target-aware approval', () => {
       expect(await res.json()).toEqual({
         results: [
           lidarr === false && !slskd
-            ? { id: 1, status, error: 'album not found in Lidarr' }
+            ? { id: 1, status, error: 'HTTP 404: album not found in Lidarr' }
             : { id: 1, status },
         ],
       })

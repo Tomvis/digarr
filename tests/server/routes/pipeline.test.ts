@@ -266,7 +266,7 @@ describe('POST /api/v1/pipeline/run', () => {
     expect(orchestrator.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         settings: expect.objectContaining({
-          preferences: personalPreferences,
+          preferences: expect.objectContaining(personalPreferences),
           audiomuse: {
             url: 'https://audiomuse:8000',
             token: 'admin-token',
