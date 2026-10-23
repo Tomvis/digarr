@@ -43,6 +43,7 @@ import { startMusicRaterSyncScheduler } from './core/music-rater/scheduler'
 import { syncMusicRaterCorpus } from './core/music-rater/sync'
 import { dispatch } from './core/notifications'
 import { encryptLegacyPlaintext } from './core/ops/encrypt-legacy'
+import { retireOwnedRecommendations } from './core/ops/hygiene'
 import { bootstrapInitialAdmin } from './core/ops/initial-admin'
 import { migrateLegacyListeningConnections } from './core/ops/legacy-listening-connections'
 import { isMaintenance, setMaintenance } from './core/ops/maintenance'
@@ -1378,6 +1379,14 @@ function restartLibraryMaintenanceScheduler(intervalHours: number): void {
     intervalHours,
     orchestrator: librarySyncOrchestrator,
     listUserIds: async () => (await listUsers(db)).map((u) => u.id),
+    afterSync: async () => {
+      const result = await retireOwnedRecommendations(db)
+      if (result.artists || result.albums) {
+        console.log(
+          `[library-sync-scheduler] retired owned pending recs: artists=${result.artists} albums=${result.albums}`,
+        )
+      }
+    },
   })
   libraryHealthCron = startLibraryHealthScheduler({
     intervalHours,

@@ -10,6 +10,7 @@ import {
   purgeSessions,
   rebuildGenres,
   rescoreRecommendations,
+  retireOwnedRecommendations,
 } from '@/core/ops/hygiene'
 import type { Database } from '@/db'
 import { getGenreEnrichments } from '@/db/queries/artists'
@@ -133,6 +134,100 @@ describe('dedupeRepair', () => {
 
       expect(await dedupeRepair(db as never)).toMatchObject({ removed: 0 })
       expect(await statuses()).toEqual({ 1: 'approved', 2: 'rejected', 3: 'pending' })
+    } finally {
+      await client.close()
+    }
+  })
+})
+
+describe('retireOwnedRecommendations', () => {
+  const OWNED = '00000000-0000-4000-8000-000000000001'
+  const OTHER = '00000000-0000-4000-8000-000000000002'
+  const RG_OWNED = '00000000-0000-4000-8000-0000000000a1'
+  const RG_OTHER = '00000000-0000-4000-8000-0000000000a2'
+
+  async function fixture() {
+    const client = new PGlite()
+    await client.exec(`
+      CREATE TABLE artists (id integer PRIMARY KEY, mbid uuid NOT NULL);
+      CREATE TABLE library_artists (user_id integer, mbid uuid);
+      CREATE TABLE library_albums (user_id integer, album_mbid uuid);
+      CREATE TABLE recommendations (
+        id integer PRIMARY KEY, user_id integer, artist_id integer NOT NULL,
+        status text, kind text, recommended_release_group_id text
+      );
+      INSERT INTO artists VALUES (1, '${OWNED}'), (2, '${OTHER}');
+    `)
+    const db = drizzle(client)
+    async function rec(
+      id: number,
+      row: { userId?: number; artistId: number; kind?: string; status?: string; rg?: string },
+    ) {
+      await client.query('INSERT INTO recommendations VALUES ($1,$2,$3,$4,$5,$6)', [
+        id,
+        row.userId ?? 1,
+        row.artistId,
+        row.status ?? 'pending',
+        row.kind ?? 'artist',
+        row.rg ?? null,
+      ])
+    }
+    async function statuses() {
+      const rows = await client.query<{ id: number; status: string }>(
+        'SELECT id, status FROM recommendations ORDER BY id',
+      )
+      return Object.fromEntries(rows.rows.map((row) => [row.id, row.status]))
+    }
+    return { client, db, rec, statuses }
+  }
+
+  it('retires pending artist and album recs the user now owns', async () => {
+    const { client, db, rec, statuses } = await fixture()
+    try {
+      await client.exec(`INSERT INTO library_artists VALUES (NULL, '${OWNED}');
+        INSERT INTO library_albums VALUES (1, '${RG_OWNED}')`)
+      await rec(1, { artistId: 1 })
+      await rec(2, { artistId: 2 })
+      await rec(3, { artistId: 2, kind: 'album', rg: RG_OWNED })
+      await rec(4, { artistId: 1, kind: 'album', rg: RG_OTHER })
+      await rec(5, { artistId: 1, kind: 'track' })
+
+      const result = await retireOwnedRecommendations(db as never)
+
+      expect(result).toEqual({ tool: 'retire-owned', artists: 1, albums: 1 })
+      expect(await statuses()).toEqual({
+        1: 'in_library',
+        2: 'pending',
+        3: 'in_library',
+        4: 'pending',
+        5: 'pending',
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("ignores another user's library and acted-on recs", async () => {
+    const { client, db, rec, statuses } = await fixture()
+    try {
+      await client.exec(`INSERT INTO library_artists VALUES (2, '${OWNED}');
+        INSERT INTO library_albums VALUES (2, '${RG_OWNED}')`)
+      await rec(1, { artistId: 1 })
+      await rec(2, { artistId: 2, kind: 'album', rg: RG_OWNED })
+      await rec(3, { artistId: 1, userId: 2, status: 'rejected' })
+      await rec(4, { artistId: 1, userId: 2 })
+
+      expect(await retireOwnedRecommendations(db as never)).toEqual({
+        tool: 'retire-owned',
+        artists: 1,
+        albums: 0,
+      })
+      expect(await statuses()).toEqual({
+        1: 'pending',
+        2: 'pending',
+        3: 'rejected',
+        4: 'in_library',
+      })
     } finally {
       await client.close()
     }

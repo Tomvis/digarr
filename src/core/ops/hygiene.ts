@@ -1,7 +1,15 @@
 import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm'
 import { applyAlbumModifier, computeWeightedScore } from '@/core/pipeline/score'
 import type { ScoringWeights } from '@/db/schema'
-import { artistMetadata, artists, genres, recommendations, sessions } from '@/db/schema'
+import {
+  artistMetadata,
+  artists,
+  genres,
+  libraryAlbums,
+  libraryArtists,
+  recommendations,
+  sessions,
+} from '@/db/schema'
 import type { AiAuditResult, AiAuditStatus, HygieneResult, OpsDb } from './types'
 
 // ── Simple Hygiene ─────────────────────────────
@@ -62,6 +70,37 @@ export async function dedupeRepair(db: OpsDb): Promise<HygieneResult> {
     tool: 'dedupe',
     duplicateGroups: new Set(rows.map((row) => row.group_key)).size,
     removed: rows.length,
+  }
+}
+
+/**
+ * Retire pending artist and album recs the user now owns. The pipeline drops owned
+ * candidates only when it creates a rec, so an artist added to the library later
+ * (e.g. straight in Lidarr) would otherwise stay pending forever. Ownership scope
+ * matches the pipeline: the user's own library rows plus global (NULL user) rows.
+ */
+export async function retireOwnedRecommendations(db: OpsDb): Promise<HygieneResult> {
+  const result = await db.execute<{ kind: string }>(sql`
+    UPDATE ${recommendations} AS r
+    SET status = 'in_library'
+    FROM ${artists} AS a
+    WHERE a.id = r.artist_id AND r.status = 'pending' AND (
+      (r.kind = 'artist' AND EXISTS (
+        SELECT 1 FROM ${libraryArtists} AS la
+        WHERE la.mbid = a.mbid AND (la.user_id = r.user_id OR la.user_id IS NULL)))
+      OR (r.kind = 'album' AND EXISTS (
+        SELECT 1 FROM ${libraryAlbums} AS lb
+        WHERE lb.album_mbid::text = r.recommended_release_group_id
+          AND (lb.user_id = r.user_id OR lb.user_id IS NULL)))
+    )
+    RETURNING r.kind
+  `)
+
+  const rows = result.rows as Array<{ kind: string }>
+  return {
+    tool: 'retire-owned',
+    artists: rows.filter((row) => row.kind === 'artist').length,
+    albums: rows.filter((row) => row.kind === 'album').length,
   }
 }
 

@@ -131,6 +131,28 @@ describe('startLibrarySyncScheduler', () => {
     expect(orchestrator.syncForUser).toHaveBeenCalledWith(7)
   })
 
+  it('runs afterSync once all syncs finish', async () => {
+    const orchestrator = makeMockOrchestrator()
+    const order: string[] = []
+    vi.mocked(orchestrator.syncForUser).mockImplementation(async () => {
+      order.push('user')
+      return { userId: 7, results: [] }
+    })
+    const afterSync = vi.fn(async () => {
+      order.push('after')
+    })
+    cron = startLibrarySyncScheduler({
+      intervalHours: 6,
+      orchestrator,
+      listUserIds: async () => [7],
+      afterSync,
+    })
+
+    await cron.trigger()
+
+    expect(order).toEqual(['user', 'after'])
+  })
+
   it('skips the tick when MusicBrainz asks us to back off', async () => {
     deferral.value = 'MusicBrainz circuit breaker armed for another 9m'
     const orchestrator = makeMockOrchestrator()

@@ -7,6 +7,8 @@ export type LibrarySchedulerDeps = {
   intervalHours: number
   orchestrator: SyncOrchestrator
   listUserIds: () => Promise<number[]>
+  /** Runs after every successful tick, e.g. to retire recs the library now covers. */
+  afterSync?: () => Promise<void>
 }
 
 /**
@@ -62,6 +64,7 @@ export function startLibrarySyncScheduler(deps: LibrarySchedulerDeps): Cron {
       for (const uid of users) {
         await deps.orchestrator.syncForUser(uid)
       }
+      await deps.afterSync?.()
     } catch (err: unknown) {
       console.error('[library-sync-scheduler] tick failed:', err)
     }

@@ -7,6 +7,8 @@ export const VALID_STATUSES = [
   'waiting',
   'duplicate',
   'queued',
+  // Fork: pending rec retired because the user now owns the artist/album.
+  'in_library',
 ] as const
 
 export type ValidStatus = (typeof VALID_STATUSES)[number]
