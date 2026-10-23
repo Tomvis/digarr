@@ -37,7 +37,12 @@ function within(root: string, path: string): boolean {
 
 function safePath(root: string, file: string): string {
   const target = resolve(root, file)
-  if (!within(root, target) || (existsSync(target) && !within(root, realpathSync(target)))) {
+  // Compare real paths on both sides: a root under a symlink (macOS /var -> /private/var)
+  // would otherwise make every existing file look like it escapes.
+  if (
+    !within(root, target) ||
+    (existsSync(target) && !within(realpathSync(root), realpathSync(target)))
+  ) {
     throw new Error(`path escapes repository: ${file}`)
   }
   return target

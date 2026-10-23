@@ -16,6 +16,20 @@ vi.mock('@/core/sessions', () => ({
   }),
 }))
 
+// The shipped modes with their option resolvers stripped. Resolvers query the database;
+// the first query in a worker pays the test-DB load (~0.8 s idle), which ran past the 5 s
+// timeout under full-suite load. Resolver behaviour has its own tests below.
+function shippedModesWithoutResolvers() {
+  const registry = new DiscoveryModeRegistry()
+  for (const {
+    resolveOptions: _resolveOptions,
+    ...mode
+  } of createDefaultDiscoveryModeRegistry().list()) {
+    registry.register(mode)
+  }
+  return registry
+}
+
 function fakeDiscoveryRegistry() {
   const registry = new DiscoveryModeRegistry()
 
@@ -56,7 +70,7 @@ describe('API routes: discovery modes', () => {
     'filters experimental modes from every picker (enabled: %s)',
     async (showExperimentalIntegrations) => {
       const { app } = createTestApp({
-        discoveryModeRegistry: createDefaultDiscoveryModeRegistry(),
+        discoveryModeRegistry: shippedModesWithoutResolvers(),
         getSettings: vi.fn().mockResolvedValue({
           preferences: { ...DEFAULT_PREFERENCES, showExperimentalIntegrations },
         }),
@@ -105,7 +119,7 @@ describe('API routes: discovery modes', () => {
 
   it('surfaces shipped ListenBrainz radio modes as enabled when ListenBrainz is connected', async () => {
     const { app } = createTestApp({
-      discoveryModeRegistry: createDefaultDiscoveryModeRegistry(),
+      discoveryModeRegistry: shippedModesWithoutResolvers(),
       getDiscoveryConnectionSnapshot: vi.fn().mockResolvedValue({
         hasListenBrainz: true,
         hasSpotify: false,
@@ -137,7 +151,7 @@ describe('API routes: discovery modes', () => {
 
   it('uses the shipped discovery mode registry by default', async () => {
     const { app } = createTestApp({
-      discoveryModeRegistry: createDefaultDiscoveryModeRegistry(),
+      discoveryModeRegistry: shippedModesWithoutResolvers(),
     })
 
     const res = await app.request('/api/v1/discovery-modes', {
@@ -152,7 +166,7 @@ describe('API routes: discovery modes', () => {
 
   it('surfaces ListenBrainz radio-derived modes as enabled when ListenBrainz is connected', async () => {
     const { app } = createTestApp({
-      discoveryModeRegistry: createDefaultDiscoveryModeRegistry(),
+      discoveryModeRegistry: shippedModesWithoutResolvers(),
       getDiscoveryConnectionSnapshot: vi.fn().mockResolvedValue({
         hasListenBrainz: true,
         hasSpotify: false,
