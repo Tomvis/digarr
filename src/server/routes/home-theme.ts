@@ -1,13 +1,8 @@
 // Per-user home theme (HW-64, Tomvis fork only). See src/core/home-theme.ts for precedence.
 import { Hono } from 'hono'
-import * as z from 'zod'
-import {
-  currentBasis,
-  effectiveHomeTheme,
-  type HomeThemeState,
-  isValidChoiceColor,
-} from '@/core/home-theme'
+import { currentBasis, effectiveHomeTheme, type HomeThemeState } from '@/core/home-theme'
 import { requireSessionUser, requireUser } from '@/server/helpers/require-user'
+import { updateHomeThemeSchema } from '@/server/schemas/home-theme'
 import { zJson } from '@/server/schemas/validator'
 import type { HonoEnv } from '@/server/types'
 
@@ -15,16 +10,6 @@ export type HomeThemeRouteDeps = {
   loadHomeThemeState: (userId: number) => Promise<HomeThemeState>
   saveHomeThemeState: (userId: number, state: HomeThemeState) => Promise<void>
 }
-
-const updateHomeThemeSchema = z.union([
-  z.object({ follow: z.literal(true) }).strict(),
-  z
-    .object({
-      color: z.string().refine(isValidChoiceColor, 'invalid theme id'),
-      mode: z.enum(['dark', 'light', 'system']),
-    })
-    .strict(),
-])
 
 function body(state: HomeThemeState) {
   return { claim: state.claim, choice: state.choice, effective: effectiveHomeTheme(state) }

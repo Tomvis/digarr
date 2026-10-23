@@ -13,6 +13,7 @@ import {
   updateLocaleSchema,
   updatePreferencesSchema,
 } from '@/server/schemas/auth'
+import { updateHomeThemeSchema } from '@/server/schemas/home-theme'
 import {
   libraryAlbumOverrideSchema,
   libraryOverrideSchema,
@@ -313,6 +314,22 @@ export const routeCatalog: RouteSpec[] = [
     ...body(updatePreferencesSchema),
     ok: noContent('Preferences saved.'),
     errors: { '404': 'User not found.' },
+  },
+  {
+    method: 'get',
+    path: '/api/v1/auth/me/theme',
+    tag: 'Auth',
+    auth: 'user',
+    summary: 'Home theme: authentik claim, saved choice and the effective theme (fork)',
+  },
+  {
+    method: 'put',
+    path: '/api/v1/auth/me/theme',
+    tag: 'Auth',
+    auth: 'user',
+    summary: 'Save a home theme choice, or {follow: true} to follow the claim (fork)',
+    description: 'Legacy-token authentication is rejected.',
+    ...body(updateHomeThemeSchema),
   },
   {
     method: 'get',
