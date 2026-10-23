@@ -61,7 +61,26 @@ describe('post (SSRF transport)', () => {
     // Anti-rebinding: fetch targets the pinned resolved IP, not the hostname.
     expect(fetchUrl).toContain('93.184.216.34')
     expect(fetchUrl).not.toContain('example.com')
-    expect((init.headers as Record<string, string>).Host).toBe('example.com')
+    expect(new Headers(init.headers).get('host')).toBe('example.com')
+  })
+
+  it('keeps path tokens and header secrets out of a failed request error', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    okFetch.mockImplementationOnce(async (url: string) => {
+      throw new Error(`connect failed for ${url} with hdrsecret9`)
+    })
+    const r = await post(
+      'https://example.com/bot/pathtoken123/send',
+      {},
+      {
+        headers: { Authorization: 'Bearer hdrsecret9' },
+        redact: (u) => u.replace('pathtoken123', '***'),
+      },
+    )
+    expect(r.ok).toBe(false)
+    expect(r.error).not.toMatch(/pathtoken123|hdrsecret9/)
+    expect(JSON.stringify(error.mock.calls)).not.toMatch(/pathtoken123|hdrsecret9/)
+    error.mockRestore()
   })
 
   it('sends rawBody as-is when provided', async () => {

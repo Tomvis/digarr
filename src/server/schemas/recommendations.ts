@@ -9,9 +9,27 @@ const MAX_BULK_IDS = 500
 
 export const recommendationIdParamSchema = idParamSchema
 
+export const missingAlbumsSchema = z.object({
+  artistId: z.number().int().positive(),
+  albumMbids: z
+    .array(z.uuid().transform((id) => id.toLowerCase()))
+    .min(1)
+    .max(10_000),
+})
+
 export const recommendationStatusSchema = z.enum(['approved', 'rejected', 'pending'])
 export const approvalModeSchema = z.enum(['single_target', 'combined_lidarr_slskd'])
-export const monitorOptionSchema = z.enum(['all', 'new', 'none', 'selected', 'popular'])
+export const monitorOptionSchema = z.enum([
+  'all',
+  'new',
+  'missing',
+  'existing',
+  'latest',
+  'first',
+  'none',
+  'selected',
+  'popular',
+])
 export const sortSchema = z.enum([
   'score_desc',
   'score_asc',
@@ -25,6 +43,15 @@ export const updateRecommendationSchema = z.object({
   approvalMode: approvalModeSchema.optional(),
   lidarrTargetId: z.string().optional(),
   monitorOption: monitorOptionSchema.optional(),
+  tags: z.array(z.number().int().positive()).max(100).optional(),
+  feedbackTrack: z
+    .object({
+      artistName: z.string().trim().min(1).max(500),
+      trackName: z.string().trim().min(1).max(500),
+      recordingMbid: z.uuid().optional(),
+    })
+    .optional(),
+  auditionTrackId: z.number().int().positive().optional(),
   selectedAlbumIds: z.array(z.string()).max(200).optional(),
   targetId: z.string().optional(),
   qualityProfileId: z.number().int().optional(),

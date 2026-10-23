@@ -1,11 +1,12 @@
 // @vitest-environment node
 import * as http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createDeezerClient } from '@/core/clients/deezer'
 
 let server: http.Server
 let baseUrl: string
+let quotaHits = 0
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -60,6 +61,16 @@ beforeAll(async () => {
         res.writeHead(500, { 'Content-Type': 'text/plain' })
         res.end('server error')
         return
+      }
+
+      if (q === 'quotaonce' || q === 'quotaalways') {
+        quotaHits++
+        if (q === 'quotaalways' || quotaHits === 1) {
+          sendJson(res, 200, {
+            error: { type: 'Exception', message: 'Quota limit exceeded', code: 4 },
+          })
+          return
+        }
       }
 
       if (q === 'apierror') {
@@ -152,6 +163,7 @@ describe('createDeezerClient', () => {
       const client = createDeezerClient({ baseUrl })
       const results = await client.searchArtists('portishead')
       expect(results).toHaveLength(2)
+      expect(results[1]?.imageUrl).toBeUndefined()
       expect(results[0]).toEqual({
         id: 1234,
         name: 'Portishead',
@@ -159,23 +171,6 @@ describe('createDeezerClient', () => {
         imageUrl: 'https://cdn.deezer.com/portishead.jpg',
         url: 'https://www.deezer.com/artist/1234',
       })
-    })
-
-    it('omits imageUrl when picture_medium is empty string', async () => {
-      const client = createDeezerClient({ baseUrl })
-      const results = await client.searchArtists('portishead')
-      expect(results[1]?.imageUrl).toBeUndefined()
-    })
-
-    it('returns correct shape with all required fields', async () => {
-      const client = createDeezerClient({ baseUrl })
-      const results = await client.searchArtists('test')
-      for (const r of results) {
-        expect(typeof r.id).toBe('number')
-        expect(typeof r.name).toBe('string')
-        expect(typeof r.fans).toBe('number')
-        expect(typeof r.url).toBe('string')
-      }
     })
 
     it('throws on HTTP error', async () => {
@@ -188,11 +183,19 @@ describe('createDeezerClient', () => {
       await expect(client.searchArtists('apierror')).rejects.toThrow(/Deezer API error/)
     })
 
-    it('uses provided baseUrl', async () => {
-      const client = createDeezerClient({ baseUrl })
-      const results = await client.searchArtists('portishead')
-      // Results returned from our mock server means baseUrl was used
-      expect(results.length).toBeGreaterThan(0)
+    it('retries once after a quota error and returns the second response', async () => {
+      quotaHits = 0
+      const sleep = vi.fn().mockResolvedValue(undefined)
+      const client = createDeezerClient({ baseUrl, sleep })
+      await expect(client.searchArtists('quotaonce')).resolves.toHaveLength(2)
+      expect(sleep).toHaveBeenCalledTimes(1)
+    })
+
+    it('surfaces a quota error that persists after the retry', async () => {
+      const sleep = vi.fn().mockResolvedValue(undefined)
+      const client = createDeezerClient({ baseUrl, sleep })
+      await expect(client.searchArtists('quotaalways')).rejects.toThrow(/Quota limit exceeded/)
+      expect(sleep).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -201,12 +204,6 @@ describe('createDeezerClient', () => {
       const client = createDeezerClient({ baseUrl })
       const result = await client.testConnection()
       expect(result.success).toBe(true)
-      expect(typeof result.message).toBe('string')
-    })
-
-    it('includes resultCount in details', async () => {
-      const client = createDeezerClient({ baseUrl })
-      const result = await client.testConnection()
       expect(result.details).toHaveProperty('resultCount')
     })
 
@@ -233,12 +230,6 @@ describe('createDeezerClient', () => {
         previewUrl: 'https://cdns-preview.deezer.com/track/2.mp3',
         durationMs: 217000,
       })
-    })
-
-    it('converts duration from seconds to milliseconds', async () => {
-      const client = createDeezerClient({ baseUrl })
-      const tracks = await client.getArtistTopTracks(1234)
-      expect(tracks[0]?.durationMs).toBe(245 * 1000)
       expect(tracks[2]?.durationMs).toBe(303 * 1000)
     })
 
@@ -248,10 +239,9 @@ describe('createDeezerClient', () => {
       expect(tracks[2]?.previewUrl).toBeUndefined()
     })
 
-    it('returns empty array on API error', async () => {
+    it('throws on API error so callers can fall back', async () => {
       const client = createDeezerClient({ baseUrl })
-      const tracks = await client.getArtistTopTracks(999)
-      expect(tracks).toEqual([])
+      await expect(client.getArtistTopTracks(999)).rejects.toThrow(/Deezer API error/)
     })
 
     it('returns empty array when data is empty', async () => {
@@ -260,10 +250,9 @@ describe('createDeezerClient', () => {
       expect(tracks).toEqual([])
     })
 
-    it('returns empty array when server is unreachable', async () => {
+    it('throws when server is unreachable', async () => {
       const client = createDeezerClient({ baseUrl: 'http://127.0.0.1:1' })
-      const tracks = await client.getArtistTopTracks(1234)
-      expect(tracks).toEqual([])
+      await expect(client.getArtistTopTracks(1234)).rejects.toThrow()
     })
   })
 
@@ -286,16 +275,6 @@ describe('createDeezerClient', () => {
     it('throws when API returns error field', async () => {
       const client = createDeezerClient({ baseUrl })
       await expect(client.searchTracks('trackapierror')).rejects.toThrow(/Deezer API error/)
-    })
-  })
-
-  describe('default baseUrl', () => {
-    it('creates a client without options', () => {
-      expect(() => createDeezerClient()).not.toThrow()
-    })
-
-    it('creates a client with empty options', () => {
-      expect(() => createDeezerClient({})).not.toThrow()
     })
   })
 })

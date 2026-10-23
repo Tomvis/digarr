@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   type BlockedArtistApi,
@@ -8,13 +8,16 @@ import {
 } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 
-export function BlockedArtistsTab() {
+export function BlockedArtistsTab({ onChange }: { onChange?: () => void } = {}) {
   const { locale, t } = useI18n()
   const [items, setItems] = useState<BlockedArtistApi[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(false)
   const [reload, setReload] = useState(0)
+  const qRef = useRef(q)
+  const loadingMoreRef = useRef(false)
+  qRef.current = q
 
   // Debounced search: each keystroke schedules a fetch 250ms later, prior
   // schedule is cancelled by `active` flag + clearTimeout cleanup. `reload` is
@@ -23,6 +26,7 @@ export function BlockedArtistsTab() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload is intentionally a refetch trigger
   useEffect(() => {
     let active = true
+    loadingMoreRef.current = false
     setLoading(true)
     const handle = setTimeout(async () => {
       try {
@@ -43,16 +47,29 @@ export function BlockedArtistsTab() {
   }, [q, reload, t])
 
   const loadMore = async () => {
-    if (!cursor) return
-    const r = await listArtistBlocks({ cursor, q: q || undefined })
-    setItems((prev) => [...prev, ...r.items])
-    setCursor(r.nextCursor)
+    if (!cursor || loadingMoreRef.current) return
+    loadingMoreRef.current = true
+    const term = q
+    try {
+      const r = await listArtistBlocks({ cursor, q: term || undefined })
+      if (qRef.current !== term) return
+      setItems((prev) => {
+        const seen = new Set(prev.map((x) => x.artistId))
+        return [...prev, ...r.items.filter((x) => !seen.has(x.artistId))]
+      })
+      setCursor(r.nextCursor)
+    } catch {
+      toast.error(t('settings.blocked.error'))
+    } finally {
+      loadingMoreRef.current = false
+    }
   }
 
   const unblock = async (row: BlockedArtistApi) => {
     setItems((prev) => prev.filter((x) => x.artistId !== row.artistId))
     try {
       await deleteArtistBlock(row.artistId)
+      onChange?.()
       toast.success(t('settings.blocked.unblock_success'), {
         action: {
           label: t('settings.blocked.unblock_undo'),
@@ -64,6 +81,7 @@ export function BlockedArtistsTab() {
                 reasonText: row.reasonText,
               })
               setReload((n) => n + 1)
+              onChange?.()
             } catch {
               toast.error(t('settings.blocked.error'))
             }
@@ -121,7 +139,7 @@ export function BlockedArtistsTab() {
               <button
                 type="button"
                 onClick={() => unblock(row)}
-                className="text-accent hover:underline"
+                className="text-accent-text hover:underline"
               >
                 {t('settings.blocked.unblock')}
               </button>
@@ -131,7 +149,11 @@ export function BlockedArtistsTab() {
       </ul>
 
       {cursor && (
-        <button type="button" onClick={loadMore} className="text-sm text-accent hover:underline">
+        <button
+          type="button"
+          onClick={loadMore}
+          className="text-sm text-accent-text hover:underline"
+        >
           {t('settings.blocked.loadMore')}
         </button>
       )}

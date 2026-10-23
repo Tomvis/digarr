@@ -8,22 +8,26 @@ export async function createAlbumBlock(
     userId: number
     artistId: number
     releaseGroupMbid: string
+    albumTitle?: string | null
     reason?: string
     reasonText?: string
     source?: string
   },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .insert(albumBlocks)
     .values({
       userId: params.userId,
       artistId: params.artistId,
       releaseGroupMbid: params.releaseGroupMbid,
+      albumTitle: params.albumTitle ?? null,
       reason: params.reason,
       reasonText: params.reasonText,
       source: params.source ?? 'rejection',
     })
     .onConflictDoNothing({ target: [albumBlocks.userId, albumBlocks.releaseGroupMbid] })
+    .returning({ id: albumBlocks.id })
+  return rows.length > 0
 }
 
 export async function removeAlbumBlock(
@@ -54,6 +58,7 @@ export type BlockedAlbumRow = {
   artistName: string
   artistMbid: string | null
   releaseGroupMbid: string
+  albumTitle: string | null
   reason: string | null
   reasonText: string | null
   blockedAt: Date
@@ -69,6 +74,7 @@ export async function listAlbumBlocks(db: Database, userId: number): Promise<Blo
       artistName: artists.name,
       artistMbid: artists.mbid,
       releaseGroupMbid: albumBlocks.releaseGroupMbid,
+      albumTitle: albumBlocks.albumTitle,
       reason: albumBlocks.reason,
       reasonText: albumBlocks.reasonText,
       blockedAt: albumBlocks.blockedAt,

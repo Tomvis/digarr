@@ -71,7 +71,7 @@ function decryptWithKey(ivStr: string, encStr: string, tagStr: string, key: Buff
 
 /** Encrypt a string value. Returns the original if encryption is disabled or value is null. */
 export function encryptField(value: string | null | undefined): typeof value {
-  if (value == null || !derivedKey) return value
+  if (value == null || value === '' || !derivedKey) return value
   if (value.startsWith(PREFIX)) return value // already encrypted
 
   const iv = randomBytes(IV_LENGTH)
@@ -92,7 +92,8 @@ export function decryptField(value: string | null | undefined): typeof value {
   }
 
   const [ivStr, encStr, tagStr] = value.slice(PREFIX.length).split('.')
-  if (!ivStr || !encStr || !tagStr) return value // malformed
+  // encStr is legitimately empty for a stored empty string.
+  if (!ivStr || encStr === undefined || !tagStr) return value // malformed
 
   // Try both HKDF keys, then both legacy SHA-256 derivations.
   // AES-GCM auth-tag verification is cheap so trial decryption is fine.
@@ -158,7 +159,7 @@ export const SENSITIVE_SETTINGS = [
   'tidalClientSecret',
 ] as const
 export const SENSITIVE_OAUTH = ['accessToken', 'refreshToken', 'clientSecret'] as const
-export const SENSITIVE_PREFERENCES = ['fanartApiKey'] as const
+export const SENSITIVE_PREFERENCES = ['fanartApiKey', 'audiomuseToken'] as const
 
 // Notification channels store secrets in array-nested, per-type fields that the
 // flat encrypt/decryptFields helpers cannot reach. These walkers apply
@@ -171,6 +172,7 @@ const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]> = {
   telegram: ['botToken'],
   ntfy: ['token'],
   apprise: ['urls'],
+  webhook: ['signingSecret'],
 }
 
 const CHANNEL_URL_FIELDS: Record<string, readonly string[]> = {
@@ -192,6 +194,8 @@ export function encryptedChannelFieldsFor(type: string): readonly string[] {
 export function maskWebhookUrl(url: string): string {
   try {
     const u = new URL(url)
+    u.username = ''
+    u.password = ''
     const segments = u.pathname.split('/')
     for (let i = segments.length - 1; i >= 0; i--) {
       if (segments[i]) {

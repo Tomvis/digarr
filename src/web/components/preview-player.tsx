@@ -34,9 +34,8 @@ type Props = {
 }
 
 /**
- * Global mini-player bar fixed to the bottom of the viewport.
- * On mobile it sits above the 56px bottom nav (bottom-14); on md+ it sits at
- * bottom-0. Only renders when a preview is active (loading or playing).
+ * Global mini-player bar fixed to the bottom of the viewport, above the mobile bottom
+ * nav. Only renders when a preview is active (loading or playing).
  */
 export function PreviewPlayer({
   playing,
@@ -53,7 +52,11 @@ export function PreviewPlayer({
   const spotifyUrl = source?.type === 'spotify-embed' ? source.url : null
   const queueActive = Boolean(queue)
   const reportedUnavailableUrlRef = useRef<string | null>(null)
-  const { hostRef: spotifyHostRef, failed: spotifyControllerFailed } = useSpotifyEmbed({
+  const {
+    hostRef: spotifyHostRef,
+    ready: spotifyReady,
+    failed: spotifyControllerFailed,
+  } = useSpotifyEmbed({
     url: spotifyUrl,
     keepAlive: queueActive,
     command: spotify.command,
@@ -69,7 +72,23 @@ export function PreviewPlayer({
       spotify.onPlaybackUnavailable()
     }
   }, [queueActive, spotifyControllerFailed, spotifyUrl, spotify.onPlaybackUnavailable])
-  if (!source && !loading && !queue) return null
+  const visible = Boolean(source || loading || queue)
+  const sectionRef = useRef<HTMLElement>(null)
+  // Publishes the bar height so bars, toasts and page padding stack above it (see index.css).
+  useEffect(() => {
+    const el = sectionRef.current
+    const root = document.documentElement
+    if (!visible || !el) return
+    const publish = () => root.style.setProperty('--player-offset', `${el.offsetHeight}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(el)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--player-offset')
+    }
+  }, [visible])
+  if (!visible) return null
 
   const sourceLabel = source ? SOURCE_LABELS[source.type] : null
   const showYouTubeIframe = playing && source?.type === 'youtube-embed'
@@ -84,7 +103,8 @@ export function PreviewPlayer({
 
   return (
     <section
-      className="fixed bottom-14 md:bottom-0 left-0 right-0 z-50 bg-surface border-t border-border shadow-lg"
+      ref={sectionRef}
+      className="fixed bottom-(--nav-offset) left-0 right-0 z-30 bg-surface border-t border-border shadow-lg"
       aria-label={t('preview.playerRegion')}
     >
       <div className="max-w-3xl mx-auto px-4 py-2">
@@ -167,9 +187,16 @@ export function PreviewPlayer({
 
         {showSpotifyHost && (
           <div
-            ref={spotifyHostRef}
-            className={`mt-2 rounded overflow-hidden ${spotifyUrl && !spotifyControllerFailed ? '' : 'hidden'}`}
-          />
+            className={`relative mt-2 rounded overflow-hidden ${spotifyUrl && !spotifyControllerFailed ? '' : 'hidden'}`}
+          >
+            {/* The bridge iframe paints the browser's default white until Spotify is ready. */}
+            <div ref={spotifyHostRef} className={spotifyReady ? '' : 'invisible'} />
+            {!spotifyReady && (
+              <div className="absolute inset-0 flex items-center justify-center rounded bg-bg animate-pulse text-xs text-muted">
+                {t('preview.loadingPreview')}
+              </div>
+            )}
+          </div>
         )}
 
         {spotifyFallbackUrl && (

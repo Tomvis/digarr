@@ -10,7 +10,10 @@ import type {
   SubscriptionRunDeps,
 } from '@/core/subscriptions/types'
 
-vi.mock('@/core/pipeline/resolve', () => ({ resolve: vi.fn() }))
+vi.mock('@/core/pipeline/resolve', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/core/pipeline/resolve')>()),
+  resolve: vi.fn(),
+}))
 vi.mock('@/core/pipeline/score', () => ({ score: vi.fn() }))
 vi.mock('@/core/pipeline/filter', () => ({ filter: vi.fn() }))
 vi.mock('@/core/pipeline/store', () => ({ store: vi.fn() }))
@@ -81,8 +84,6 @@ function makeDeps(overrides: Partial<SubscriptionRunDeps> = {}): SubscriptionRun
 function makeAdapter(overrides: Partial<SubscriptionAdapter> = {}): SubscriptionAdapter {
   return {
     type: 'test',
-    label: 'Test',
-    configFields: [],
     fetch: vi.fn().mockResolvedValue({ artists: [] }),
     ...overrides,
   }
@@ -176,6 +177,47 @@ describe('runSubscription', () => {
     expect(storeMock).toHaveBeenCalled()
     expect(result.artistsFound).toBe(1)
     expect(result.artistsNew).toBe(1)
+  })
+
+  it('does not re-insert an artist already recommended by a previous run', async () => {
+    const actual =
+      await vi.importActual<typeof import('@/core/pipeline/filter')>('@/core/pipeline/filter')
+    filterMock.mockImplementation(actual.filter)
+    const resolved = {
+      mbid: 'mbid-r',
+      name: 'Repeat Artist',
+      tags: [],
+      genres: [],
+      discoveries: [{ source: 'test', similarityScore: 0.9 }],
+      streamingUrls: {},
+    }
+    resolveMock.mockResolvedValue([resolved] as never)
+    scoreMock.mockReturnValue([{ ...resolved, score: 0.9 }] as never)
+    const stored = new Set<string>()
+    storeMock.mockImplementation(async (rows) => {
+      for (const row of rows) stored.add(row.mbid)
+      return 1
+    })
+    const deps = makeDeps()
+    vi.mocked(deps.db.getExistingRecommendationMbids).mockImplementation(
+      async () => new Set(stored),
+    )
+    const adapter = makeAdapter({
+      fetch: vi.fn().mockResolvedValue({
+        artists: [{ name: 'Repeat Artist', mbid: 'mbid-r', similarityScore: 0.9, source: 'test' }],
+      }),
+    })
+    const subscription = makeSubscription({ userId: 3 })
+
+    const first = await runSubscription(subscription, adapter, deps)
+    const second = await runSubscription(subscription, adapter, deps)
+
+    expect(first.artistsNew).toBe(1)
+    expect(second.artistsNew).toBe(0)
+    expect(storeMock).toHaveBeenCalledTimes(1)
+    expect(deps.db.getExistingRecommendationMbids).toHaveBeenCalledWith(3, {
+      rejectionCooldownDays: 30,
+    })
   })
 
   it('passes subscriptionId to store options', async () => {
@@ -303,6 +345,29 @@ describe('runSubscription', () => {
     expect(deps.queries.updateSubscription).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ lastError: 'adapter exploded' }),
+    )
+  })
+
+  it('reports the stored count when some inserts did not land', async () => {
+    const artists = [{ name: 'A', similarityScore: 1, source: 'test' }]
+    const adapter = makeAdapter({ fetch: vi.fn().mockResolvedValue({ artists }) })
+    const deps = makeDeps({
+      queries: {
+        updateSubscription: vi.fn().mockResolvedValue(undefined),
+        getBatchStats: vi.fn().mockResolvedValue({ added: 1 }),
+      },
+    })
+    resolveMock.mockResolvedValue([{}, {}, {}] as never)
+    scoreMock.mockReturnValue([] as never)
+    filterMock.mockReturnValue([{}, {}, {}] as never)
+    storeMock.mockResolvedValue(99)
+
+    const result = await runSubscription(makeSubscription(), adapter, deps)
+
+    expect(result.artistsNew).toBe(1)
+    expect(deps.queries.updateSubscription).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ lastResultCount: 1 }),
     )
   })
 })

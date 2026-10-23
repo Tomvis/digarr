@@ -5,7 +5,7 @@ import {
 import type { DiscoveryModeRequest } from '@/core/discovery-modes/request'
 import { runDiscoveryMode } from '@/core/discovery-modes/run'
 import { filter } from '@/core/pipeline/filter'
-import { resolve } from '@/core/pipeline/resolve'
+import { prefilterArtistCandidates, resolve } from '@/core/pipeline/resolve'
 import { score } from '@/core/pipeline/score'
 import { store } from '@/core/pipeline/store'
 import { resolveWeights } from '@/core/pipeline/weight-presets'
@@ -222,13 +222,18 @@ export async function runSubscription(
       }
     }
 
-    const { artists } = await adapter.fetch(subscription.sourceConfig, {
+    const { artists, message } = await adapter.fetch(subscription.sourceConfig, {
       limit: subscription.maxArtistsPerRun ?? undefined,
     })
 
     if (artists.length === 0) {
       await jobRecorder.complete(jobId, {
-        metadata: { adapterType: subscription.sourceType, artistsFound: 0, artistsNew: 0 },
+        metadata: {
+          adapterType: subscription.sourceType,
+          artistsFound: 0,
+          artistsNew: 0,
+          ...(message ? { message } : {}),
+        },
       })
       await queries.updateSubscription(subscription.id, {
         lastRunAt: new Date(),
@@ -240,20 +245,44 @@ export async function runSubscription(
 
     const artistsFound = artists.length
 
+    const existingBeforeResolve = await deps.db.getExistingRecommendationMbids(
+      subscription.userId ?? undefined,
+      { rejectionCooldownDays: deps.cooldownDays },
+    )
     const resolved = await resolve(
-      artists,
+      prefilterArtistCandidates(
+        artists,
+        new Set([
+          ...deps.libraryMbids,
+          ...deps.rejectedMbids,
+          ...deps.blockedMbids,
+          ...existingBeforeResolve,
+        ]),
+      ),
       deps.mbClient as Parameters<typeof resolve>[1],
       undefined,
       deps.lidarr as Parameters<typeof resolve>[3],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      new Set(artists.filter((d) => d.mbid && !d.releaseGroupMbid).map((d) => d.mbid as string)),
     )
 
     const weightPreset = subscription.scoringWeightPreset ?? 'default'
     const weights = resolveWeights(weightPreset, subscription.scoringWeightOverrides)
     const scored = score(resolved, deps.libraryGenres, weights, deps.feedbackHistory)
     const threshold = subscription.scoreThreshold ?? deps.defaultScoreThreshold
+    // Without this, every run re-inserts the same artists as new pending recs.
+    const existingMbids = await deps.db.getExistingRecommendationMbids(
+      subscription.userId ?? undefined,
+      { rejectionCooldownDays: deps.cooldownDays },
+    )
     const filtered = filter(
       scored,
-      deps.libraryMbids,
+      new Set([...deps.libraryMbids, ...existingMbids]),
       deps.rejectedMbids,
       deps.blockedMbids,
       deps.cooldownDays,
@@ -269,7 +298,9 @@ export async function runSubscription(
       })
     }
 
-    const artistsNew = filtered.length
+    // store() skips rows that fail to insert, so the batch stats hold the real count.
+    const storedStats = batchId ? await queries.getBatchStats?.(batchId) : null
+    const artistsNew = batchId ? (storedStats?.added ?? filtered.length) : 0
 
     await jobRecorder.complete(jobId, {
       metadata: { adapterType: subscription.sourceType, artistsFound, artistsNew },

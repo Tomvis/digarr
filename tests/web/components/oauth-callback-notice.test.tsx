@@ -2,9 +2,10 @@
 
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { OAuthCallbackNotice, resolveOAuthNotice } from '@/web/components/oauth-callback-notice'
 import { I18nProvider } from '@/web/lib/i18n'
+import { installMemoryLocalStorage } from '../helpers/storage'
 
 function SearchProbe() {
   return <span data-testid="search">{useLocation().search}</span>
@@ -27,6 +28,8 @@ describe('resolveOAuthNotice', () => {
     ['no_pending_auth', 'oauth.error.noPendingAuth'],
     ['state_expired', 'oauth.error.stateExpired'],
     ['browser_mismatch', 'oauth.error.browserMismatch'],
+    ['token_mismatch', 'oauth.error.tokenMismatch'],
+    ['authorization_denied', 'oauth.error.authorizationDenied'],
     ['missing_credentials', 'oauth.error.missingCredentials'],
     ['token_exchange_unreachable', 'oauth.error.tokenExchangeUnreachable'],
     ['token_exchange_failed', 'oauth.error.tokenExchangeFailed'],
@@ -96,10 +99,7 @@ describe('resolveOAuthNotice', () => {
 
 describe('OAuthCallbackNotice', () => {
   beforeEach(() => {
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: { getItem: vi.fn(() => null), setItem: vi.fn() },
-    })
+    installMemoryLocalStorage()
   })
 
   it('renders nothing without callback params', () => {

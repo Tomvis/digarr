@@ -9,9 +9,32 @@
 // poor fit for the JSON-oriented http abstraction.
 
 import PQueue from 'p-queue'
+import { guardedFetch } from '@/core/net/guarded-fetch'
 import type { ServiceTestResult } from '@/core/types'
+import { errMsg } from '@/core/validation'
 
 const DEFAULT_BASE_URL = 'https://bandcamp.com'
+const MAX_BODY_BYTES = 2 * 1024 * 1024
+const MAX_REDIRECTS = 3
+
+async function readCapped(res: Response): Promise<string> {
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let received = 0
+  let out = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > MAX_BODY_BYTES) {
+      await reader.cancel()
+      throw new Error('Bandcamp response too large')
+    }
+    out += decoder.decode(value, { stream: true })
+  }
+  return out + decoder.decode()
+}
 
 export type BandcampSearchResult = {
   name: string
@@ -171,27 +194,34 @@ function parseSearchResults(html: string, limit: number): BandcampSearchResult[]
 }
 
 export function createBandcampClient(config?: { baseUrl?: string }) {
-  const baseUrl = config?.baseUrl ?? DEFAULT_BASE_URL
+  const baseUrl = (config?.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
 
   // 1 request per 2 seconds - Bandcamp will throttle/block higher rates
   const queue = new PQueue({ concurrency: 1, interval: 2000, intervalCap: 1 })
 
-  async function fetchHtml(url: string): Promise<string> {
+  // The SSRF guard only applies to the real host; a custom baseUrl is a test/dev override.
+  const guard = baseUrl === DEFAULT_BASE_URL
+
+  async function fetchHtml(startUrl: string): Promise<string> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 10_000)
     try {
-      const res = await fetch(url, {
+      const init: RequestInit = {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (compatible; Digarr/1.0; +https://github.com/iuliandita/digarr)',
           Accept: 'text/html,application/xhtml+xml',
         },
         signal: controller.signal,
-      })
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} from ${url}`)
       }
-      return res.text()
+      const res = guard
+        ? await guardedFetch(startUrl, init, { maxRedirects: MAX_REDIRECTS })
+        : await fetch(startUrl, { ...init, redirect: 'follow' })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} from ${startUrl}`)
+      }
+      // Read inside the timer so a stalled body is aborted too.
+      return await readCapped(res)
     } finally {
       clearTimeout(timer)
     }
@@ -225,7 +255,7 @@ export function createBandcampClient(config?: { baseUrl?: string }) {
     } catch (err: unknown) {
       return {
         success: false,
-        message: err instanceof Error ? err.message : String(err),
+        message: errMsg(err),
       }
     }
   }

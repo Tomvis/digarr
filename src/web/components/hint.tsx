@@ -4,7 +4,7 @@ import { useI18n } from '../lib/i18n'
 
 type HintProps = {
   id: string
-  type?: 'inline' | 'spotlight' | 'empty-state' | 'post-action'
+  type?: 'inline' | 'spotlight' | 'post-action'
   children: React.ReactNode
   className?: string
 }
@@ -25,7 +25,7 @@ export function Hint({ id, type = 'inline', children, className = '' }: HintProp
           type="button"
           onClick={() => dismissHint(id)}
           aria-label={t('hint.dismissHint')}
-          className="shrink-0 text-muted hover:text-text transition-colors"
+          className="shrink-0 -my-3 -mr-3 flex min-h-11 min-w-11 items-center justify-center text-muted hover:text-text transition-colors sm:m-0 sm:min-h-0 sm:min-w-0"
         >
           <X size={13} aria-hidden="true" />
         </button>
@@ -36,31 +36,16 @@ export function Hint({ id, type = 'inline', children, className = '' }: HintProp
   if (type === 'spotlight') {
     return (
       <div
-        className={`flex items-start gap-2 px-3 py-2 rounded-md border border-accent/30 bg-accent/8 text-sm ${className}`}
+        className={`flex items-start gap-2 px-3 py-2 rounded-md border border-info/30 bg-info/8 text-sm ${className}`}
       >
         <span className="flex-1 text-text">{children}</span>
         <button
           type="button"
           onClick={() => dismissHint(id)}
           aria-label={t('hint.dismissHint')}
-          className="shrink-0 text-muted hover:text-text transition-colors"
+          className="shrink-0 -my-3 -mr-3 flex min-h-11 min-w-11 items-center justify-center text-muted hover:text-text transition-colors sm:m-0 sm:min-h-0 sm:min-w-0"
         >
           <X size={13} aria-hidden="true" />
-        </button>
-      </div>
-    )
-  }
-
-  if (type === 'empty-state') {
-    return (
-      <div className={`text-center space-y-3 py-6 ${className}`}>
-        <div className="text-sm text-muted max-w-sm mx-auto">{children}</div>
-        <button
-          type="button"
-          onClick={() => dismissHint(id)}
-          className="text-xs text-muted hover:text-text transition-colors underline underline-offset-2"
-        >
-          {t('common.dismiss')}
         </button>
       </div>
     )
@@ -76,7 +61,7 @@ export function Hint({ id, type = 'inline', children, className = '' }: HintProp
         type="button"
         onClick={() => dismissHint(id)}
         aria-label={t('hint.dismissHint')}
-        className="shrink-0 text-muted hover:text-text transition-colors"
+        className="shrink-0 -my-3 -mr-3 flex min-h-11 min-w-11 items-center justify-center text-muted hover:text-text transition-colors sm:m-0 sm:min-h-0 sm:min-w-0"
       >
         <X size={13} aria-hidden="true" />
       </button>

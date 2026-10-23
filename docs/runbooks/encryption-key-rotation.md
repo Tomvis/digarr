@@ -18,7 +18,7 @@ Rotation touches these columns:
 
 - `settings.lidarr_api_key`, `settings.ai_api_key`, `settings.audiodb_api_key`, `settings.oidc_client_secret`, `settings.tidal_client_secret`
 - `settings.preferences.fanartApiKey` and `users.preferences.fanartApiKey` (nested in jsonb)
-- Encrypted fields in `settings.preferences.channels`, including webhook URLs, Telegram bot tokens, ntfy tokens, and Apprise URLs
+- Encrypted fields in `settings.preferences.channels` and personal `users.preferences.channels`, including webhook URLs, Telegram bot tokens, ntfy tokens, and Apprise URLs
 - `users.listenbrainz_token`, `users.lastfm_api_key`, `users.plex_token`, `users.jellyfin_api_key`, `users.emby_api_key`, `users.discogs_token`, `users.subsonic_password`
 - `oauth_tokens.access_token`, `oauth_tokens.refresh_token`, `oauth_tokens.client_secret`
 - `targets.config` (any `enc:v1:`-prefixed string values)
@@ -39,7 +39,7 @@ The single-line environment-file examples below assume both keys are single-line
 
 ## First key on an existing installation
 
-Adding a key does not encrypt previously saved plaintext credentials. After setting the key and restarting, re-enter and save each service credential, OAuth connection, target, and notification channel. Masked placeholders may preserve old values; supply the actual credential again. The rotation script only rewrites `enc:v1:` values and is not a plaintext migration tool.
+Back up the database and record the key before you add it: once the key is set, every startup encrypts credentials that were saved as plaintext, right after migrations. This covers the settings and per-user connection columns, OAuth tokens, `fanartApiKey` preferences, notification channel secrets, and target `apiKey`/`password`/`token`/`secret` values. Values that are already encrypted and empty values are left alone, so later startups change nothing; the log reports how many values were encrypted. Credentials do not need to be re-entered. After that first startup, removing the key leaves those values unreadable, so keep the key with your backups. To undo the encryption, restore the backup taken before you added the key. The rotation script only rewrites `enc:v1:` values; startup handles plaintext.
 
 ## Procedure
 

@@ -7,15 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolvePreviewSource, usePreview } from '@/web/hooks/use-preview'
 import { I18nProvider } from '@/web/lib/i18n'
 
-vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
-}))
+vi.mock('sonner', async () => (await import('../helpers/sonner')).sonnerMock())
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 // Mock fetch globally so Deezer API calls don't hit the network.
 // In browsers, Deezer returns CORS errors; here we simulate that failure
@@ -47,6 +43,7 @@ describe('resolvePreviewSource', () => {
     )
     expect(result).not.toBeNull()
     expect(result?.type).toBe('spotify-embed')
+    expect(result?.track).toBeUndefined()
     expect(result?.embedUrl).toContain('autoPlay=true')
   })
 
@@ -68,7 +65,69 @@ describe('resolvePreviewSource', () => {
     )
     expect(result).not.toBeNull()
     expect(result?.type).toBe('youtube-embed')
+    expect(result?.track).toBeUndefined()
     expect(result?.embedUrl).toContain('autoplay=1')
+  })
+
+  it.each([
+    [{ name: '  RADIOHEAD  ' }, 'Creep', { artistName: '  RADIOHEAD  ', trackName: 'Creep' }],
+    [{ name: 'Radiohead' }, '   ', undefined],
+    [{ name: 'Radiohead' }, undefined, undefined],
+    [{ name: 'Radiohead' }, 123, undefined],
+  ])(
+    'plays the exact-artist Deezer result and attaches only valid track metadata: %j / %j',
+    async (artist, title, track) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ data: [{ preview: 'https://cdn.example/p.mp3', artist, title }] }),
+        }),
+      )
+      expect(await resolvePreviewSource({ deezer: 'url' }, 'Radiohead')).toEqual({
+        type: 'deezer-audio',
+        url: 'https://cdn.example/p.mp3',
+        embedUrl: 'https://cdn.example/p.mp3',
+        ...(track ? { track } : {}),
+      })
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        'https://api.deezer.com/search?q=Radiohead&limit=25',
+      )
+    },
+  )
+
+  it('skips other artists in a plain Deezer search and never uses a non-exact match', async () => {
+    const hit = (name: string, preview: string) => ({
+      preview,
+      title: 'Song',
+      artist: { name },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            hit('Radiohead Tribute', 'https://cdn.example/x.mp3'),
+            hit('Radiohead', 'https://cdn.example/r.mp3'),
+          ],
+        }),
+      }),
+    )
+    expect((await resolvePreviewSource({ deezer: 'url' }, 'Radiohead'))?.url).toBe(
+      'https://cdn.example/r.mp3',
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [hit('Radiohead Tribute', 'https://cdn.example/x.mp3')] }),
+      }),
+    )
+    expect(await resolvePreviewSource({ deezer: 'url' }, 'Boards of Canada')).toBeNull()
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      'https://api.deezer.com/search?q=Boards%20of%20Canada&limit=25',
+    )
   })
 
   it('returns null for invalid Spotify URL with no fallbacks', async () => {
@@ -111,9 +170,20 @@ class FakeAudio {
 function stubDeezerFetch() {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: [{ preview: 'https://cdn.example/p.mp3' }] }),
+    vi.fn(async (url: string) => {
+      const artistName = new URL(url).searchParams.get('q') ?? ''
+      return {
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              preview: 'https://cdn.example/p.mp3',
+              title: 'Creep',
+              artist: { id: 1, name: artistName },
+            },
+          ],
+        }),
+      }
     }),
   )
 }
@@ -220,6 +290,10 @@ describe('usePreview play outcomes', () => {
       outcome = await result.current.play('m1', 'Radiohead', { deezer: 'url' })
     })
     expect(outcome).toBe('started')
+    expect(result.current.state.source?.track).toEqual({
+      artistName: 'Radiohead',
+      trackName: 'Creep',
+    })
 
     await act(async () => {
       outcome = await result.current.play('m1', 'Radiohead', { deezer: 'url' })
@@ -306,11 +380,19 @@ describe('usePreview play outcomes', () => {
   })
 
   it.each<
-    [Record<string, string> | null, { data: Array<{ preview?: string }> } | undefined, string]
+    [
+      Record<string, string> | null,
+      { data: Array<{ preview?: string; artist?: { name: string } }> } | undefined,
+      string,
+    ]
   >([
     [null, undefined, 'missing-links'],
     [{ deezer: 'https://deezer.com/artist/1' }, { data: [] }, 'no-match'],
-    [{ deezer: 'https://deezer.com/artist/1' }, { data: [{}] }, 'no-audio'],
+    [
+      { deezer: 'https://deezer.com/artist/1' },
+      { data: [{ artist: { name: 'Artist' } }] },
+      'no-audio',
+    ],
     [{ deezer: 'https://deezer.com/artist/1' }, undefined, 'lookup-failed'],
   ])('reports coarse resolution failure %s', async (links, data, reason) => {
     if (data)
@@ -363,5 +445,58 @@ describe('usePreview play outcomes', () => {
     act(() => result.current.stop())
     act(() => FakeAudio.instances[1]?.onerror?.())
     expect(result.current.playbackEndedCount).toBe(0)
+  })
+})
+
+describe('usePreview unmount', () => {
+  beforeEach(() => {
+    FakeAudio.instances = []
+    FakeAudio.playImpl = () => Promise.resolve()
+    vi.stubGlobal('Audio', FakeAudio)
+  })
+
+  it('pauses playing audio on unmount', async () => {
+    stubDeezerFetch()
+    const { result, unmount } = renderHook(() => usePreview(), { wrapper })
+    await act(async () => {
+      await result.current.play('m1', 'Radiohead', { deezer: 'url' })
+    })
+    const audio = FakeAudio.instances[0]
+    if (!audio) throw new Error('audio was not created')
+    const pause = vi.spyOn(audio, 'pause')
+    unmount()
+    expect(pause).toHaveBeenCalled()
+  })
+
+  it('does not start playback when a pending lookup resolves after unmount', async () => {
+    let resolveFetch: (v: unknown) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        }),
+      ),
+    )
+    const { result, unmount } = renderHook(() => usePreview(), { wrapper })
+    let pending: Promise<string> | undefined
+    act(() => {
+      pending = result.current.play('m1', 'Radiohead', { deezer: 'url' })
+    })
+    unmount()
+    resolveFetch({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            preview: 'https://cdn.example/p.mp3',
+            title: 'Creep',
+            artist: { id: 1, name: 'Radiohead' },
+          },
+        ],
+      }),
+    })
+    expect(await pending).toBe('superseded')
+    expect(FakeAudio.instances).toHaveLength(0)
   })
 })

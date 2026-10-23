@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAlbums } from '../lib/api'
-import { hueFromName } from '../lib/utils'
+import { useI18n } from '../lib/i18n'
+import { cn, hueFromName } from '../lib/utils'
 import { Skeleton } from './ui/skeleton'
 
 // RecentlyApproved
@@ -13,9 +14,11 @@ type RecentlyApprovedProps = {
     artist: { name: string; mbid?: string; imageUrl?: string | null; genres?: string[] | null }
   }>
   loading: boolean
+  columns: number
+  count: number
+  /** Applied to the empty state so it can stretch to a paired card's height */
+  emptyClassName?: string
 }
-
-const SLOTS = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const
 
 function Tile({ name, mbid, imageUrl }: { name: string; mbid?: string; imageUrl?: string | null }) {
   const [imgError, setImgError] = useState(false)
@@ -73,11 +76,19 @@ function Tile({ name, mbid, imageUrl }: { name: string; mbid?: string; imageUrl?
   )
 }
 
-export function RecentlyApproved({ recs, loading }: RecentlyApprovedProps) {
+export function RecentlyApproved({
+  recs,
+  loading,
+  columns,
+  count,
+  emptyClassName,
+}: RecentlyApprovedProps) {
+  const { t } = useI18n()
+  const gridStyle = { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
   if (loading) {
     return (
-      <div className="grid grid-cols-3 gap-1.5">
-        {SLOTS.map((key) => (
+      <div className="grid gap-1.5" style={gridStyle}>
+        {Array.from({ length: count }, (_, slot) => `slot-${slot}`).map((key) => (
           <Skeleton key={key} className="aspect-square rounded-lg" />
         ))}
       </div>
@@ -86,26 +97,26 @@ export function RecentlyApproved({ recs, loading }: RecentlyApprovedProps) {
 
   if (recs.length === 0) {
     return (
-      <div className="grid grid-cols-3 gap-1.5 min-h-[200px]">
-        {SLOTS.map((key) => (
-          <div key={key} className="aspect-square rounded-lg bg-bg border border-border" />
-        ))}
-      </div>
+      <p
+        className={cn(
+          'rounded-lg border border-border bg-bg p-4 text-sm text-muted',
+          emptyClassName,
+        )}
+      >
+        {t('dashboard.noRecentlyApproved')}
+      </p>
     )
   }
 
   return (
-    <div className="grid grid-cols-3 gap-1.5">
-      {recs.slice(0, 9).map((rec) => (
+    <div className="grid gap-1.5" style={gridStyle}>
+      {recs.slice(0, count).map((rec) => (
         <Tile
           key={rec.id}
           name={rec.artist.name}
           mbid={rec.artist.mbid}
           imageUrl={rec.artist.imageUrl}
         />
-      ))}
-      {SLOTS.slice(recs.length).map((key) => (
-        <div key={key} className="aspect-square rounded-lg bg-bg border border-border" />
       ))}
     </div>
   )

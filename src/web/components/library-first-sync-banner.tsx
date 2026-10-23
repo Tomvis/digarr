@@ -6,6 +6,14 @@ import { useI18n } from '../lib/i18n'
 
 const STORAGE_KEY = 'digarr.firstSyncBannerDismissed'
 
+type LibrarySources = Awaited<ReturnType<typeof getLibrarySources>>['sources']
+
+function isFirstSync(sources: LibrarySources): boolean {
+  return sources.some(
+    (s) => s.lastSyncStatus === 'running' && (s.lastSyncCounts?.cacheHits ?? 0) === 0,
+  )
+}
+
 export function LibraryFirstSyncBanner() {
   const { t } = useI18n()
   const [dismissed, setDismissed] = useState(() => {
@@ -16,18 +24,16 @@ export function LibraryFirstSyncBanner() {
   const sourcesQuery = useQuery({
     queryKey: ['library', 'sources'],
     queryFn: getLibrarySources,
-    refetchInterval: 5000,
+    enabled: !dismissed,
+    refetchInterval: (query) => {
+      const sources = query.state.data?.sources
+      return !sources || isFirstSync(sources) ? 5000 : false
+    },
   })
 
   if (dismissed) return null
 
-  const sources = sourcesQuery.data?.sources ?? []
-
-  const isFirstSync =
-    sources.length === 0 ||
-    sources.some((s) => s.lastSyncStatus === 'running' && (s.lastSyncCounts?.cacheHits ?? 0) === 0)
-
-  if (!isFirstSync) return null
+  if (!isFirstSync(sourcesQuery.data?.sources ?? [])) return null
 
   function dismiss() {
     setDismissed(true)
@@ -37,7 +43,7 @@ export function LibraryFirstSyncBanner() {
   }
 
   return (
-    <div className="bg-accent/10 border border-accent/30 rounded-lg px-4 py-4 relative">
+    <div className="bg-surface border border-border rounded-lg px-4 py-4 relative">
       <button
         type="button"
         onClick={dismiss}

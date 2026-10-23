@@ -1,4 +1,5 @@
 import { createMusicBrainzClient } from '@/core/clients/musicbrainz'
+import { isSpecialPurposeArtist } from '@/core/clients/musicbrainz-special-purpose'
 import { createLastFmSource } from '@/core/plugins/lastfm'
 import { createListenBrainzSource } from '@/core/plugins/listenbrainz'
 import { createSpotifySource } from '@/core/plugins/spotify'
@@ -8,6 +9,7 @@ import {
   getDiscoveryModeConnections,
   getDiscoveryModeProviderToken,
   getProviderPath,
+  normalizeDiscoveryName,
 } from './runtime'
 
 type SourceArtist = TopArtistEntry & { providerId: string }
@@ -64,6 +66,21 @@ function deduplicateArtists(artists: SourceArtist[]): SourceArtist[] {
   return [...seen.values()]
 }
 
+async function resolveArtistMbid(
+  musicbrainz: Pick<ReturnType<typeof createMusicBrainzClient>, 'searchArtist'>,
+  name: string,
+): Promise<string | undefined> {
+  const wanted = normalizeDiscoveryName(name)
+  if (!wanted) return undefined
+  try {
+    const search = await musicbrainz.searchArtist(name)
+    return search.artists.find((a) => normalizeDiscoveryName(a.name) === wanted)?.id
+  } catch (err: unknown) {
+    console.warn(`[release-radar] could not resolve "${name}" to a MusicBrainz artist:`, err)
+    return undefined
+  }
+}
+
 export function createReleaseRadarMode(): DiscoveryModeDefinition {
   return {
     id: 'release-radar',
@@ -94,11 +111,7 @@ export function createReleaseRadarMode(): DiscoveryModeDefinition {
         (
           await Promise.all(
             selectedSources.map(async ({ id, source }) =>
-              (
-                await source.getTopArtists(10)
-              )
-                .filter((artist) => artist.mbid)
-                .map((artist) => ({ ...artist, providerId: id })),
+              (await source.getTopArtists(10)).map((artist) => ({ ...artist, providerId: id })),
             ),
           )
         ).flat(),
@@ -109,10 +122,14 @@ export function createReleaseRadarMode(): DiscoveryModeDefinition {
       cutoff.setDate(cutoff.getDate() - windowDays)
 
       const candidates = []
+      const seenMbids = new Set<string>()
       for (const artist of topArtists) {
-        if (!artist.mbid) continue
+        // Spotify top artists carry no MBID; resolve by exact name match or skip.
+        const mbid = artist.mbid || (await resolveArtistMbid(musicbrainz, artist.name))
+        if (!mbid || isSpecialPurposeArtist(mbid) || seenMbids.has(mbid)) continue
+        seenMbids.add(mbid)
 
-        const releaseGroups = await musicbrainz.getReleaseGroups(artist.mbid)
+        const releaseGroups = await musicbrainz.getReleaseGroups(mbid)
         for (const release of releaseGroups) {
           if (!release.firstReleaseDate) continue
 
@@ -123,8 +140,12 @@ export function createReleaseRadarMode(): DiscoveryModeDefinition {
             candidateType: 'release' as const,
             name: release.title,
             artistName: artist.name,
-            artistMbid: artist.mbid,
+            artistMbid: mbid,
             releaseGroupMbid: release.id,
+            releaseGroupTypes: {
+              primaryType: release.type,
+              secondaryTypes: release.secondaryTypes,
+            },
             provenanceProvider: artist.providerId,
             fallbackUsed: artist.providerId !== 'listenbrainz',
             freshnessDate: release.firstReleaseDate,

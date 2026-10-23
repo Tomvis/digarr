@@ -17,6 +17,7 @@ import { PROTECTED_I18N_TERMS } from '../src/core/i18n/protected-terms'
 import { REJECTION_REASONS } from '../src/core/recommendations/rejection-reasons'
 import { collectDiscoveryMessageKeys } from '../src/web/lib/discovery-i18n'
 import { validateTranslatedCatalog } from './i18n-machine-translate'
+import { findSourceLockDrift, readSourceLock } from './i18n-source-lock'
 
 // Markers that indicate stripped diacritics in the accented-language catalogs.
 // CI fails on any match so we cannot regress to ASCII-substituted spellings.
@@ -32,6 +33,29 @@ const ASCII_MARKERS: Record<string, RegExp> = {
   pl: /\b(sie|zakonczeniu|biezacego|zobacza|logowac|dostawce|feedow|najczesciej|sluchanego|gleboko|uzytkownikow|tagow|pasujacych|wydanicze|powiazane|sledzionymi|Siec|podobienstwa|wspolpracownikow|sasiednie|wytwornii|odsluchu|wydan|Odwaznosc|probkowania|wyrazenie|Popularnosc|celow|kazdym|Dziala|Wlacz|przyszle|sledzenie|istniejacych|sluchania|Wyzsze|wartosci|znajduja|Nizsze|Wspolczynnik|Zdjecia|pochodza|pelnia|uzyc|kierujac|zadania|zewnetrzne|dostepnego|Artysci|udalo|zapisac|ustawien|uruchamiac|tydzien|poniedzialek|Wlaczone|dostep|zrodel|Wlasny|podlaczona|usluga|haslo|Wlaczono|Usluga|dostepu|Haslo|hasla|miec|znakow|Nieprawidlowy)\b/,
   tr: /\b(Is Geçmişi|acma|yapilandirin|giris|dugmesini|gorecek|Kullanicilarin|saglayicisiyla|Sanatci|sanatci|sanatcilar|sanatcilari|araciligiyla|kesfet|dinledigi|kullanicilarinin|eslesen|ettigin|baglantili|yayinlari|tabanli|grafigi|Iliskileri|Isbirlikleri|yakin|sirketi|kataloglari|uzerinden|Kitapligi|studyo|albumlerini|Muzik|bolgesel|Kisisellestirilmis|henuz|uygulanmadi|kullanilabilir|baglayin|Once|kaynagi|Yayin|saglayicilar|kullaniliyor|Sinir|Orneklenecek|kayitlar|Populerlik|Baslangic|Iliskiler|Calisma|basina|Bolge|Hizli|Guvenli|Birlesik|onayi|etkinlestir|Izleme|Tum|Yalnizca|yayin|Hicbiri|yalnizca|Gelismis|Sinirlar|suresi|Kutuphane|Kesfi|Kesfin|kadari|kutuphanenizden|gecmisinizden|oldugunuza|guvenir|orani|Gorsel|gorselleri|oncelikle|kaynagindan|kullanilir|anahtari|bagli|Ucretsiz|icin|bos|birakin|yonlendirerek|karsisinda|zenginlestirmesi|Oneri|kartlarinda|baglantilari|goster|Aciklama|degil|onbelleginde|aciklamalar|kapaliyken|Varsayilan|barindiriyorsaniz|ornek|ayarlari|calistirmak|programi|ayarlayin|populer|Ozel|goruntule|Yukleniyor|Gecersiz|Baglantilariniz|Baglantıyi|Sifreyi|Guncelleme|Guncel|Uygulamasi|olustur|onerileri|baglantisi|sifre|Degistiriliyor|yukleniyor|Goruntu|onbellegini|degistirildi|olmalidir|sifreyi|sifreler|uyusmuyor|olusturma|yoksay|yapistir|Album)\b/,
 }
+
+// Every locale addresses the user informally, matching the casual English voice.
+// These are unambiguous formal pronouns; a legitimate use goes in the allowlist.
+const FORMAL_ADDRESS_MARKERS: Record<string, RegExp> = {
+  de: /(?<!\p{L})(Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres|Ihnen)(?!\p{L})/u,
+  fr: /(?<!\p{L})(vous|votre|vos)(?!\p{L})/iu,
+  es: /(?<!\p{L})(usted|ustedes)(?!\p{L})/iu,
+  it: /(?<!\p{L})(Lei|Suo|Sua|Suoi|Sue)(?!\p{L})/u,
+  nl: /(?<!\p{L})(u|uw)(?!\p{L})/u,
+  pl: /(?<!\p{L})(Pan|Pani|Państwo|Pana|Panu)(?!\p{L})/u,
+  ro: /(?<!\p{L})(dumneavoastră|dvs\.?)(?!\p{L})/iu,
+  ru: /(?<!\p{L})(вы|вас|вам|вами|ваш\p{L}*)(?!\p{L})/iu,
+  tr: /(?<!\p{L})(siz|sizin|size|sizi|sizde|sizden)(?!\p{L})/iu,
+  uk: /(?<!\p{L})(ви|вас|вам|вами|ваш\p{L}*)(?!\p{L})/iu,
+}
+
+// 'locale:key' entries where a formal-looking word is not addressing the user.
+const FORMAL_ADDRESS_ALLOWLIST = new Set<string>([
+  'de:genreDetail.emptyDeepCuts',
+  'de:libraryHealth.introTip',
+  'nl:systemHealth.inHours',
+  'nl:librarySources.hoursAgo',
+])
 
 const referenceLocale = 'en'
 const referenceMessages = getMessages(referenceLocale)
@@ -55,9 +79,32 @@ const UNIVERSAL_SAME_AS_SOURCE_VALUES = new Set([
 // Natural-language loanwords and unchanged labels are exceptions only for the
 // locale and key where a native speaker would actually use the English form.
 const LOCALE_KEY_SAME_AS_SOURCE_ALLOWLIST = new Set([
+  'de:settings.tabs.system',
+  'pl:settings.tabs.system',
+  'fr:app.themeMode',
+  'fr:genres.genrePlural',
+  'fr:genres.genreSingular',
+  'fr:common.date',
+  'fr:subscriptionForm.source',
+  'fr:subscriptionForm.sources',
+  'fr:discoveryMode.field.tags',
+  'de:app.themeGroupEditor',
+  'nl:app.themeGroupEditor',
+  'it:auth.password',
+  'it:settings.fieldPassword',
+  'it:playlists.playlistSingular',
+  'it:jobHistory.playlistType',
+  'it:integration.playlist',
+  'pl:setup.model',
+  'tr:setup.model',
   'es:discoveryMode.option.global',
   'es:playlist.sourceLocal',
+  'es:settings.groups.personal',
   'fr:nav.albums',
+  'fr:librarySources.albumCount',
+  'fr:search.sources',
+  'fr:search.sourcesActive',
+  'fr:discover.kindFilter',
   'fr:discover.kind.albums',
   'fr:recommendation.albumBadge',
   'fr:discoveryMode.charts.label',
@@ -67,18 +114,23 @@ const LOCALE_KEY_SAME_AS_SOURCE_ALLOWLIST = new Set([
   'fr:preview.volume',
   'fr:playlist.sourceLocal',
   'de:recommendation.albumBadge',
+  'de:discover.statusFilter',
   'de:discoveryMode.charts.label',
   'de:discoveryMode.field.region',
   'de:discoveryMode.option.global',
   'de:discoveryMode.option.japan',
   'pt-BR:discoveryMode.option.global',
+  'pt-BR:discover.statusFilter',
   'pt-BR:preview.volume',
   'pt-BR:playlist.sourceLocal',
   'it:recommendation.albumBadge',
   'it:discoveryMode.option.canada',
   'it:preview.volume',
   'nl:nav.albums',
+  'nl:librarySources.albumCount',
+  'nl:discover.statusFilter',
   'nl:discover.kind.albums',
+  'nl:settings.tips',
   'nl:recommendation.albumBadge',
   'nl:discoveryMode.option.japan',
   'nl:discoveryMode.option.canada',
@@ -88,7 +140,9 @@ const LOCALE_KEY_SAME_AS_SOURCE_ALLOWLIST = new Set([
   'ro:discoveryMode.option.canada',
   'ro:genres.artistCountSingular',
   'ro:playlist.sourceLocal',
+  'ro:settings.groups.personal',
   'pl:recommendation.albumBadge',
+  'pl:discover.statusFilter',
   'pl:discoveryMode.field.region',
   'tr:discoveryMode.option.global',
   'ja:setup.embyUrl',
@@ -102,6 +156,8 @@ const LOCALE_KEY_SAME_AS_SOURCE_ALLOWLIST = new Set([
 const UI_LITERAL_ALLOWLIST = new Set([
   ...PROTECTED_I18N_TERMS,
   'digarr',
+  'PGlite',
+  'PostgreSQL',
   'OpenAI-Compatible',
   'j/k',
   'openid profile email',
@@ -117,8 +173,26 @@ function shouldFlagUiLiteral(value: string): boolean {
   return !UI_LITERAL_ALLOWLIST.has(normalized)
 }
 
+// Text that sits directly after a closing '}' or '>' and before an opening '{' or '<'.
+// Code characters are excluded so statements and operators are not mistaken for JSX text.
+const JSX_TEXT_SEGMENT = /([}>])([^<>{};=()[\]|&?\\'"`]*)(?=[<{])/g
+const CODE_KEYWORD_SEGMENT =
+  /^\s*(?:else|catch|finally|try|do|as|satisfies)\b|\b(?:const|let|var|function|class|extends|implements|return|export|import|type|interface|async|await|new|if|for|while|switch|case|default|void|typeof|Record|Array|ReturnType|Promise|Set|Map|Partial|Omit|Pick|number|string|boolean|unknown)\b|^\s*[\w$]+:\s*$|^\s*,/
+
+function* findJsxTextSegments(source: string): Generator<{ index: number; text: string }> {
+  for (const match of source.matchAll(JSX_TEXT_SEGMENT)) {
+    if (match.index == null) continue
+    if (match[1] === '>' && /[=-]/.test(source[match.index - 1] ?? '')) continue
+    const text = match[2] ?? ''
+    if (CODE_KEYWORD_SEGMENT.test(text)) continue
+    if (/^<[A-Za-z]/.test(source.slice(match.index + 1 + text.length)) && /\S$/.test(text)) continue
+    yield { index: match.index + 1, text }
+  }
+}
+
 export function findHardcodedUiStrings(file: string, source: string): string[] {
   const issues: string[] = []
+  const seen = new Set<number>()
   const add = (index: number, value: string) => {
     const normalized = value.replace(/\s+/g, ' ').trim()
     if (!shouldFlagUiLiteral(normalized)) return
@@ -126,7 +200,12 @@ export function findHardcodedUiStrings(file: string, source: string): string[] {
     const line = before.split('\n').length
     const lastNewline = before.lastIndexOf('\n')
     const column = index - lastNewline
-    issues.push(`${file}:${line}:${column}: "${normalized}"`)
+    const start = index + (value.length - value.trimStart().length)
+    const issue = `${file}:${line}:${column}: "${normalized}"`
+    if (!seen.has(start)) {
+      seen.add(start)
+      issues.push(issue)
+    }
   }
 
   const patterns = [
@@ -147,6 +226,9 @@ export function findHardcodedUiStrings(file: string, source: string): string[] {
       if (value == null || match.index == null) continue
       add(match.index + match[0].indexOf(value), value)
     }
+  }
+  for (const { index, text } of findJsxTextSegments(source)) {
+    if (/^\s*[A-Za-z]/.test(text)) add(index, text)
   }
   return issues
 }
@@ -188,6 +270,47 @@ export function findAsciiMarkers(locale: string, messages: Record<string, string
     }
   }
   return hits
+}
+
+export function findFormalAddress(locale: string, messages: Record<string, string>): string[] {
+  const regex = FORMAL_ADDRESS_MARKERS[locale]
+  if (!regex) return []
+  return Object.entries(messages)
+    .filter(
+      ([key, value]) => regex.test(value) && !FORMAL_ADDRESS_ALLOWLIST.has(`${locale}:${key}`),
+    )
+    .map(([key, value]) => `${key}: "${value}"`)
+}
+
+// User-visible text uses a plain hyphen as a dash: no em/en dashes and no "--".
+export function findDashIssues(messages: Record<string, string>): string[] {
+  return Object.entries(messages)
+    .filter(([, value]) => /[–—]|--/.test(value))
+    .map(([key, value]) => `${key}: "${value}"`)
+}
+
+// The same rule for web source: a literal '--' placeholder, a spaced " -- " dash, an
+// em/en dash or its HTML entity in a string or JSX text all reach the screen.
+const DASH_LITERAL_PATTERNS = [/(['"`])--\1/g, /[–—]/g, /&[mn]dash;/g, / -- /g]
+
+export function findDashLiterals(file: string, source: string): string[] {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/.*$/gm, (m, lead: string) => lead + ' '.repeat(m.length - lead.length))
+  const issues: string[] = []
+  for (const pattern of DASH_LITERAL_PATTERNS) {
+    for (const match of code.matchAll(pattern)) {
+      if (match.index == null) continue
+      const line = code.slice(0, match.index).split('\n').length
+      issues.push(`${file}:${line}: ${JSON.stringify(match[0])}`)
+    }
+  }
+  for (const { index, text } of findJsxTextSegments(code)) {
+    if (!text.includes('--')) continue
+    const line = code.slice(0, index).split('\n').length
+    issues.push(`${file}:${line}: "--"`)
+  }
+  return issues
 }
 
 function collectSourceFiles(dir: string, out: string[]): void {
@@ -232,6 +355,8 @@ export async function main(): Promise<void> {
     )
     const untranslated = locale === referenceLocale ? [] : sameAsSource
     const asciiHits = findAsciiMarkers(locale, messages)
+    const formalHits = findFormalAddress(locale, messages)
+    const dashHits = findDashIssues(messages)
     let qualityError: string | null = null
     if (locale !== referenceLocale) {
       try {
@@ -247,6 +372,8 @@ export async function main(): Promise<void> {
       empty.length === 0 &&
       untranslated.length === 0 &&
       asciiHits.length === 0 &&
+      formalHits.length === 0 &&
+      dashHits.length === 0 &&
       qualityError == null
     ) {
       continue
@@ -259,7 +386,21 @@ export async function main(): Promise<void> {
     if (empty.length > 0) console.error(`  empty: ${empty.join(', ')}`)
     if (untranslated.length > 0) console.error(`  untranslated: ${untranslated.join(', ')}`)
     if (asciiHits.length > 0) console.error(`  ascii-stripped: ${asciiHits.join('; ')}`)
+    if (formalHits.length > 0) console.error(`  formal-address: ${formalHits.join('; ')}`)
+    if (dashHits.length > 0) console.error(`  dash-style: ${dashHits.join('; ')}`)
     if (qualityError) console.error(`  quality: ${qualityError}`)
+  }
+
+  const drift = findSourceLockDrift(referenceMessages, readSourceLock())
+  const unstamped = [...drift.changed, ...drift.added, ...drift.removed]
+  if (unstamped.length > 0) {
+    failed = true
+    console.error(
+      'English changed since the translations were last stamped. Update every locale, then run `bun run i18n:stamp`:',
+    )
+    for (const key of drift.changed) console.error(`  changed: ${key}`)
+    for (const key of drift.added) console.error(`  added: ${key}`)
+    for (const key of drift.removed) console.error(`  removed: ${key}`)
   }
 
   const orphans = await findOrphanedKeys(Object.keys(referenceMessages))
@@ -280,12 +421,23 @@ export async function main(): Promise<void> {
     for (const issue of hardcodedUi) console.error(`  - ${issue}`)
   }
 
+  const dashLiterals = webFiles.flatMap((file) =>
+    findDashLiterals(file, readFileSync(file, 'utf8')),
+  )
+  if (dashLiterals.length > 0) {
+    failed = true
+    console.error(
+      'Dash placeholders or em/en dashes in web source (use a plain hyphen or a catalog key):',
+    )
+    for (const issue of dashLiterals) console.error(`  - ${issue}`)
+  }
+
   if (failed) {
     process.exit(1)
   }
 
   console.log(
-    `Validated ${SUPPORTED_LOCALES.length} locales against ${referenceLocale}; no catalog, quality, orphan, ASCII-marker, or hardcoded-UI issues.`,
+    `Validated ${SUPPORTED_LOCALES.length} locales against ${referenceLocale}; no catalog, quality, orphan, ASCII-marker, address, dash, source-lock, or hardcoded-UI issues.`,
   )
 }
 

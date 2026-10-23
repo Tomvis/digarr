@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useI18n } from '../lib/i18n'
 import { clampVolume, readStoredVolume, writeStoredVolume } from '../lib/preview-volume'
@@ -8,6 +8,7 @@ export type PreviewSource = {
   type: 'spotify-embed' | 'deezer-audio' | 'youtube-embed'
   url: string
   embedUrl: string
+  track?: { artistName: string; trackName: string; recordingMbid?: string }
 }
 
 export type PlayOutcome =
@@ -70,15 +71,34 @@ function resolveSpotifyEmbed(spotifyUrl: string): PreviewSource | null {
 
 async function resolveDeezerPreview(artistName: string): Promise<PreviewResolution> {
   try {
+    const normalize = (name: string) =>
+      name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
+    // Deezer no longer answers artist:"..." queries; search plainly and keep only the
+    // exact artist, since a bare name also matches covers and tributes.
     const encoded = encodeURIComponent(artistName)
-    const res = await fetch(`https://api.deezer.com/search?q=artist:"${encoded}"&limit=1`)
+    const res = await fetch(`https://api.deezer.com/search?q=${encoded}&limit=25`)
     if (!res.ok) return { source: null, reason: 'lookup-failed' }
-    const data = (await res.json()) as { data?: Array<{ preview?: string }> }
+    const data = (await res.json()) as {
+      data?: Array<{ preview?: string; title?: string; artist?: { name?: string } }>
+    }
     if (!Array.isArray(data?.data)) return { source: null, reason: 'lookup-failed' }
-    const track = data.data[0]
+    const matches = data.data.filter(
+      (t) =>
+        typeof t.artist?.name === 'string' && normalize(t.artist.name) === normalize(artistName),
+    )
+    const track = matches.find((t) => t.preview) ?? matches[0]
     if (!track) return { source: null, reason: 'no-match' }
     if (!track.preview) return { source: null, reason: 'no-audio' }
-    return { source: { type: 'deezer-audio', url: track.preview, embedUrl: track.preview } }
+    return {
+      source: {
+        type: 'deezer-audio',
+        url: track.preview,
+        embedUrl: track.preview,
+        ...(typeof track.title === 'string' && track.title.trim()
+          ? { track: { artistName: track.artist?.name ?? artistName, trackName: track.title } }
+          : {}),
+      },
+    }
   } catch {
     return { source: null, reason: 'lookup-failed' }
   }
@@ -200,6 +220,20 @@ export function usePreview() {
     currentMbidRef.current = null
     setStateAndRef(() => INITIAL_STATE)
   }, [issueSpotifyCommand, setStateAndRef])
+
+  // Persistent in AppShell: release audio and invalidate in-flight requests on unmount.
+  useEffect(
+    () => () => {
+      requestIdRef.current += 1
+      const audio = audioRef.current
+      if (audio) {
+        audio.pause()
+        audio.src = ''
+        audioRef.current = null
+      }
+    },
+    [],
+  )
 
   const onSpotifyPlaybackStarted = useCallback(() => {
     setStateAndRef((current) =>

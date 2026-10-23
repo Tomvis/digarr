@@ -1,25 +1,38 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { type DashboardCardId, DEFAULT_DECISIONS_GRID } from '@/core/dashboard-layout'
 import { AlbumPicker } from '../components/album-picker'
 import { ApproveDialog } from '../components/approve-dialog'
 import { ArtistThumb } from '../components/artist-thumb'
+import {
+  DASHBOARD_LINKS,
+  DASHBOARD_TITLES,
+  DashboardCustomize,
+} from '../components/dashboard-customize'
 import { GenreCoverageSummary } from '../components/genre-coverage-summary'
 import { Hint } from '../components/hint'
 import type { MonitorOption } from '../components/monitoring-options'
 import { PipelineProgress } from '../components/pipeline-progress'
 import { RecentlyApproved } from '../components/recently-approved'
-import { canApproveArtistToTarget, resolveApprovalTargetOptions } from '../components/target-utils'
-import { type Recommendation, TodaysPick } from '../components/todays-pick'
-import { Skeleton } from '../components/ui/skeleton'
 import {
-  type ActivityEntry,
+  canApproveArtistToTarget,
+  resolveApprovalTargetOptions,
+  resolveDialogLidarrTarget,
+} from '../components/target-utils'
+import { type Recommendation, TodaysPick } from '../components/todays-pick'
+import { Button } from '../components/ui/button'
+import { EmptyState } from '../components/ui/empty-state'
+import { Notice } from '../components/ui/notice'
+import { PageHeader } from '../components/ui/page-header'
+import { Skeleton } from '../components/ui/skeleton'
+import { useDashboardLayout } from '../hooks/use-dashboard-layout'
+import {
+  ApiError,
   approveRecommendation,
   approveToTarget,
   type GenreCoverage,
-  getAuthStatus,
-  getDashboardActivity,
   getDashboardGenreCoverage,
   getDashboardTaste,
   getRecentTracks,
@@ -27,10 +40,8 @@ import {
   getSchedulerInfo,
   getSubscriptions,
   getTopArtists,
-  getUserPreferences,
   type ListeningTopRange,
   listTargets,
-  rescanArtists,
   type SchedulerJob,
   type Subscription,
   type TasteGenre,
@@ -38,40 +49,45 @@ import {
   updateRecommendation,
 } from '../lib/api'
 import { reportApprovalOutcome } from '../lib/approval'
+import { scanStartedMessage } from '../lib/discovery-run-feedback'
+import { formatRelativeTime } from '../lib/format-time'
 import { useI18n } from '../lib/i18n'
 
-function formatRelativeTime(locale: string, dateStr: string | Date): string {
-  const diffMs = new Date(dateStr).getTime() - Date.now()
-  const diffMinutes = Math.round(diffMs / 60_000)
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-
-  if (Math.abs(diffMinutes) < 1) return formatter.format(0, 'second')
-  if (Math.abs(diffMinutes) < 60) return formatter.format(diffMinutes, 'minute')
-
-  const diffHours = Math.round(diffMinutes / 60)
-  if (Math.abs(diffHours) < 24) return formatter.format(diffHours, 'hour')
-
-  return formatter.format(Math.round(diffHours / 24), 'day')
+function SectionHeader({ title, linkTo }: { title: string; linkTo: string }) {
+  return (
+    <h2 className="mb-3 text-lead font-semibold text-text">
+      <Link to={linkTo} className="hover:underline">
+        {title}
+      </Link>
+    </h2>
+  )
 }
 
-function SectionHeader({
-  title,
-  linkText,
-  linkTo,
+function CardViewToggle({
+  value,
+  onChange,
+  options,
+  label,
 }: {
-  title: string
-  linkText?: string
-  linkTo?: string
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+  label: string
 }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-sm font-semibold text-text uppercase tracking-wide">{title}</h2>
-      {linkText && linkTo && (
-        <Link to={linkTo} className="text-xs text-accent underline">
-          {linkText}
-        </Link>
-      )}
-    </div>
+    <fieldset aria-label={label} className="mb-3 flex flex-wrap gap-1">
+      {options.map((option) => (
+        <Button
+          key={option.value}
+          size="sm"
+          variant={value === option.value ? 'secondary' : 'ghost'}
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </fieldset>
   )
 }
 
@@ -86,29 +102,22 @@ function SubscriptionPulse({
   if (!subs || subs.length === 0) {
     return (
       <div>
-        <SectionHeader
-          title={t('dashboard.subscriptions')}
-          linkText={t('dashboard.getStarted')}
-          linkTo="/subscriptions"
+        <EmptyState
+          className="bg-surface border border-border rounded-surface"
+          message={t('dashboard.subscriptionsEmpty')}
+          action={
+            <Link to="/discovery-modes" className="text-caption text-accent-text underline">
+              {t('dashboard.setUpAutomaticDiscovery')}
+            </Link>
+          }
         />
-        <div className="bg-surface border border-border rounded-lg p-6 text-center space-y-2">
-          <p className="text-sm text-muted">{t('dashboard.subscriptionsEmpty')}</p>
-          <Link to="/subscriptions" className="text-xs text-accent underline inline-block">
-            {t('dashboard.setUpAutomaticDiscovery')}
-          </Link>
-        </div>
       </div>
     )
   }
 
   return (
-    <div>
-      <SectionHeader
-        title={t('dashboard.subscriptions')}
-        linkText={t('dashboard.manage')}
-        linkTo="/subscriptions"
-      />
-      <div className="bg-surface border border-border rounded-lg divide-y divide-border">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 bg-surface border border-border rounded-lg divide-y divide-border">
         {subs.slice(0, 5).map((sub) => {
           const job = scheduler?.jobs.find((j) => j.name === `subscription-${sub.id}`)
           const nextRun = job?.nextRun ? formatRelativeTime(locale, job.nextRun) : null
@@ -156,15 +165,16 @@ function rangeLabelKey(
 function ListeningHistoryError({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n()
   return (
-    <div
-      role="alert"
-      className="bg-surface border border-border rounded-lg p-6 text-center space-y-2"
+    <Notice
+      tone="error"
+      action={
+        <Button variant="link" size="sm" className="px-2" onClick={onRetry}>
+          {t('errorBoundary.retry')}
+        </Button>
+      }
     >
-      <p className="text-sm text-muted">{t('dashboard.listeningFailed')}</p>
-      <button type="button" onClick={onRetry} className="text-xs text-accent underline">
-        {t('errorBoundary.retry')}
-      </button>
-    </div>
+      {t('dashboard.listeningFailed')}
+    </Notice>
   )
 }
 
@@ -200,11 +210,8 @@ function ListeningHistory({
   const hasPrev = page > 0
   const hasNext = page + 1 < totalPages
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <div className="flex items-center justify-between mb-3 gap-2">
-        <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
-          {t('dashboard.listeningHistory')}
-        </h2>
         <div className="flex gap-1 flex-wrap justify-end">
           {LISTENING_TOP_RANGES.map((r) => (
             <button
@@ -221,28 +228,29 @@ function ListeningHistory({
       {state === 'error' && <ListeningHistoryError onRetry={onRetry} />}
       {!data || data.tracks.length === 0 ? (
         state === 'error' ? null : (
-          <div className="bg-surface border border-border rounded-lg p-6 text-center space-y-2">
-            <p className="text-sm text-muted">
-              {t(
-                state === 'loading'
-                  ? 'common.loading'
-                  : state === 'empty'
-                    ? 'dashboard.listeningEmpty'
-                    : 'dashboard.connectListening',
-              )}
-            </p>
-            {state === 'not_configured' && (
-              <Link
-                to="/settings?tab=connections"
-                className="text-xs text-accent underline inline-block"
-              >
-                {t('dashboard.connectAccount')}
-              </Link>
+          <EmptyState
+            className="flex-1 justify-center bg-surface border border-border rounded-surface"
+            message={t(
+              state === 'loading'
+                ? 'common.loading'
+                : state === 'empty'
+                  ? 'dashboard.listeningEmpty'
+                  : 'dashboard.connectListening',
             )}
-          </div>
+            action={
+              state === 'not_configured' && (
+                <Link
+                  to="/settings?tab=connections"
+                  className="text-caption text-accent-text underline"
+                >
+                  {t('dashboard.connectAccount')}
+                </Link>
+              )
+            }
+          />
         )
       ) : (
-        <div className="bg-surface border border-border rounded-lg">
+        <div className="flex-1 bg-surface border border-border rounded-lg">
           <div className="divide-y divide-border">
             {data.tracks.map((entry) => (
               <div
@@ -296,19 +304,16 @@ function RecentActivity({
   onRetry: () => void
 }) {
   const { t, locale } = useI18n()
-  if (!data?.hasSource && !error) return null
   const failed = error || data?.status === 'error'
   return (
     <div>
-      <h2 className="text-sm font-semibold text-text uppercase tracking-wide mb-3">
-        {t('dashboard.recentPlays')}
-      </h2>
       {failed && <ListeningHistoryError onRetry={onRetry} />}
       {!data || data.tracks.length === 0 ? (
         failed ? null : (
-          <div className="bg-surface border border-border rounded-lg p-6 text-center">
-            <p className="text-sm text-muted">{t('dashboard.recentPlaysEmpty')}</p>
-          </div>
+          <EmptyState
+            className="bg-surface border border-border rounded-surface"
+            message={t('dashboard.recentPlaysEmpty')}
+          />
         )
       ) : (
         <div className="bg-surface border border-border rounded-lg divide-y divide-border">
@@ -323,7 +328,9 @@ function RecentActivity({
                 <p className="text-xs text-muted truncate">{entry.track}</p>
               </div>
               {entry.nowPlaying ? (
-                <span className="text-xs text-accent shrink-0">{t('dashboard.nowPlaying')}</span>
+                <span className="text-xs text-accent-text shrink-0">
+                  {t('dashboard.nowPlaying')}
+                </span>
               ) : entry.playedAt ? (
                 <span className="text-xs text-muted shrink-0">
                   {formatRelativeTime(locale, entry.playedAt)}
@@ -347,10 +354,11 @@ function TasteProfile({
   loading: boolean
 }) {
   const { t } = useI18n()
+  // Bars are relative to the top genre; shares of all genres are too small to read as bars.
+  const maxPercentage = Math.max(...(genres ?? []).map((g) => g.percentage), 0)
   return (
-    <div>
-      <SectionHeader title={t('dashboard.yourTaste')} />
-      <div className="bg-surface border border-border rounded-lg p-4">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 bg-surface border border-border rounded-lg p-4">
         {loading ? (
           <div className="space-y-3">
             {['t1', 't2', 't3', 't4', 't5'].map((k) => (
@@ -358,7 +366,7 @@ function TasteProfile({
             ))}
           </div>
         ) : !genres || genres.length === 0 ? (
-          <p className="text-sm text-muted text-center py-4">{t('dashboard.tasteEmpty')}</p>
+          <EmptyState className="py-4" message={t('dashboard.tasteEmpty')} />
         ) : (
           <div className="space-y-2.5">
             {genres.map((g, i) => (
@@ -370,7 +378,10 @@ function TasteProfile({
                 <div className="h-2 bg-bg rounded-full overflow-hidden">
                   <div
                     className="h-full bg-accent rounded-full transition-[width] duration-300"
-                    style={{ width: `${g.percentage}%`, opacity: 1 - i * 0.15 }}
+                    style={{
+                      width: `${maxPercentage > 0 ? (g.percentage / maxPercentage) * 100 : 0}%`,
+                      opacity: 1 - i * 0.15,
+                    }}
                   />
                 </div>
               </div>
@@ -387,79 +398,78 @@ function TasteProfile({
   )
 }
 
+type DecisionEntry = {
+  id: number
+  type: 'approved' | 'rejected'
+  timestamp: string
+  artistName: string
+}
+
 function ActivityFeed({
   entries,
   loading,
 }: {
-  entries: ActivityEntry[] | undefined
+  entries: DecisionEntry[] | undefined
   loading: boolean
 }) {
   const { locale, t } = useI18n()
   return (
-    <div>
-      <SectionHeader title={t('dashboard.recentActivity')} />
-      <div className="bg-surface border border-border rounded-lg">
-        {loading ? (
-          <div className="p-4 space-y-3">
-            {['a1', 'a2', 'a3', 'a4', 'a5'].map((k) => (
-              <Skeleton key={k} className="h-4 w-full" />
-            ))}
-          </div>
-        ) : !entries || entries.length === 0 ? (
-          <p className="text-sm text-muted text-center py-6">{t('dashboard.activityEmpty')}</p>
-        ) : (
-          <div className="divide-y divide-border">
-            {entries.map((entry) => (
-              <div
-                key={`${entry.type}-${entry.timestamp}-${entry.data.artistName ?? entry.data.subscriptionName ?? ''}`}
-                className="flex items-center gap-3 px-4 py-2.5"
-              >
-                <span className="text-xs shrink-0">
-                  {entry.type === 'approved'
-                    ? '\u2713'
-                    : entry.type === 'rejected'
-                      ? '\u2717'
-                      : entry.type === 'subscription_run'
-                        ? '\u21BB'
-                        : '\u25C9'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-text truncate">
-                    {entry.data.username && (
-                      <span className="text-muted">{entry.data.username}: </span>
-                    )}
-                    {entry.type === 'approved' &&
-                      `${t('dashboard.activityApproved')} ${entry.data.artistName}`}
-                    {entry.type === 'rejected' &&
-                      `${t('dashboard.activityRejected')} ${entry.data.artistName}`}
-                    {entry.type === 'subscription_run' &&
-                      `${entry.data.subscriptionName}: ${entry.data.artistsNew} ${t('dashboard.activityNew')}`}
-                    {entry.type === 'scan_completed' &&
-                      `${t('dashboard.activityScan')}: ${entry.data.discovered} ${t('dashboard.activityDiscovered')}`}
-                  </p>
-                </div>
-                <span className="text-xs text-muted shrink-0">
-                  {formatRelativeTime(locale, entry.timestamp)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="bg-surface border border-border rounded-lg">
+      {loading ? (
+        <div className="p-4 space-y-3">
+          {['a1', 'a2', 'a3', 'a4', 'a5'].map((key) => (
+            <Skeleton key={key} className="h-4 w-full" />
+          ))}
+        </div>
+      ) : !entries?.length ? (
+        <EmptyState className="py-6" message={t('dashboard.activityEmpty')} />
+      ) : (
+        <div className="divide-y divide-border">
+          {entries.map((entry) => (
+            <div key={entry.id} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="text-xs shrink-0" aria-hidden="true">
+                {entry.type === 'approved' ? '\u2713' : '\u2717'}
+              </span>
+              <p className="min-w-0 flex-1 text-sm text-text truncate">
+                {t(
+                  entry.type === 'approved'
+                    ? 'dashboard.activityApproved'
+                    : 'dashboard.activityRejected',
+                )}{' '}
+                {entry.artistName}
+              </p>
+              <span className="text-xs text-muted shrink-0">
+                {formatRelativeTime(locale, entry.timestamp)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
+const APPROVED_STATUSES = new Set(['added_to_lidarr', 'add_failed', 'approved', 'waiting'])
+const ACTIVITY_STATUSES = new Set(['added_to_lidarr', 'add_failed', 'approved', 'rejected'])
+
 export function Dashboard() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const {
+    layout,
+    disabled: layoutDisabled,
+    save: saveLayout,
+    error: layoutError,
+    retry: retryLayout,
+  } = useDashboardLayout()
+  const [customizing, setCustomizing] = useState(false)
+  const [decisionsView, setDecisionsView] = useState('approved')
+  const [listeningView, setListeningView] = useState('top')
   const [skippedIds, setSkippedIds] = useState<Set<number>>(new Set())
   const [actedIds, setActedIds] = useState<Set<number>>(new Set())
   const [listenRange, setListenRange] = useState<ListeningTopRange>('this_month')
   const [listenPage, setListenPage] = useState(0)
   const LISTEN_PAGE_SIZE = 5
-  const { data: authStatus } = useQuery({ queryKey: ['auth-status'], queryFn: getAuthStatus })
-  const isAdmin = authStatus?.isAdmin ?? false
 
   // Pending pick - fetch 10 so skip has runway
   const { data: pickData, isLoading: pickLoading } = useQuery({
@@ -469,13 +479,15 @@ export function Dashboard() {
   })
 
   // Recently approved
+  const decisionsGrid = layout.decisionsGrid ?? DEFAULT_DECISIONS_GRID
+  const approvedLimit = decisionsGrid.columns * decisionsGrid.rows
   const { data: approvedData, isLoading: approvedLoading } = useQuery({
-    queryKey: ['dashboard-approved'],
+    queryKey: ['dashboard-approved', approvedLimit],
     queryFn: () =>
       getRecommendations({
-        status: 'added_to_lidarr,add_failed,approved',
+        status: 'added_to_lidarr,add_failed,approved,waiting',
         sort: 'acted_on_desc',
-        limit: '9',
+        limit: String(approvedLimit),
       }),
     staleTime: 30_000,
   })
@@ -545,7 +557,23 @@ export function Dashboard() {
   // Activity
   const { data: activityData, isLoading: activityLoading } = useQuery({
     queryKey: ['dashboard-activity'],
-    queryFn: () => getDashboardActivity(5),
+    queryFn: async () => {
+      const result = await getRecommendations({
+        status: 'added_to_lidarr,add_failed,approved,rejected',
+        sort: 'acted_on_desc',
+        limit: '5',
+      })
+      return (
+        result.items as (Recommendation & { actedOnAt: string | null; createdAt: string })[]
+      ).map(
+        (rec): DecisionEntry => ({
+          id: rec.id,
+          type: rec.status === 'rejected' ? 'rejected' : 'approved',
+          timestamp: rec.actedOnAt ?? rec.createdAt,
+          artistName: rec.artist.name,
+        }),
+      )
+    },
     staleTime: 30_000,
   })
 
@@ -562,15 +590,6 @@ export function Dashboard() {
   )
   const hasLidarrTarget = approveTargets.some((target) => target.type === 'lidarr')
 
-  // User preferences (for ApproveDialog defaults)
-  const { data: prefsData } = useQuery({
-    queryKey: ['user-preferences'],
-    queryFn: getUserPreferences,
-    staleTime: 60_000,
-  })
-
-  const prefs = (prefsData ?? {}) as Record<string, unknown>
-
   // ApproveDialog state (Lidarr profile picker)
   const [approveDialogState, setApproveDialogState] = useState<{
     recId: number
@@ -578,26 +597,6 @@ export function Dashboard() {
     targetId?: string
   } | null>(null)
   const [albumPickerRec, setAlbumPickerRec] = useState<Recommendation | null>(null)
-
-  // Auto-rescan images for artists that are missing them (once per mount)
-  const rescannedRef = useRef(false)
-  useEffect(() => {
-    if (!isAdmin || rescannedRef.current) return
-    const all = [
-      ...((pickData?.items ?? []) as Recommendation[]),
-      ...((approvedData?.items ?? []) as Recommendation[]),
-    ]
-    const missing = all.some((r) => !r.artist.imageUrl)
-    if (missing && all.length > 0) {
-      rescannedRef.current = true
-      rescanArtists()
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-        })
-        .catch(() => {})
-    }
-  }, [isAdmin, pickData, approvedData, queryClient])
 
   const allPending = (pickData?.items ?? []) as Recommendation[]
 
@@ -614,6 +613,23 @@ export function Dashboard() {
   // Recently approved recs for the gallery
   const approvedRecs = (approvedData?.items ?? []) as Recommendation[]
 
+  // Refetch only the cards an outcome changes. The acted pick stays hidden via
+  // actedIds, so the pick list reloads only once the local pool runs out.
+  function refreshAfterAction(id: number, status: string | undefined, approval: boolean) {
+    const poolLeft = allPending.some(
+      (r) => r.id !== id && !skippedIds.has(r.id) && !actedIds.has(r.id),
+    )
+    void queryClient.invalidateQueries({
+      queryKey: ['dashboard-pick'],
+      refetchType: poolLeft ? 'none' : 'active',
+    })
+    if (approval) void queryClient.invalidateQueries({ queryKey: ['approval-requests'] })
+    if (status === undefined || APPROVED_STATUSES.has(status))
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
+    if (status === undefined || ACTIVITY_STATUSES.has(status))
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
+  }
+
   async function handleAction(id: number, status: 'approved' | 'rejected') {
     setActedIds((prev) => new Set([...prev, id]))
     try {
@@ -625,12 +641,9 @@ export function Dashboard() {
           status === 'approved' ? t('dashboard.approvedSuccess') : t('dashboard.rejectedSuccess'),
         )
       }
-      queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-      if (status === 'approved') {
-        queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-      }
-    } catch {
-      toast.error(t('dashboard.actionFailed'))
+      refreshAfterAction(id, res?.status, status === 'approved')
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t('dashboard.actionFailed'))
       setActedIds((prev) => {
         const next = new Set(prev)
         next.delete(id)
@@ -649,10 +662,9 @@ export function Dashboard() {
     try {
       const res = await approveRecommendation(recId, { monitorOption })
       if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.approvedSuccess'))
-      queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-    } catch {
-      toast.error(t('dashboard.actionFailed'))
+      refreshAfterAction(recId, res?.status, true)
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t('dashboard.actionFailed'))
       setActedIds((prev) => {
         const next = new Set(prev)
         next.delete(recId)
@@ -686,11 +698,9 @@ export function Dashboard() {
         ...targetOptions,
       })
       if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.sentToTarget'))
-      queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-    } catch {
-      toast.error(t('dashboard.approveFailed'))
-    } finally {
+      refreshAfterAction(recId, res?.status, true)
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t('dashboard.approveFailed'))
       setActedIds((prev) => {
         const next = new Set(prev)
         next.delete(recId)
@@ -703,72 +713,75 @@ export function Dashboard() {
     setSkippedIds((prev) => new Set([...prev, id]))
   }
 
-  return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto">
-      <h1 className="sr-only">{t('dashboard.title')}</h1>
-      {/* Pipeline progress (self-hides) */}
-      <PipelineProgress
-        onComplete={() => {
-          queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-genre-coverage'] })
-        }}
-        isFirstScan={
-          (!pickData || pickData.items.length === 0) &&
-          (!approvedData || approvedData.items.length === 0)
-        }
+  const empty: Record<DashboardCardId, boolean> = {
+    pick: !pickLoading && !currentPick,
+    decisions:
+      !approvedLoading && !activityLoading && !approvedRecs.length && !activityData?.length,
+    listening:
+      !topArtistsLoading &&
+      !topArtistsError &&
+      !recentTracksError &&
+      !topArtistsData?.source &&
+      !recentTracksData?.hasSource,
+    genres: !tasteLoading && !tasteData?.length && !genreCoverageData?.totalArtists,
+    subscriptions: subsData !== undefined && subsData.length === 0,
+  }
+  const runScan = () => {
+    void triggerPipeline()
+      .then((res) => toast.success(scanStartedMessage(t, res)))
+      .catch(() => toast.error(t('discover.scanStartFailed')))
+  }
+  const content: Record<DashboardCardId, ReactNode> = {
+    pick: (
+      <TodaysPick
+        rec={currentPick}
+        loading={pickLoading}
+        onApprove={(id) => handleAction(id, 'approved')}
+        onReject={(id) => handleAction(id, 'rejected')}
+        onSkip={handleSkip}
+        onRunScan={runScan}
+        targets={approveTargets}
+        onApproveToTarget={handleApproveToTarget}
+        onApproveWithOption={handleApproveWithOption}
+        onOpenAlbumPicker={handleOpenAlbumPicker}
       />
-
-      {/* Today's Pick - full-width hero, the daily-return hook */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-text">{t('dashboard.todaysPick')}</h2>
-          <Link to="/discover" className="text-xs text-accent underline">
-            {t('dashboard.discover')}
-          </Link>
-        </div>
-        <TodaysPick
-          rec={currentPick}
-          loading={pickLoading}
-          onApprove={(id) => handleAction(id, 'approved')}
-          onReject={(id) => handleAction(id, 'rejected')}
-          onSkip={handleSkip}
-          onRunScan={() => {
-            triggerPipeline()
-              .then((res) =>
-                toast.success(
-                  res.status === 'duplicate'
-                    ? t('discover.scanAlreadyRunning')
-                    : res.queued
-                      ? t('discover.scanQueued').replace('{0}', String(res.position ?? 0))
-                      : t('discover.scanStarted'),
-                ),
-              )
-              .catch(() => toast.error(t('discover.scanStartFailed')))
-          }}
-          targets={approveTargets}
-          onApproveToTarget={handleApproveToTarget}
-          onApproveWithOption={handleApproveWithOption}
-          onOpenAlbumPicker={handleOpenAlbumPicker}
+    ),
+    decisions: (
+      <>
+        <CardViewToggle
+          label={t('dashboard.yourDecisions')}
+          value={decisionsView}
+          onChange={setDecisionsView}
+          options={[
+            { value: 'approved', label: t('discover.approved') },
+            { value: 'all', label: t('discover.all') },
+          ]}
         />
-      </section>
-
-      <Hint id="dashboard-feedback-tip" type="spotlight">
-        {t('dashboard.feedbackTip')}
-      </Hint>
-
-      {/* Recently Approved + Listening Activity */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <SectionHeader
-            title={t('dashboard.recentlyApproved')}
-            linkText={t('dashboard.viewAll')}
-            linkTo="/discover"
+        {decisionsView === 'approved' ? (
+          <RecentlyApproved
+            recs={approvedRecs}
+            loading={approvedLoading}
+            columns={decisionsGrid.columns}
+            count={approvedLimit}
+            emptyClassName="flex-1"
           />
-          <RecentlyApproved recs={approvedRecs} loading={approvedLoading} />
-        </div>
-        <div className="space-y-3">
+        ) : (
+          <ActivityFeed entries={activityData} loading={activityLoading} />
+        )}
+      </>
+    ),
+    listening: (
+      <>
+        <CardViewToggle
+          label={t('dashboard.listening')}
+          value={listeningView}
+          onChange={setListeningView}
+          options={[
+            { value: 'top', label: t('dashboard.topArtists') },
+            { value: 'recent', label: t('dashboard.recentPlays') },
+          ]}
+        />
+        {listeningView === 'top' ? (
           <ListeningHistory
             data={topArtistsData}
             loading={topArtistsLoading}
@@ -779,15 +792,13 @@ export function Dashboard() {
             range={listenRange}
             page={listenPage}
             pageSize={LISTEN_PAGE_SIZE}
-            onRangeChange={(r) => {
-              setListenRange(r)
+            onRangeChange={(range) => {
+              setListenRange(range)
               setListenPage(0)
             }}
             onPageChange={setListenPage}
           />
-          <Hint id="dashboard-listening-tip" type="inline">
-            {t('dashboard.listeningTip')}
-          </Hint>
+        ) : (
           <RecentActivity
             data={recentTracksData}
             error={recentTracksError}
@@ -795,36 +806,91 @@ export function Dashboard() {
               void retryRecentTracks()
             }}
           />
-        </div>
-      </div>
+        )}
+      </>
+    ),
+    genres: <TasteProfile genres={tasteData} coverage={genreCoverageData} loading={tasteLoading} />,
+    subscriptions: <SubscriptionPulse subs={subsData} scheduler={schedulerData} />,
+  }
+  const spans = { small: 'md:col-span-1', medium: 'md:col-span-2', large: 'md:col-span-3' }
 
-      {/* Subscription Pulse + Taste Profile */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-3">
-          <SubscriptionPulse subs={subsData} scheduler={schedulerData} />
-          <Hint id="dashboard-subscriptions-tip" type="inline">
-            {t('dashboard.subscriptionsTip')}
-          </Hint>
-        </div>
-        <div className="space-y-3">
-          <TasteProfile genres={tasteData} coverage={genreCoverageData} loading={tasteLoading} />
-          <Hint id="dashboard-taste-tip" type="inline">
-            {t('dashboard.tasteTip')}
-          </Hint>
-        </div>
+  return (
+    <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto">
+      <PageHeader
+        title={t('dashboard.title')}
+        actions={
+          <>
+            {empty.pick && !layout.showEmpty && (
+              <Button onClick={runScan}>{t('app.runScan')}</Button>
+            )}
+            <Button
+              variant="outline"
+              aria-expanded={customizing}
+              aria-controls="dashboard-customize"
+              onClick={() => setCustomizing((value) => !value)}
+            >
+              {t('dashboard.customize')}
+            </Button>
+          </>
+        }
+      />
+      {customizing && (
+        <>
+          <DashboardCustomize layout={layout} disabled={layoutDisabled} onChange={saveLayout} />
+          {layoutError && (
+            <Notice
+              tone="error"
+              action={<Button onClick={retryLayout}>{t('errorBoundary.retry')}</Button>}
+            >
+              {t('dashboard.layoutLoadFailed')}
+            </Notice>
+          )}
+        </>
+      )}
+      <PipelineProgress
+        onComplete={() => {
+          for (const key of [
+            'dashboard-pick',
+            'approval-requests',
+            'dashboard-approved',
+            'dashboard-activity',
+            'dashboard-genre-coverage',
+          ]) {
+            void queryClient.invalidateQueries({ queryKey: [key] })
+          }
+        }}
+        isFirstScan={!pickData?.items.length && !approvedData?.items.length}
+      />
+      {tasteData && tasteData.length > 0 && (
+        <Hint id="dashboard-feedback-tip" type="spotlight">
+          {t('dashboard.feedbackTip')}
+        </Hint>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-3 md:grid-flow-row-dense gap-4 items-start">
+        {layout.cards
+          .filter((card) => card.visible && (layout.showEmpty || !empty[card.id]))
+          .map((card) => (
+            <section
+              key={card.id}
+              data-dashboard-card={card.id}
+              aria-labelledby={`dashboard-${card.id}`}
+              className={`@container min-w-0 ${spans[card.size]}`}
+            >
+              <div id={`dashboard-${card.id}`}>
+                <SectionHeader
+                  title={t(DASHBOARD_TITLES[card.id])}
+                  linkTo={DASHBOARD_LINKS[card.id]}
+                />
+              </div>
+              {content[card.id]}
+            </section>
+          ))}
       </div>
-
-      {/* Activity Feed - full-width */}
-      <ActivityFeed entries={activityData} loading={activityLoading} />
 
       {/* Lidarr profile picker dialog (Today's Pick target approve) */}
       {approveDialogState && (
         <ApproveDialog
-          defaults={{
-            qualityProfileId: Number(prefs.qualityProfileId ?? 1),
-            metadataProfileId: Number(prefs.metadataProfileId ?? 1),
-            rootFolderId: Number(prefs.rootFolderId ?? 0),
-          }}
+          lidarrTargetId={resolveDialogLidarrTarget(targets, approveDialogState.targetId)?.id}
           monitorOption={approveDialogState.monitorOption}
           onCancel={() => setApproveDialogState(null)}
           onConfirm={async (overrides) => {
@@ -840,14 +906,18 @@ export function Dashboard() {
                   ...targetOptions,
                 })
               } else {
-                res = await approveRecommendation(recId, overrides)
+                const dialogTarget = resolveDialogLidarrTarget(targets)
+                res = await approveRecommendation(recId, {
+                  ...overrides,
+                  ...(dialogTarget ? { lidarrTargetId: `lidarr-${dialogTarget.id}` } : {}),
+                })
               }
               if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.addedToLidarr'))
-              queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-              queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-            } catch {
-              toast.error(t('dashboard.addToLidarrFailed'))
-            } finally {
+              refreshAfterAction(recId, res?.status, true)
+            } catch (error) {
+              toast.error(
+                error instanceof ApiError ? error.message : t('dashboard.addToLidarrFailed'),
+              )
               setActedIds((prev) => {
                 const next = new Set(prev)
                 next.delete(recId)
@@ -878,11 +948,11 @@ export function Dashboard() {
                     selectedAlbumIds,
                   })
                   if (reportApprovalOutcome(res, t)) toast.success(t('dashboard.approvedSuccess'))
-                  queryClient.invalidateQueries({ queryKey: ['dashboard-pick'] })
-                  queryClient.invalidateQueries({ queryKey: ['dashboard-approved'] })
-                } catch {
-                  toast.error(t('dashboard.actionFailed'))
-                } finally {
+                  refreshAfterAction(pickerRec.id, res?.status, true)
+                } catch (error) {
+                  toast.error(
+                    error instanceof ApiError ? error.message : t('dashboard.actionFailed'),
+                  )
                   setActedIds((prev) => {
                     const next = new Set(prev)
                     next.delete(pickerRec.id)

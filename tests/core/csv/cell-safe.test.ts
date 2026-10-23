@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { cellSafe, parseCell, parseCsvRow } from '@/core/csv/cell-safe'
+import { cellSafe, parseCsvRows } from '@/core/csv/cell-safe'
 
 describe('cellSafe (export-side sanitization)', () => {
   it('strips leading formula-trigger characters', () => {
@@ -27,43 +27,6 @@ describe('cellSafe (export-side sanitization)', () => {
     expect(cellSafe('Artist Name')).toBe('Artist Name')
     expect(cellSafe('')).toBe('')
     expect(cellSafe('simple123')).toBe('simple123')
-  })
-})
-
-describe('parseCell (import-side sanitization)', () => {
-  it('unquotes and de-escapes RFC 4180 quoted fields', () => {
-    expect(parseCell('"a, b"')).toBe('a, b')
-    expect(parseCell('"a ""b"" c"')).toBe('a "b" c')
-    expect(parseCell('"line1\nline2"')).toBe('line1\nline2')
-  })
-
-  it('strips formula-trigger prefixes after unquoting', () => {
-    expect(parseCell('=bad')).toBe('bad')
-    expect(parseCell('"=HYPERLINK(evil)"')).toBe('HYPERLINK(evil)')
-    expect(parseCell('+risk')).toBe('risk')
-  })
-
-  it('passes through plain fields', () => {
-    expect(parseCell('Radiohead')).toBe('Radiohead')
-    expect(parseCell('')).toBe('')
-  })
-})
-
-describe('parseCsvRow (RFC 4180)', () => {
-  it('splits simple comma-separated fields', () => {
-    expect(parseCsvRow('a,b,c')).toEqual(['a', 'b', 'c'])
-  })
-
-  it('respects quoted commas', () => {
-    expect(parseCsvRow('"a,b",c')).toEqual(['a,b', 'c'])
-  })
-
-  it('handles escaped quotes in quoted fields', () => {
-    expect(parseCsvRow('"a ""b"" c",d')).toEqual(['a "b" c', 'd'])
-  })
-
-  it('strips formula prefix on each field', () => {
-    expect(parseCsvRow('=evil,safe')).toEqual(['evil', 'safe'])
   })
 })
 
@@ -98,5 +61,25 @@ describe('CSV round-trip with hostile input', () => {
     expect(dataRow.startsWith('+')).toBe(false)
     expect(dataRow.startsWith('-')).toBe(false)
     expect(dataRow.startsWith('@')).toBe(false)
+  })
+})
+
+describe('parseCsvRows (RFC 4180)', () => {
+  it.each([
+    ['a,b,c', ['a', 'b', 'c']],
+    ['"a,b",c', ['a,b', 'c']],
+    ['"a ""b"" c",d', ['a "b" c', 'd']],
+    ['=evil,safe', ['evil', 'safe']],
+  ])('parses %j as one row', (row, expected) => {
+    expect(parseCsvRows(row)).toEqual([expected])
+  })
+
+  it('keeps newlines and escaped quotes inside quoted fields and handles CRLF', () => {
+    const csv = 'artist,note\r\n"Foo\nBar","say ""hi"""\r\n\r\nBaz,x'
+    expect(parseCsvRows(csv)).toEqual([
+      ['artist', 'note'],
+      ['Foo\nBar', 'say "hi"'],
+      ['Baz', 'x'],
+    ])
   })
 })

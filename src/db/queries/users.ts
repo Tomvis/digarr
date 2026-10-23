@@ -1,22 +1,51 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, count, desc, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import { decryptFields, encryptFields, SENSITIVE_USER_CONNECTIONS } from '@/core/crypto'
+import {
+  decryptFields,
+  encryptFields,
+  maskChannelSecrets,
+  SENSITIVE_USER_CONNECTIONS,
+} from '@/core/crypto'
 import { isUniqueViolation } from '@/core/db-errors'
 import type { SupportedLocale } from '@/core/i18n/locales'
+import type { NotificationChannel } from '@/core/notifications/types'
 import type { Database, DbOrTx } from '@/db'
-import type { Preferences } from '@/db/schema'
-import { sessions, users } from '@/db/schema'
+import type { ApprovalPolicy, Preferences } from '@/db/schema'
+import { jobRuns, sessions, users } from '@/db/schema'
 import type { Cursor } from '@/server/helpers/pagination-cursor'
 
 type UserRow = typeof users.$inferSelect
 
-export type UserPublic = Omit<UserRow, 'passwordHash' | 'preferredLocale'> & {
-  preferredLocale?: UserRow['preferredLocale']
-}
+export type UserPublic = Omit<
+  UserRow,
+  'passwordHash' | 'preferredLocale' | 'approvalPolicy' | 'maxOpenRequests' | 'approvalThreshold'
+> &
+  Partial<
+    Pick<UserRow, 'preferredLocale' | 'approvalPolicy' | 'maxOpenRequests' | 'approvalThreshold'>
+  >
 
 function toPublic(row: UserRow): UserPublic {
   const { passwordHash: _, ...rest } = row
   return rest
+}
+
+type SensitiveUserField = (typeof SENSITIVE_USER_CONNECTIONS)[number]
+type PresenceFlags = { [K in SensitiveUserField as `has${Capitalize<K>}`]: boolean }
+
+export type UserResponse<T = UserPublic> = Omit<T, SensitiveUserField | 'passwordHash'> &
+  PresenceFlags
+
+export function toUserResponse<T extends object>(user: T): UserResponse<T> {
+  const out = { ...user } as Record<string, unknown>
+  delete out.passwordHash
+  const preferences = out.preferences as Preferences | null | undefined
+  if (preferences?.channels)
+    out.preferences = { ...preferences, channels: maskChannelSecrets(preferences.channels) }
+  for (const field of SENSITIVE_USER_CONNECTIONS) {
+    out[`has${field[0]?.toUpperCase()}${field.slice(1)}`] = Boolean(out[field])
+    delete out[field]
+  }
+  return out as UserResponse<T>
 }
 
 export type UserBootstrapOptions = { bootstrap?: 'allow-existing' | 'first-user-only' }
@@ -234,6 +263,9 @@ export async function createUser(
     username: string
     passwordHash: string
     isAdmin?: boolean
+    approvalPolicy?: ApprovalPolicy
+    maxOpenRequests?: number | null
+    approvalThreshold?: number | null
     email?: string
     oidcIssuer?: string
     oidcSubject?: string
@@ -269,6 +301,12 @@ async function insertUser(db: DbOrTx, data: Parameters<typeof createUser>[1]): P
       username: data.username,
       passwordHash: data.passwordHash,
       isAdmin: data.isAdmin ?? false,
+      approvalPolicy: data.approvalPolicy,
+      maxOpenRequests: data.maxOpenRequests,
+      approvalThreshold:
+        data.approvalPolicy === 'auto_approve'
+          ? (data.approvalThreshold ?? 0.8)
+          : data.approvalThreshold,
       email: data.email,
       oidcIssuer: data.oidcIssuer,
       oidcSubject: data.oidcSubject,
@@ -357,6 +395,7 @@ export async function listUsers(
 export async function deleteUser(db: Database, id: number): Promise<void> {
   await db.transaction(async (tx) => {
     await guardLastAdmin(tx, id)
+    await tx.delete(jobRuns).where(eq(jobRuns.userId, id))
     await tx.delete(users).where(eq(users.id, id))
   })
 }
@@ -458,9 +497,20 @@ export async function updateUserConnections(
 export async function updateUser(
   db: Database,
   id: number,
-  data: { isAdmin?: boolean; email?: string | null },
+  data: {
+    isAdmin?: boolean
+    email?: string | null
+    approvalPolicy?: ApprovalPolicy
+    maxOpenRequests?: number | null
+    approvalThreshold?: number | null
+  },
 ): Promise<void> {
-  const updates = { isAdmin: data.isAdmin, email: data.email }
+  const updates = {
+    ...data,
+    ...(data.approvalPolicy === 'auto_approve'
+      ? { approvalThreshold: data.approvalThreshold ?? 0.8 }
+      : {}),
+  }
   if (data.isAdmin === false) {
     await db.transaction(async (tx) => {
       await guardLastAdmin(tx, id)
@@ -469,4 +519,17 @@ export async function updateUser(
     return
   }
   await db.update(users).set(updates).where(eq(users.id, id))
+}
+
+export async function updateUserNotificationChannels(
+  db: Database,
+  userId: number,
+  channels: NotificationChannel[],
+): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      preferences: sql`coalesce(${users.preferences}, '{}'::jsonb) || jsonb_build_object('channels', ${JSON.stringify(channels)}::jsonb)`,
+    })
+    .where(eq(users.id, userId))
 }

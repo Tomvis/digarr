@@ -1,4 +1,4 @@
-import { count, eq, sql } from 'drizzle-orm'
+import { count, eq, inArray, sql } from 'drizzle-orm'
 import type { Database } from '@/db'
 import { artistMetadata } from '@/db/schema'
 
@@ -16,8 +16,12 @@ export type ArtistMetadataInsert = {
   deezerFans?: number | null
 }
 
+export function artistMetadataKey(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 export async function lookupByName(db: Database, name: string): Promise<ArtistMetadataRow | null> {
-  const normalized = name.trim().toLowerCase()
+  const normalized = artistMetadataKey(name)
   const [row] = await db
     .select({
       spotifyGenres: artistMetadata.spotifyGenres,
@@ -69,14 +73,23 @@ export async function getCount(db: Database): Promise<number> {
   return row?.total ?? 0
 }
 
-export async function getPopularityMap(db: Database): Promise<Map<string, number>> {
+export async function getPopularityMap(
+  db: Database,
+  names?: string[],
+): Promise<Map<string, number>> {
+  const normalized = names === undefined ? undefined : [...new Set(names.map(artistMetadataKey))]
+  if (normalized?.length === 0) return new Map()
   const rows = await db
     .select({
       nameNormalized: artistMetadata.nameNormalized,
       spotifyPopularity: artistMetadata.spotifyPopularity,
     })
     .from(artistMetadata)
-    .where(sql`${artistMetadata.spotifyPopularity} is not null`)
+    .where(
+      normalized
+        ? inArray(artistMetadata.nameNormalized, normalized)
+        : sql`${artistMetadata.spotifyPopularity} is not null`,
+    )
   const map = new Map<string, number>()
   for (const row of rows) {
     if (row.spotifyPopularity != null) {

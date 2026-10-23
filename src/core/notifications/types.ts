@@ -1,6 +1,14 @@
-export type NotificationEvent = 'batch_complete' | 'digest'
+export type NotificationEvent = 'batch_complete' | 'digest' | 'approval_failed' | 'request_resolved'
 
 export type WebhookPayload =
+  | {
+      event: 'request_resolved'
+      recommendationId: number
+      status: 'approved' | 'declined'
+      message: string
+      timestamp: string
+    }
+  | { event: 'approval_failed'; recommendationId: number; message: string; timestamp: string }
   | {
       event: 'batch_complete'
       batchId: number
@@ -23,7 +31,7 @@ type ChannelBase = {
   allowPrivateTarget?: boolean
 }
 
-export type WebhookChannel = ChannelBase & { type: 'webhook'; url: string }
+export type WebhookChannel = ChannelBase & { type: 'webhook'; url: string; signingSecret?: string }
 export type NtfyChannel = ChannelBase & {
   type: 'ntfy'
   server: string

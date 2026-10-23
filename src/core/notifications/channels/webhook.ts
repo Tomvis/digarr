@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { redactUrlForLog } from '../../clients/http'
 import { type PostResult, post } from '../transport'
 import type { WebhookChannel, WebhookPayload } from '../types'
@@ -37,6 +38,16 @@ function isDiscordWebhook(url: string): boolean {
 }
 
 export function formatDiscordPayload(payload: WebhookPayload): Record<string, unknown> {
+  if (payload.event === 'approval_failed' || payload.event === 'request_resolved')
+    return {
+      embeds: [
+        {
+          title: payload.event === 'request_resolved' ? 'digarr' : 'Lidarr',
+          description: payload.message,
+          timestamp: payload.timestamp,
+        },
+      ],
+    }
   const accent = 0x7c3aed // accent purple
   if (payload.event === 'digest') {
     const { stats, message } = payload
@@ -76,13 +87,25 @@ export function formatDiscordPayload(payload: WebhookPayload): Record<string, un
   }
 }
 
+export function signatureHeaders(
+  secret: string,
+  rawBody: string,
+  timestamp = Math.floor(Date.now() / 1000),
+): Record<string, string> {
+  const mac = createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')
+  return { 'X-Digarr-Timestamp': String(timestamp), 'X-Digarr-Signature': `sha256=${mac}` }
+}
+
 export function sendWebhookChannel(
   channel: WebhookChannel,
   payload: WebhookPayload,
 ): Promise<PostResult> {
   const body = isDiscordWebhook(channel.url) ? formatDiscordPayload(payload) : payload
+  const rawBody = JSON.stringify(body)
   return post(channel.url, body, {
     allowPrivate: channel.allowPrivateTarget,
     redact: redactWebhookUrl,
+    rawBody,
+    headers: channel.signingSecret ? signatureHeaders(channel.signingSecret, rawBody) : undefined,
   })
 }

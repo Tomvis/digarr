@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -8,9 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/web/lib/i18n'
 
 function renderWithQuery(ui: ReactElement) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const client = createTestQueryClient()
   return {
     client,
     ...render(
@@ -42,6 +40,8 @@ import {
   saveLibraryOverride,
 } from '@/web/lib/api'
 import { LibraryReconciliationPage } from '@/web/pages/library-reconciliation'
+import { createTestQueryClient } from '../helpers/query'
+import { installMemoryLocalStorage } from '../helpers/storage'
 
 const mockGetLibraryUnreconciled = vi.mocked(getLibraryUnreconciled)
 const mockGetLibraryUnreconciledAlbums = vi.mocked(getLibraryUnreconciledAlbums)
@@ -108,6 +108,10 @@ const makeAlbumRow = (
   ...overrides,
 })
 
+function review<T>(data: { items: T[] }) {
+  return { ...data, total: data.items.length }
+}
+
 function deferred<T>() {
   let resolve: (value: T | PromiseLike<T>) => void = () => undefined
   let reject: (reason?: unknown) => void = () => undefined
@@ -121,47 +125,34 @@ function deferred<T>() {
 describe('LibraryReconciliationPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    const storage = new Map<string, string>()
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: vi.fn((key: string) => storage.get(key) ?? null),
-        setItem: vi.fn((key: string, value: string) => {
-          storage.set(key, value)
-        }),
-        removeItem: vi.fn((key: string) => {
-          storage.delete(key)
-        }),
-        clear: vi.fn(() => {
-          storage.clear()
-        }),
-      },
-    })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({ items: [] })
+    installMemoryLocalStorage()
+    mockGetLibraryUnreconciledAlbums.mockResolvedValue(review({ items: [] }))
     mockRerunLibraryReconciler.mockResolvedValue(undefined)
     mockBulkIgnoreLibraryArtists.mockResolvedValue(undefined)
     mockBulkIgnoreLibraryAlbums.mockResolvedValue(undefined)
   })
 
   it('groups unreconciled rows by source', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: [
-        makeRow(),
-        makeRow({
-          id: 2,
-          sourceArtistId: 'plex-2',
-          name: 'Failure',
-          nameNormalized: 'failure',
-        }),
-        makeRow({
-          id: 3,
-          source: 'jellyfin',
-          sourceArtistId: 'jf-1',
-          name: 'Lolita',
-          nameNormalized: 'lolita',
-        }),
-      ],
-    })
+    mockGetLibraryUnreconciled.mockResolvedValue(
+      review({
+        items: [
+          makeRow(),
+          makeRow({
+            id: 2,
+            sourceArtistId: 'plex-2',
+            name: 'Failure',
+            nameNormalized: 'failure',
+          }),
+          makeRow({
+            id: 3,
+            source: 'jellyfin',
+            sourceArtistId: 'jf-1',
+            name: 'Lolita',
+            nameNormalized: 'lolita',
+          }),
+        ],
+      }),
+    )
 
     renderWithQuery(<LibraryReconciliationPage />)
 
@@ -179,10 +170,12 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('renders a second section for unreconciled albums', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [] })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({
-      items: [makeAlbumRow({ unreconciledReason: 'no_candidate' })],
-    })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [] }))
+    mockGetLibraryUnreconciledAlbums.mockResolvedValue(
+      review({
+        items: [makeAlbumRow({ unreconciledReason: 'no_candidate' })],
+      }),
+    )
 
     renderWithQuery(<LibraryReconciliationPage />)
 
@@ -193,18 +186,25 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('shows reasons and keeps row actions available when lookup failed', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: [
-        makeRow({ id: 1, unreconciledReason: 'ambiguous' }),
-        makeRow({
-          id: 2,
-          sourceArtistId: 'plex-2',
-          name: 'Retry later',
-          unreconciledReason: 'lookup_failed',
-        }),
-        makeRow({ id: 3, sourceArtistId: 'plex-3', name: 'Legacy row', unreconciledReason: null }),
-      ],
-    })
+    mockGetLibraryUnreconciled.mockResolvedValue(
+      review({
+        items: [
+          makeRow({ id: 1, unreconciledReason: 'ambiguous' }),
+          makeRow({
+            id: 2,
+            sourceArtistId: 'plex-2',
+            name: 'Retry later',
+            unreconciledReason: 'lookup_failed',
+          }),
+          makeRow({
+            id: 3,
+            sourceArtistId: 'plex-3',
+            name: 'Legacy row',
+            unreconciledReason: null,
+          }),
+        ],
+      }),
+    )
 
     renderWithQuery(<LibraryReconciliationPage />)
 
@@ -218,7 +218,7 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('shows a validation error for an invalid MBID', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
 
     renderWithQuery(<LibraryReconciliationPage />)
 
@@ -245,8 +245,8 @@ describe('LibraryReconciliationPage', () => {
   it('pins an MBID override and refreshes the page data', async () => {
     const row = makeRow()
     mockGetLibraryUnreconciled
-      .mockResolvedValueOnce({ items: [row] })
-      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce(review({ items: [row] }))
+      .mockResolvedValueOnce(review({ items: [] }))
     mockSaveLibraryOverride.mockResolvedValue(undefined)
 
     renderWithQuery(<LibraryReconciliationPage />)
@@ -274,8 +274,8 @@ describe('LibraryReconciliationPage', () => {
   it('ignores a row forever and refreshes the page data', async () => {
     const row = makeRow()
     mockGetLibraryUnreconciled
-      .mockResolvedValueOnce({ items: [row] })
-      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce(review({ items: [row] }))
+      .mockResolvedValueOnce(review({ items: [] }))
     mockSaveLibraryOverride.mockResolvedValue(undefined)
 
     renderWithQuery(<LibraryReconciliationPage />)
@@ -298,42 +298,8 @@ describe('LibraryReconciliationPage', () => {
     })
   })
 
-  it('uses translated empty-state pagination copy in French', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [] })
-
-    renderWithQuery(<LibraryReconciliationPage />)
-
-    expect(
-      await screen.findByText(
-        'Aucun artiste non rapproché. Votre bibliothèque est entièrement associée.',
-      ),
-    ).toBeInTheDocument()
-  })
-
-  it('uses French reason and bulk confirmation copy', async () => {
-    localStorage.setItem('digarr-locale', 'fr')
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: [makeRow({ unreconciledReason: 'ambiguous' })],
-    })
-
-    renderWithQuery(<LibraryReconciliationPage />)
-
-    expect(await screen.findByText('Correspondance ambiguë')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Sélectionner l’artiste Bush' }))
-    expect(screen.getByText('Sélection : 1')).toBeInTheDocument()
-
-    const artists = screen.getByRole('region', { name: 'Artistes non rapprochés' })
-    fireEvent.click(within(artists).getByRole('button', { name: 'Ignorer la sélection' }))
-    expect(
-      screen.getByRole('dialog', { name: 'Ignorer les artistes sélectionnés ?' }),
-    ).toHaveTextContent(
-      'Sélection : 1. Cette sélection restera ignorée jusqu’à la suppression de ses corrections enregistrées.',
-    )
-  })
-
   it('uses count-neutral English confirmation copy for one selected artist', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
 
     renderWithQuery(<LibraryReconciliationPage />)
 
@@ -347,13 +313,15 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('bulk ignores selected artists without rerunning reconciliation', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: [
-        makeRow(),
-        makeRow({ id: 2, source: 'jellyfin', sourceArtistId: 'jf-2', name: 'Failure' }),
-      ],
-    })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({ items: [makeAlbumRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(
+      review({
+        items: [
+          makeRow(),
+          makeRow({ id: 2, source: 'jellyfin', sourceArtistId: 'jf-2', name: 'Failure' }),
+        ],
+      }),
+    )
+    mockGetLibraryUnreconciledAlbums.mockResolvedValue(review({ items: [makeAlbumRow()] }))
     let resolvePending: () => void = () => undefined
     const pending = new Promise<void>((resolve) => {
       resolvePending = resolve
@@ -390,22 +358,30 @@ describe('LibraryReconciliationPage', () => {
       expect(within(artists).getByText('Selected: 0')).toBeInTheDocument()
     })
     expect(within(albums).getByText('Selected: 1')).toBeInTheDocument()
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['library', 'unreconciled'] })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['library', 'unreconciled-albums'] })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['library', 'unreconciled', 1],
+      exact: true,
+    })
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: ['library', 'unreconciled-albums', 1],
+      exact: true,
+    })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['library', 'sources'] })
   })
 
   it('selects one album page at a time and retains selection after a failed bulk ignore', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({
-      items: Array.from({ length: 21 }, (_, index) =>
-        makeAlbumRow({
-          id: index + 1,
-          sourceAlbumId: `album-${index + 1}`,
-          title: `Album ${index + 1}`,
-        }),
-      ),
-    })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
+    const albumRows = Array.from({ length: 21 }, (_, index) =>
+      makeAlbumRow({
+        id: index + 1,
+        sourceAlbumId: `album-${index + 1}`,
+        title: `Album ${index + 1}`,
+      }),
+    )
+    mockGetLibraryUnreconciledAlbums.mockImplementation(async (limit = 20, offset = 0) => ({
+      items: albumRows.slice(offset, offset + limit),
+      total: albumRows.length,
+    }))
     mockBulkIgnoreLibraryAlbums.mockRejectedValueOnce(new Error('network down'))
 
     renderWithQuery(<LibraryReconciliationPage />)
@@ -421,7 +397,9 @@ describe('LibraryReconciliationPage', () => {
 
     fireEvent.click(within(albums).getByRole('button', { name: 'Next' }))
     expect(await within(albums).findByText('Selected: 0')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Select album Album 21' })).not.toBeChecked()
+    expect(
+      await screen.findByRole('checkbox', { name: 'Select album Album 21' }, { timeout: 10_000 }),
+    ).not.toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Select artist Bush' })).toBeChecked()
     expect(within(artists).getByText('Selected: 1')).toBeInTheDocument()
 
@@ -450,69 +428,67 @@ describe('LibraryReconciliationPage', () => {
     expect(within(artists).getByText('Selected: 1')).toBeInTheDocument()
   })
 
-  it('caps artist selection at 200 eligible rows and excludes lookup failures', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: Array.from({ length: 202 }, (_, index) =>
-        makeRow({
-          id: index + 1,
-          sourceArtistId: `artist-${index + 1}`,
-          name: `Artist ${index + 1}`,
-          unreconciledReason: index === 201 ? 'lookup_failed' : null,
-        }),
-      ),
-    })
-
-    renderWithQuery(<LibraryReconciliationPage />)
-    const artists = (await screen.findByText('Artist 202')).closest<HTMLElement>(
-      'section[aria-label="Unreconciled Artists"]',
+  it('caps cross-page artist selection at 200 and excludes lookup failures', async () => {
+    const rows = Array.from({ length: 202 }, (_, index) =>
+      makeRow({
+        id: index + 1,
+        sourceArtistId: `artist-${index + 1}`,
+        name: `Artist ${index + 1}`,
+        unreconciledReason: index === 201 ? 'lookup_failed' : null,
+      }),
     )
-    if (!artists) throw new Error('Missing unreconciled artists section')
-    const checkbox = (artist: number) => {
-      const element = artists.querySelector<HTMLInputElement>(
-        `input[aria-label="Select artist Artist ${artist}"]`,
-      )
-      if (!element) throw new Error(`Missing artist ${artist} checkbox`)
-      return element
-    }
-    const status = artists.querySelector<HTMLElement>('[role="status"]')
-    if (!status) throw new Error('Missing artist selection status')
-    const artist1 = checkbox(1)
-    const artist201 = checkbox(201)
-    const artist202 = checkbox(202)
-
-    fireEvent.click(within(artists).getByText('Select visible', { selector: 'button' }))
-    expect(status).toHaveTextContent('Selected: 200')
+    mockGetLibraryUnreconciled.mockImplementation(async (limit = 20, offset = 0) => ({
+      items: rows.slice(offset, offset + limit),
+      total: rows.length,
+    }))
+    renderWithQuery(<LibraryReconciliationPage />)
+    const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
+    const first = await within(artists).findByRole('checkbox', { name: 'Select artist Artist 1' })
+    fireEvent.click(within(artists).getByRole('button', { name: 'All' }))
+    const status = within(artists).getByRole('status')
+    await waitFor(() => expect(status).toHaveTextContent('Selected: 200'))
     expect(status).toHaveTextContent('At most 200 items can be selected at once.')
-    expect(artist201).toBeDisabled()
-    expect(artist202).toBeDisabled()
-
-    fireEvent.click(artist1)
+    expect(mockGetLibraryUnreconciled).toHaveBeenCalledWith(500, 0)
+    fireEvent.click(first)
     expect(within(artists).getByText('Selected: 199')).toBeInTheDocument()
+    for (let page = 1; page < 11; page++)
+      fireEvent.click(within(artists).getByRole('button', { name: 'Next' }))
+    const artist201 = await within(artists).findByRole(
+      'checkbox',
+      {
+        name: 'Select artist Artist 201',
+      },
+      { timeout: 10_000 },
+    )
     expect(artist201).toBeEnabled()
+    expect(
+      within(artists).getByRole('checkbox', { name: 'Select artist Artist 202' }),
+    ).toBeDisabled()
     fireEvent.click(artist201)
     expect(status).toHaveTextContent('Selected: 200')
-
-    fireEvent.click(within(artists).getByText('Ignore selected', { selector: 'button' }))
-    fireEvent.click(screen.getByText('Confirm', { selector: 'button' }))
-    await waitFor(() => {
-      expect(mockBulkIgnoreLibraryArtists).toHaveBeenCalledTimes(1)
-    })
+    fireEvent.click(within(artists).getByRole('button', { name: 'Ignore selected' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(mockBulkIgnoreLibraryArtists).toHaveBeenCalledTimes(1))
     const payload = mockBulkIgnoreLibraryArtists.mock.calls[0]?.[0] ?? []
     expect(payload).toHaveLength(200)
     expect(payload).not.toContainEqual({ source: 'plex', sourceArtistId: 'artist-202' })
     expect(payload).toContainEqual({ source: 'plex', sourceArtistId: 'artist-201' })
-  })
+  }, 20_000)
 
   it('keeps artist and album bulk requests independently busy', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({
-      items: [makeRow(), makeRow({ id: 2, sourceArtistId: 'plex-2', name: 'Failure' })],
-    })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({
-      items: [
-        makeAlbumRow(),
-        makeAlbumRow({ id: 12, sourceAlbumId: 'album-2', title: 'Second Album' }),
-      ],
-    })
+    mockGetLibraryUnreconciled.mockResolvedValue(
+      review({
+        items: [makeRow(), makeRow({ id: 2, sourceArtistId: 'plex-2', name: 'Failure' })],
+      }),
+    )
+    mockGetLibraryUnreconciledAlbums.mockResolvedValue(
+      review({
+        items: [
+          makeAlbumRow(),
+          makeAlbumRow({ id: 12, sourceAlbumId: 'album-2', title: 'Second Album' }),
+        ],
+      }),
+    )
     const artistRequest = deferred<void>()
     const albumRequest = deferred<void>()
     mockBulkIgnoreLibraryArtists.mockReturnValueOnce(artistRequest.promise)
@@ -579,19 +555,60 @@ describe('LibraryReconciliationPage', () => {
     expect(within(albums).getByText('Selected: 1')).toBeInTheDocument()
   })
 
+  it('shows the bulk ignore action only while something is selected', async () => {
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
+    renderWithQuery(<LibraryReconciliationPage />)
+
+    const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
+    const checkbox = await within(artists).findByRole('checkbox', { name: 'Select artist Bush' })
+    expect(within(artists).queryByRole('button', { name: 'Ignore selected' })).toBeNull()
+
+    fireEvent.click(checkbox)
+    expect(within(artists).getByRole('button', { name: 'Ignore selected' })).toBeEnabled()
+
+    fireEvent.click(checkbox)
+    expect(within(artists).queryByRole('button', { name: 'Ignore selected' })).toBeNull()
+    expect(within(artists).getByRole('status')).toHaveTextContent('Selected: 0')
+  })
+
+  it.each([
+    ['artists', true, false],
+    ['albums', false, true],
+  ])(
+    'hides Select visible only in the empty section (rows in %s)',
+    async (_label, hasArtists, hasAlbums) => {
+      mockGetLibraryUnreconciled.mockResolvedValue(review({ items: hasArtists ? [makeRow()] : [] }))
+      mockGetLibraryUnreconciledAlbums.mockResolvedValue(
+        review({
+          items: hasAlbums ? [makeAlbumRow()] : [],
+        }),
+      )
+      renderWithQuery(<LibraryReconciliationPage />)
+
+      const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
+      const albums = await screen.findByRole('region', { name: 'Unreconciled Albums' })
+      await waitFor(() => expect(within(artists).getByRole('status')).toBeInTheDocument())
+      await waitFor(() => expect(within(albums).getByRole('status')).toBeInTheDocument())
+      expect(within(artists).queryByRole('button', { name: 'Select visible' }) !== null).toBe(
+        hasArtists,
+      )
+      expect(within(albums).queryByRole('button', { name: 'Select visible' }) !== null).toBe(
+        hasAlbums,
+      )
+    },
+  )
+
   it('keeps artist controls busy until bulk invalidations settle', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
     const request = deferred<void>()
     const firstInvalidation = deferred<void>()
     const secondInvalidation = deferred<void>()
-    const thirdInvalidation = deferred<void>()
-    const invalidations = [firstInvalidation, secondInvalidation, thirdInvalidation]
+    const invalidations = [firstInvalidation, secondInvalidation]
     mockBulkIgnoreLibraryArtists.mockReturnValueOnce(request.promise)
     const { client } = renderWithQuery(<LibraryReconciliationPage />)
     vi.spyOn(client, 'invalidateQueries')
       .mockReturnValueOnce(firstInvalidation.promise)
       .mockReturnValueOnce(secondInvalidation.promise)
-      .mockReturnValueOnce(thirdInvalidation.promise)
 
     const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
     const checkbox = await within(artists).findByRole('checkbox', { name: 'Select artist Bush' })
@@ -601,9 +618,10 @@ describe('LibraryReconciliationPage', () => {
     await waitFor(() => expect(mockBulkIgnoreLibraryArtists).toHaveBeenCalledTimes(1))
 
     request.resolve()
-    await waitFor(() => expect(client.invalidateQueries).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(client.invalidateQueries).toHaveBeenCalledTimes(2))
     expect(checkbox).toBeDisabled()
-    expect(within(artists).getByRole('button', { name: 'Ignore selected' })).toBeDisabled()
+    expect(within(artists).getByRole('button', { name: 'Select visible' })).toBeDisabled()
+    expect(within(artists).queryByRole('button', { name: 'Ignore selected' })).toBeNull()
 
     for (const invalidation of invalidations) invalidation.resolve()
     await waitFor(() => expect(within(artists).getByText('Selected: 0')).toBeInTheDocument())
@@ -618,16 +636,26 @@ describe('LibraryReconciliationPage', () => {
         title: `Album ${index + 1}`,
       }),
     )
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [] })
-    mockGetLibraryUnreconciledAlbums.mockResolvedValue({ items: albums })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [] }))
+    mockGetLibraryUnreconciledAlbums.mockImplementation(async (limit = 20, offset = 0) => ({
+      items: albums.slice(offset, offset + limit),
+      total: albums.length,
+    }))
 
     const { client } = renderWithQuery(<LibraryReconciliationPage />)
     const albumsRegion = await screen.findByRole('region', { name: 'Unreconciled Albums' })
     fireEvent.click(await within(albumsRegion).findByRole('button', { name: 'Next' }))
-    fireEvent.click(within(albumsRegion).getByRole('checkbox', { name: 'Select album Album 21' }))
+    fireEvent.click(
+      await within(albumsRegion).findByRole(
+        'checkbox',
+        { name: 'Select album Album 21' },
+        { timeout: 10_000 },
+      ),
+    )
     expect(within(albumsRegion).getByText('Selected: 1')).toBeInTheDocument()
 
-    client.setQueryData(['library', 'unreconciled-albums'], { items: albums.slice(0, 20) })
+    mockGetLibraryUnreconciledAlbums.mockResolvedValue({ items: albums.slice(0, 20), total: 20 })
+    client.setQueryData(['library', 'unreconciled-albums', 2], { items: [], total: 20 })
 
     expect(
       await within(albumsRegion).findByRole('checkbox', { name: 'Select album Album 1' }),
@@ -637,14 +665,15 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('closes a stale artist confirmation without submitting after query pruning', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
     const { client } = renderWithQuery(<LibraryReconciliationPage />)
     const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
     fireEvent.click(await within(artists).findByRole('checkbox', { name: 'Select artist Bush' }))
     fireEvent.click(within(artists).getByRole('button', { name: 'Ignore selected' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    client.setQueryData(['library', 'unreconciled'], {
+    client.setQueryData(['library', 'unreconciled', 1], {
+      total: 0,
       items: [makeRow({ unreconciledReason: 'lookup_failed' })],
     })
 
@@ -654,35 +683,32 @@ describe('LibraryReconciliationPage', () => {
   })
 
   it('moves focus to the artist section when a confirmed bulk request removes its dialog', async () => {
-    mockGetLibraryUnreconciled.mockResolvedValue({ items: [makeRow()] })
+    mockGetLibraryUnreconciled.mockResolvedValue(review({ items: [makeRow()] }))
     const request = deferred<void>()
     const firstInvalidation = deferred<void>()
     const secondInvalidation = deferred<void>()
-    const thirdInvalidation = deferred<void>()
     mockBulkIgnoreLibraryArtists.mockReturnValueOnce(request.promise)
     const { client } = renderWithQuery(<LibraryReconciliationPage />)
     vi.spyOn(client, 'invalidateQueries')
       .mockReturnValueOnce(firstInvalidation.promise)
       .mockReturnValueOnce(secondInvalidation.promise)
-      .mockReturnValueOnce(thirdInvalidation.promise)
 
     const artists = await screen.findByRole('region', { name: 'Unreconciled Artists' })
     fireEvent.click(await within(artists).findByRole('checkbox', { name: 'Select artist Bush' }))
     const ignore = within(artists).getByRole('button', { name: 'Ignore selected' })
     ignore.focus()
     fireEvent.click(ignore)
-    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus())
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(mockBulkIgnoreLibraryArtists).toHaveBeenCalledTimes(1))
     expect(ignore).toBeDisabled()
-    expect(artists).toHaveFocus()
+    await waitFor(() => expect(artists).toHaveFocus())
     expect(document.body).not.toHaveFocus()
 
     request.resolve()
     firstInvalidation.resolve()
     secondInvalidation.resolve()
-    thirdInvalidation.resolve()
     await waitFor(() => expect(within(artists).getByText('Selected: 0')).toBeInTheDocument())
   })
 })

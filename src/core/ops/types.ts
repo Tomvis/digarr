@@ -13,16 +13,22 @@ export interface BackupFile {
   data: BackupData
 }
 
+// Pre-migration snapshots omit keys for tables the live schema does not have yet.
+export type TolerantBackupFile = Omit<BackupFile, 'data'> & { data: Partial<BackupData> }
+
 export interface BackupData {
   settings: Record<string, unknown>[]
   users: Record<string, unknown>[]
   oauthTokens: Record<string, unknown>[]
+  // Accepted only for compatibility; never exported or restored.
+  apiTokens?: unknown
   oidcTokens?: Record<string, unknown>[]
   targets: Record<string, unknown>[]
   subscriptions: Record<string, unknown>[]
   jobRuns: Record<string, unknown>[]
   recommendationBatches: Record<string, unknown>[]
   recommendations: Record<string, unknown>[]
+  approvalRequests?: Record<string, unknown>[]
   playlists: Record<string, unknown>[]
   playlistTracks: Record<string, unknown>[]
   playlistExports?: Record<string, unknown>[]
@@ -55,7 +61,11 @@ export interface RestoreResult {
 export interface BackupOptions {
   includeCaches?: boolean
   full?: boolean
-  tolerateMissingSchema?: boolean
+  tolerateMissingSchema?: false
+}
+
+export type TolerantBackupOptions = Omit<BackupOptions, 'tolerateMissingSchema'> & {
+  tolerateMissingSchema: true
 }
 
 export interface RestoreOptions {

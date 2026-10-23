@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Field } from '../components/field'
 import { LanguageSwitcher } from '../components/language-switcher'
 import { Button } from '../components/ui/button'
+import { Disclosure } from '../components/ui/disclosure'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { ApiError, completeSetup } from '../lib/api'
@@ -17,6 +18,16 @@ type FormState = {
 
 type SetupMode = 'lidarr' | 'emby' | 'discover'
 
+function MissingFields({ labels }: { labels: string[] }) {
+  const { t } = useI18n()
+  if (labels.length === 0) return null
+  return (
+    <p className="text-xs text-muted" aria-live="polite">
+      {t('setup.continueRequires').replace('{0}', labels.join(', '))}
+    </p>
+  )
+}
+
 function StepIndicator({ current, total }: { current: number; total: number }) {
   const { t } = useI18n()
   return (
@@ -29,6 +40,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
         return (
           <div key={step} className="flex items-center">
             <div
+              aria-current={active ? 'step' : undefined}
               className={[
                 'flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold border',
                 active
@@ -38,6 +50,9 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
                     : 'bg-surface text-muted border-border',
               ].join(' ')}
             >
+              <span className="sr-only">
+                {t('setup.stepOf').replace('{0}', String(step)).replace('{1}', String(total))}
+              </span>
               {done ? (
                 <svg
                   className="h-4 w-4"
@@ -51,7 +66,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : (
-                step
+                <span aria-hidden="true">{step}</span>
               )}
             </div>
             {i < total - 1 && (
@@ -109,7 +124,7 @@ function StepMode({
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-              <MonitorPlay size={18} className="text-accent" />
+              <MonitorPlay size={18} className="text-accent-text" />
             </div>
             <div>
               <span className="text-sm font-medium text-text">Emby</span>
@@ -129,7 +144,7 @@ function StepMode({
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-              <Compass size={18} className="text-accent" />
+              <Compass size={18} className="text-accent-text" />
             </div>
             <div>
               <span className="text-sm font-medium text-text">{t('setup.discoveryOnlyLabel')}</span>
@@ -167,15 +182,6 @@ function StepLidarr({
           onChange={(e) => onFormChange({ ...form, url: e.target.value })}
         />
       </Field>
-      <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
-        <input
-          type="checkbox"
-          checked={form.skipTlsVerify}
-          onChange={(e) => onFormChange({ ...form, skipTlsVerify: e.target.checked })}
-          className="rounded border-border"
-        />
-        {t('setup.skipTlsVerification')}
-      </label>
       <Field label={t('setup.apiKey')} id="lidarr-apikey">
         <Input
           id="lidarr-apikey"
@@ -185,10 +191,28 @@ function StepLidarr({
           onChange={(e) => onFormChange({ ...form, apiKey: e.target.value })}
         />
       </Field>
+      <Disclosure title={t('settings.advancedSettings')} defaultOpen={form.skipTlsVerify}>
+        <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
+          <input
+            type="checkbox"
+            checked={form.skipTlsVerify}
+            onChange={(e) => onFormChange({ ...form, skipTlsVerify: e.target.checked })}
+            className="rounded border-border"
+          />
+          {t('setup.skipTlsVerification')}
+        </label>
+        <p className="mt-2 text-xs text-warning">{t('setup.skipTlsVerificationHint')}</p>
+      </Disclosure>
       <p className="text-xs text-muted">{t('setup.connectionTestsContinueLidarr')}</p>
       <Button onClick={onContinue} disabled={!form.url || !form.apiKey} className="w-full">
         {t('common.continue')}
       </Button>
+      <MissingFields
+        labels={[
+          ...(form.url ? [] : [t('setup.lidarrUrl')]),
+          ...(form.apiKey ? [] : [t('setup.apiKey')]),
+        ]}
+      />
     </div>
   )
 }
@@ -244,6 +268,13 @@ function StepEmby({
       >
         {t('common.continue')}
       </Button>
+      <MissingFields
+        labels={[
+          ...(form.url ? [] : [t('setup.embyUrl')]),
+          ...(form.apiKey ? [] : [t('setup.apiKey')]),
+          ...(form.userId ? [] : [t('setup.userId')]),
+        ]}
+      />
     </div>
   )
 }
@@ -252,10 +283,12 @@ function StepAi({
   form,
   onFormChange,
   onContinue,
+  onSkip,
 }: {
   form: FormState['ai']
   onFormChange: (v: FormState['ai']) => void
   onContinue: () => void
+  onSkip: () => void
 }) {
   const { t } = useI18n()
   const needsApiKey = form.provider !== 'ollama' && form.provider !== 'openai-compatible'
@@ -318,7 +351,11 @@ function StepAi({
         <Input
           id="ai-model"
           list="ai-model-suggestions"
-          placeholder={suggestions[0]?.value ?? t('setup.modelPlaceholder')}
+          placeholder={
+            suggestions[0]
+              ? t('setup.modelExample').replace('{0}', suggestions[0].value)
+              : t('setup.modelPlaceholder')
+          }
           value={form.model}
           onChange={(e) => onFormChange({ ...form, model: e.target.value })}
         />
@@ -345,7 +382,7 @@ function StepAi({
                 href={link.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-accent underline"
+                className="text-xs text-accent-text underline"
               >
                 {t('setup.getApiKey')}
               </a>
@@ -359,6 +396,9 @@ function StepAi({
             onChange={(e) => onFormChange({ ...form, apiKey: e.target.value })}
           />
         </div>
+      )}
+      {form.provider === 'openai-compatible' && (
+        <p className="text-xs text-muted">{t('setup.openAiCompatibleHint')}</p>
       )}
       {needsBaseUrl && (
         <Field label={t('setup.baseUrl')} id="ai-baseurl">
@@ -375,9 +415,6 @@ function StepAi({
           />
         </Field>
       )}
-      {form.provider === 'openai-compatible' && (
-        <p className="text-xs text-muted">{t('setup.openAiCompatibleHint')}</p>
-      )}
       <p className="text-xs text-muted">{t('setup.verifyProviderLater')}</p>
       <Button
         onClick={onContinue}
@@ -386,18 +423,44 @@ function StepAi({
       >
         {t('common.continue')}
       </Button>
+      <MissingFields
+        labels={[
+          ...(form.model ? [] : [t('setup.model')]),
+          ...(needsApiKey && !form.apiKey ? [t('setup.apiKey')] : []),
+          ...(needsBaseUrl && !form.baseUrl ? [t('setup.baseUrl')] : []),
+        ]}
+      />
+      <Button variant="ghost" onClick={onSkip} className="w-full">
+        {t('setup.skipAi')}
+      </Button>
+      <p className="text-xs text-muted">{t('setup.aiSkipHint')}</p>
     </div>
   )
+}
+
+const PROVIDER_LABEL_KEYS = {
+  anthropic: 'setup.providerAnthropic',
+  openai: 'setup.providerOpenAi',
+  gemini: 'setup.providerGemini',
+  ollama: 'setup.providerOllama',
+  'openai-compatible': 'setup.providerOpenAiCompatible',
+} as const
+
+function providerLabel(provider: string, t: ReturnType<typeof useI18n>['t']): string {
+  const key = PROVIDER_LABEL_KEYS[provider as keyof typeof PROVIDER_LABEL_KEYS]
+  return key ? t(key) : provider
 }
 
 function StepDone({
   form,
   mode,
+  aiSkipped,
   onStart,
   starting,
 }: {
   form: FormState
   mode: SetupMode
+  aiSkipped: boolean
   onStart: () => void
   starting: boolean
 }) {
@@ -412,7 +475,9 @@ function StepDone({
   }
   rows.push({
     label: t('setup.aiProvider'),
-    value: `${form.ai.provider}${form.ai.model ? ` / ${form.ai.model}` : ''}`,
+    value: aiSkipped
+      ? t('setup.aiNotConfigured')
+      : `${providerLabel(form.ai.provider, t)}${form.ai.model ? ` / ${form.ai.model}` : ''}`,
   })
 
   return (
@@ -449,6 +514,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [mode, setMode] = useState<SetupMode | null>(null)
   const [form, setForm] = useState<FormState>(DEFAULT_FORM)
   const [starting, setStarting] = useState(false)
+  const [aiSkipped, setAiSkipped] = useState(false)
 
   const hasServiceStep = mode === 'lidarr' || mode === 'emby'
   const totalSteps = hasServiceStep ? 4 : 3
@@ -457,12 +523,14 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   async function handleStart() {
     setStarting(true)
-    const config: Record<string, unknown> = {
-      aiProvider: form.ai.provider,
-      aiModel: form.ai.model,
-      aiApiKey: form.ai.apiKey || null,
-      aiBaseUrl: form.ai.baseUrl || null,
-    }
+    const config: Record<string, unknown> = aiSkipped
+      ? {}
+      : {
+          aiProvider: form.ai.provider,
+          aiModel: form.ai.model,
+          aiApiKey: form.ai.apiKey || null,
+          aiBaseUrl: form.ai.baseUrl || null,
+        }
     // Only include Lidarr config if mode is lidarr
     if (mode === 'lidarr') {
       config.lidarrUrl = form.lidarr.url
@@ -497,7 +565,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
       <div className="w-full max-w-md">
         <h1 className="sr-only">{t('setup.title')}</h1>
         <div className="mb-8 text-center">
-          <span className="text-3xl font-bold text-accent">digarr</span>
+          <span className="text-3xl font-bold text-brand">digarr</span>
           <p className="text-muted text-sm mt-1">{t('setup.initialSetup')}</p>
         </div>
 
@@ -531,20 +599,28 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <StepAi
               form={form.ai}
               onFormChange={(v) => setForm((f) => ({ ...f, ai: v }))}
-              onContinue={() => setStep(doneStep)}
+              onContinue={() => {
+                setAiSkipped(false)
+                setStep(doneStep)
+              }}
+              onSkip={() => {
+                setAiSkipped(true)
+                setStep(doneStep)
+              }}
             />
           )}
           {step === doneStep && (
             <StepDone
               form={form}
               mode={mode ?? 'discover'}
+              aiSkipped={aiSkipped}
               onStart={handleStart}
               starting={starting}
             />
           )}
         </div>
 
-        {step > 1 && step < doneStep && (
+        {step > 1 && !starting && (
           <button
             type="button"
             onClick={() => setStep((s) => s - 1)}
@@ -555,7 +631,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
         )}
 
         <div className="mt-4 flex justify-center">
-          <LanguageSwitcher value={locale} onChange={setLocale} />
+          <LanguageSwitcher value={locale} onChange={setLocale} placement="top" />
         </div>
       </div>
     </div>

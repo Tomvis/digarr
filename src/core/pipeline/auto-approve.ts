@@ -1,5 +1,11 @@
 import { recordFailureSafely } from '@/core/jobs/record-failure-safely'
-import type { DestinationTarget, TargetAddOptions } from '@/core/targets/types'
+import {
+  hasWaitingAction,
+  isTemporaryLidarrFailure,
+  targetAction,
+} from '@/core/targets/lidarr-retry'
+import { type DestinationTarget, type TargetAddOptions, targetDbId } from '@/core/targets/types'
+import { errMsg } from '@/core/validation'
 import type { StatusUpdateExtra } from '@/db/queries/recommendations'
 import { checkPipelineCancelled } from './cancel'
 
@@ -23,14 +29,12 @@ export type AutoApproveDeps = {
   warmArtist?: (mbid: string) => Promise<void>
   jobRecorder?: import('@/core/jobs/types').JobRecorder
   userId?: number
+  canApprove?: (score: number) => Promise<boolean>
 }
 
 type AutoApproveConfig = {
   threshold: number
-  monitorOption: 'all' | 'new' | 'none'
-  qualityProfileId: number
-  metadataProfileId: number
-  rootFolderId?: number
+  monitorOption: 'all' | 'new' | 'missing' | 'existing' | 'latest' | 'first' | 'none'
 }
 
 export async function autoApprove(
@@ -58,10 +62,8 @@ export async function autoApprove(
   const hasLidarr = targets.some((t) => t.type === 'lidarr')
 
   const addOptions: TargetAddOptions = {
+    // Profile/folder IDs come from each Lidarr target's own defaults.
     monitorOption: config.monitorOption,
-    qualityProfileId: config.qualityProfileId,
-    metadataProfileId: config.metadataProfileId,
-    rootFolderId: config.rootFolderId,
   }
 
   let approved = 0
@@ -69,6 +71,7 @@ export async function autoApprove(
 
   for (const rec of eligible) {
     checkPipelineCancelled(signal)
+    if (deps.canApprove && !(await deps.canApprove(rec.score))) continue
     const isAlbum = rec.kind === 'album'
     const recTargets = isAlbum ? albumTargets : addTargets
     if (
@@ -110,6 +113,7 @@ export async function autoApprove(
       if (signal?.aborted) break
       const metadata = {
         targetType: target.type,
+        targetId: targetDbId(target.id),
         artistName: rec.artist.name,
         mbid: rec.artist.mbid,
         action: isAlbum ? 'addAlbum' : 'add',
@@ -158,11 +162,7 @@ export async function autoApprove(
           continue
         }
 
-        targetActions[target.id] = {
-          status: result.success ? (target.type === 'slskd' ? 'queued' : 'added') : 'failed',
-          externalId: result.externalId,
-          error: result.error,
-        }
+        targetActions[target.id] = targetAction(target, result, options)
         if (!result.success) targetFailure = new Error(result.error ?? 'Target returned failure')
         if (result.success) anySuccess = true
         if (target.type === 'lidarr') lidarrResult = result
@@ -180,19 +180,24 @@ export async function autoApprove(
           }
         }
       } catch (error) {
-        targetError = error
+        const message = errMsg(error)
+        const temporary =
+          !targetActions[target.id] && target.type === 'lidarr' && isTemporaryLidarrFailure(message)
+        if (!temporary) targetError = error
         targetActions[target.id] ??= {
           status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
+          error: errMsg(error),
         }
-        if (targetJobId != null && deps.jobRecorder) {
-          await recordFailureSafely(
-            deps.jobRecorder,
-            targetJobId,
-            error instanceof Error ? error.message : String(error),
+        if (temporary)
+          targetActions[target.id] = targetAction(
+            target,
+            { success: false, targetType: target.type, targetId: 0, error: message },
+            options,
           )
+        if (targetJobId != null && deps.jobRecorder) {
+          await recordFailureSafely(deps.jobRecorder, targetJobId, errMsg(error))
         }
-        break
+        if (!temporary) break
       }
     }
 
@@ -210,13 +215,15 @@ export async function autoApprove(
 
     const lidarrSucceeded = lidarrResult?.success === true
     const lidarrFailed = hasLidarr && lidarrResult != null && !lidarrResult.success
-    const finalStatus = lidarrSucceeded
-      ? 'added_to_lidarr'
-      : lidarrFailed
-        ? 'add_failed'
-        : anySuccess
-          ? 'approved'
-          : 'add_failed'
+    const finalStatus = hasWaitingAction(targetActions)
+      ? 'waiting'
+      : lidarrSucceeded
+        ? 'added_to_lidarr'
+        : lidarrFailed
+          ? 'add_failed'
+          : anySuccess
+            ? 'approved'
+            : 'add_failed'
 
     try {
       await deps.updateRecommendationStatus(rec.id, finalStatus, extra)
@@ -228,7 +235,7 @@ export async function autoApprove(
     if (targetError) throw targetError
     if (signal?.aborted && targetFailure) throw targetFailure
     checkPipelineCancelled(signal)
-    if (anySuccess) approved++
+    if (anySuccess || hasWaitingAction(targetActions)) approved++
     else failed++
   }
 

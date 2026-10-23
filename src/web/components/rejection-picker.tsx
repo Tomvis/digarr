@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { REJECTION_REASONS, type RejectionReason } from '@/core/recommendations/rejection-reasons'
+import { useDialogFocus } from '@/web/hooks/use-dialog-focus'
 import { useI18n } from '@/web/lib/i18n'
 import { Button } from './ui/button'
 
@@ -30,8 +31,6 @@ export function RejectionPicker({ open, onClose, onSubmit, artistName }: Props) 
       setReasonText('')
       setPermanent(false)
       setSubmitting(false)
-    } else {
-      requestAnimationFrame(() => firstRadioRef.current?.focus())
     }
   }, [open])
 
@@ -41,18 +40,15 @@ export function RejectionPicker({ open, onClose, onSubmit, artistName }: Props) 
     if (reason === 'not_right_now' && permanent) setPermanent(false)
   }, [reason, permanent])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  const dialogRef = useDialogFocus(open, onClose, firstRadioRef)
 
   if (!open) return null
 
-  const submitLabel = permanent ? t('rejectionPicker.blockForever') : t('rejectionPicker.reject')
+  const submitLabel = permanent
+    ? t('rejectionPicker.blockForever')
+    : reason
+      ? t('rejectionPicker.reject')
+      : t('rejectionPicker.rejectNoReason')
   const permanentDisabled = reason === 'not_right_now'
 
   const handleSubmit = async () => {
@@ -82,13 +78,9 @@ export function RejectionPicker({ open, onClose, onSubmit, artistName }: Props) 
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: dialog content wrapper prevents click-through */}
         <div
           className="bg-surface text-text border border-border w-full md:max-w-md md:rounded-xl rounded-t-xl p-4 max-h-[85vh] overflow-y-auto shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onClose()
-          }}
+          ref={dialogRef}
         >
           <div className="md:hidden mx-auto mb-3 h-1 w-9 rounded-full bg-border" />
           <h2 id={titleId} className="text-base font-semibold mb-3">
@@ -105,10 +97,10 @@ export function RejectionPicker({ open, onClose, onSubmit, artistName }: Props) 
                 type="button"
                 aria-pressed={reason === r}
                 onClick={() => setReason(r)}
-                className={`text-left px-3 py-2 rounded-md border text-sm transition-colors ${
+                className={`min-h-11 text-left px-3 py-2 rounded-md border text-sm text-text transition-colors sm:min-h-0 ${
                   reason === r
-                    ? 'bg-accent/10 border-accent text-text'
-                    : 'bg-bg border-border text-muted hover:text-text'
+                    ? 'bg-accent/10 border-accent font-medium'
+                    : 'bg-surface-2 border-border hover:border-accent/50'
                 }`}
               >
                 {t(`rejectionReason.${r}`)}
@@ -144,12 +136,7 @@ export function RejectionPicker({ open, onClose, onSubmit, artistName }: Props) 
             <Button size="sm" variant="ghost" onClick={onClose} disabled={submitting}>
               {t('rejectionPicker.cancel')}
             </Button>
-            <Button
-              size="sm"
-              variant={permanent ? 'destructive' : 'outline'}
-              onClick={handleSubmit}
-              disabled={submitting}
-            >
+            <Button size="sm" variant="destructive" onClick={handleSubmit} disabled={submitting}>
               {submitLabel}
             </Button>
           </div>

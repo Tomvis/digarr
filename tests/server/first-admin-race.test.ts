@@ -103,15 +103,17 @@ function makeRegisterDeps(overrides: Partial<AppDependencies> = {}): AppDependen
     completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
     getLastBatch: vi.fn(async () => null),
     listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
+    listRecommendationsForExport: vi.fn(async () => []),
     getRecommendation: vi.fn(async () => null),
     updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
+    rejectRecommendation: vi.fn(async () => ({ artistId: 1, blockCreated: false })),
     listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
     removeArtistBlock: vi.fn(async () => true),
     addArtistBlock: vi.fn(async () => {}),
     listAlbumBlocks: vi.fn(async () => []),
     removeAlbumBlock: vi.fn(async () => {}),
     bulkUpdateStatus: vi.fn(async () => {}),
+    bulkRejectRecommendations: vi.fn(async () => ({ rejected: 0, blocksCreated: 0 })),
     filterOwnedIds: vi.fn(async (ids: number[]) => ids),
     listBatches: vi.fn(async () => []),
     getBatch: vi.fn(async () => null),
@@ -231,9 +233,14 @@ describe('first-admin race: POST /api/auth/register', () => {
       body: JSON.stringify({ username: 'loser', password: 'password1234' }),
     })
     expect(res.status).toBe(403)
+    const message =
+      'Registration is disabled. Set DIGARR_DISABLE_REGISTRATION=false to allow open registration.'
     expect(await res.json()).toEqual({
-      error:
-        'Registration is disabled. Set DIGARR_DISABLE_REGISTRATION=false to allow open registration.',
+      type: '/problems/http-403',
+      title: 'Forbidden',
+      status: 403,
+      detail: message,
+      error: message,
     })
     expect(createUser).toHaveBeenCalledExactlyOnceWith(expect.any(Object), {
       bootstrap: 'first-user-only',

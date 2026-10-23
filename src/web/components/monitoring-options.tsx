@@ -2,7 +2,16 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useI18n } from '../lib/i18n'
 import { Button } from './ui/button'
 
-export type MonitorOption = 'all' | 'new' | 'selected' | 'popular' | 'none'
+export type MonitorOption =
+  | 'all'
+  | 'new'
+  | 'missing'
+  | 'existing'
+  | 'latest'
+  | 'first'
+  | 'selected'
+  | 'popular'
+  | 'none'
 
 type Props = {
   onApprove: (option: MonitorOption, selectedAlbumIds?: string[]) => void
@@ -42,6 +51,22 @@ export function MonitoringOptions({
       description: t('discover.monitorNewDescription'),
     },
     {
+      value: 'missing',
+      label: t('settings.monitorMissing'),
+      description: t('settings.monitorMissing'),
+    },
+    {
+      value: 'existing',
+      label: t('settings.monitorExisting'),
+      description: t('settings.monitorExisting'),
+    },
+    {
+      value: 'latest',
+      label: t('settings.monitorLatest'),
+      description: t('settings.monitorLatest'),
+    },
+    { value: 'first', label: t('settings.monitorFirst'), description: t('settings.monitorFirst') },
+    {
       value: 'selected',
       label: t('discover.monitorSelected'),
       description: t('discover.monitorSelectedDescription'),
@@ -62,6 +87,8 @@ export function MonitoringOptions({
   ]
 
   function handleOptionClick(option: MonitorOption) {
+    // Focus the toggle first so a dialog opened next restores focus here
+    toggleRef.current?.focus()
     setOpen(false)
     if (option === 'selected') {
       onOpenAlbumPicker()

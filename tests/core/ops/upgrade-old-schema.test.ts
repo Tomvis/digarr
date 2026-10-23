@@ -61,6 +61,9 @@ async function makePostgres(url: string): Promise<Harness> {
   target.pathname = `/${name}`
   const pool = new pg.Pool({ connectionString: target.toString(), max: 2 })
   const db = drizzleNodePg(pool, { schema })
+  // DROP DATABASE ... WITH (FORCE) can terminate a straggling client; an unhandled 'error' event fails the run (#892)
+  pool.on('error', () => {})
+  admin.on('error', () => {})
   return {
     db: db as unknown as OpsDb,
     migrate: (folder) => migrateNodePg(db, { migrationsFolder: folder }),
@@ -131,7 +134,7 @@ describe.each(backends)(
         expect(backup.absentSchema?.tables).toContain('playlist_exports')
         expect(backup.absentSchema?.columns).toMatchObject({
           settings: ['digest_delivery_positions'],
-          users: ['oidc_issuer'],
+          users: ['approval_policy', 'max_open_requests', 'approval_threshold', 'oidc_issuer'],
         })
 
         await h.migrate('drizzle')

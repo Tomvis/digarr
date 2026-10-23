@@ -1,8 +1,16 @@
 import { and, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { JobRunRow, JobType, SourceResult } from '@/core/jobs/types'
-import type { PlaylistGenerationSummary } from '@/core/playlists/types'
+import type { PlaylistExportOutcome, PlaylistGenerationSummary } from '@/core/playlists/types'
+import { redactSecrets } from '@/core/validation'
 import type { Database } from '@/db'
-import { type JobMetadata, jobRuns, recommendations } from '@/db/schema'
+import {
+  type JobMetadata,
+  jobRuns,
+  recommendations,
+  subscriptions,
+  targets,
+  users,
+} from '@/db/schema'
 
 export type ListJobsFilters = {
   type?: JobType
@@ -11,10 +19,12 @@ export type ListJobsFilters = {
   offset?: number
 }
 
+export type JobListRow = JobRunRow
+
 export async function listJobs(
   db: Database,
   filters: ListJobsFilters = {},
-): Promise<{ items: JobRunRow[]; total: number }> {
+): Promise<{ items: JobListRow[]; total: number }> {
   const limit = Math.min(filters.limit ?? 50, 100)
   const offset = filters.offset ?? 0
 
@@ -26,17 +36,36 @@ export async function listJobs(
 
   const [items, totalRows] = await Promise.all([
     db
-      .select()
+      .select({
+        id: jobRuns.id,
+        type: jobRuns.type,
+        status: jobRuns.status,
+        startedAt: jobRuns.startedAt,
+        durationMs: jobRuns.durationMs,
+        userId: jobRuns.userId,
+        completedAt: jobRuns.completedAt,
+        error: jobRuns.error,
+        subscriptionId: jobRuns.subscriptionId,
+        batchId: jobRuns.batchId,
+        metadata: sql<JobMetadata>`(SELECT coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
+          FROM jsonb_each(${jobRuns.metadata}) WHERE key IN (
+            'trigger', 'seedArtist', 'adapterType', 'writeBackService', 'artistName',
+            'action', 'playlistName', 'source', 'artistsDiscovered', 'artistsStored',
+            'artistsFound', 'artistsNew', 'trackCount', 'discoveryMode'))`,
+        sourceResults: sql<Record<string, SourceResult> | null>`(
+          SELECT jsonb_object_agg(key, jsonb_build_object('status', value->'status'))
+          FROM jsonb_each(${jobRuns.sourceResults}))`,
+      })
       .from(jobRuns)
       .where(where)
-      .orderBy(desc(jobRuns.startedAt))
+      .orderBy(desc(jobRuns.startedAt), desc(jobRuns.id))
       .limit(limit)
       .offset(offset),
     db.select({ count: count() }).from(jobRuns).where(where),
   ])
 
   return {
-    items: items as JobRunRow[],
+    items: items as JobListRow[],
     total: totalRows[0]?.count ?? 0,
   }
 }
@@ -44,6 +73,27 @@ export async function listJobs(
 export async function getJobById(db: Database, id: number): Promise<JobRunRow | null> {
   const [row] = await db.select().from(jobRuns).where(eq(jobRuns.id, id)).limit(1)
   return (row as JobRunRow) ?? null
+}
+
+export async function getLastWriteBackError(
+  db: Database,
+  userId: number,
+  service: 'listenbrainz' | 'lastfm',
+): Promise<string | null> {
+  const [row] = await db
+    .select({ error: jobRuns.error })
+    .from(jobRuns)
+    .where(
+      and(
+        eq(jobRuns.userId, userId),
+        eq(jobRuns.type, 'target'),
+        inArray(jobRuns.status, ['completed', 'failed']),
+        sql`${jobRuns.metadata}->>'writeBackService' = ${service}`,
+      ),
+    )
+    .orderBy(desc(jobRuns.startedAt), desc(jobRuns.id))
+    .limit(1)
+  return row?.error ?? null
 }
 
 export async function updateJobMetadata(
@@ -65,9 +115,48 @@ export type PlaylistGeneration = {
   startedAt: Date
   completedAt: Date | null
   resolution: PlaylistGenerationSummary | null
+  exports: PlaylistExportOutcome[] | null
 }
 
-function playlistResolution(value: unknown): PlaylistGenerationSummary | null {
+const EXPORT_STATUSES = new Set(['submitted', 'partial', 'failed'])
+
+function playlistExportOutcomes(value: unknown): PlaylistExportOutcome[] | null {
+  if (!Array.isArray(value)) return null
+  const optionalCount = (count: unknown) =>
+    count === undefined || (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0)
+  const projected: PlaylistExportOutcome[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return null
+    const { targetId, targetName, targetType, status, verified, itemsAdded, itemsSkipped, error } =
+      entry as Record<string, unknown>
+    if (
+      typeof targetId !== 'number' ||
+      !Number.isSafeInteger(targetId) ||
+      typeof targetName !== 'string' ||
+      typeof targetType !== 'string' ||
+      typeof status !== 'string' ||
+      !EXPORT_STATUSES.has(status) ||
+      typeof verified !== 'boolean' ||
+      !optionalCount(itemsAdded) ||
+      !optionalCount(itemsSkipped) ||
+      (error !== undefined && typeof error !== 'string')
+    )
+      return null
+    projected.push({
+      targetId,
+      targetName,
+      targetType,
+      status: status as PlaylistExportOutcome['status'],
+      verified,
+      ...(itemsAdded === undefined ? {} : { itemsAdded: itemsAdded as number }),
+      ...(itemsSkipped === undefined ? {} : { itemsSkipped: itemsSkipped as number }),
+      ...(error === undefined ? {} : { error }),
+    })
+  }
+  return projected
+}
+
+export function playlistResolution(value: unknown): PlaylistGenerationSummary | null {
   if (!value || typeof value !== 'object') return null
   const summary = value as Record<string, unknown>
   const validCount = (count: unknown): count is number =>
@@ -86,7 +175,8 @@ function playlistResolution(value: unknown): PlaylistGenerationSummary | null {
   for (const value of outcomes) {
     if (!value || typeof value !== 'object') return null
     const outcome = value as Record<string, unknown>
-    const { artistName, artistMbid, status, resolvedTrackCount, includedTrackCount } = outcome
+    const { artistName, artistMbid, status, resolvedTrackCount, includedTrackCount, titleOnly } =
+      outcome
     if (
       typeof artistName !== 'string' ||
       (artistMbid !== undefined && typeof artistMbid !== 'string') ||
@@ -105,6 +195,7 @@ function playlistResolution(value: unknown): PlaylistGenerationSummary | null {
       status,
       resolvedTrackCount,
       includedTrackCount,
+      ...(titleOnly === true ? { titleOnly } : {}),
     })
   }
   return {
@@ -128,6 +219,7 @@ export async function getLatestPlaylistGeneration(
       startedAt: jobRuns.startedAt,
       completedAt: jobRuns.completedAt,
       resolution: sql<unknown>`${jobRuns.metadata}->'playlistResolution'`,
+      exports: sql<unknown>`${jobRuns.metadata}->'playlistExports'`,
     })
     .from(jobRuns)
     .where(
@@ -139,7 +231,188 @@ export async function getLatestPlaylistGeneration(
     )
     .orderBy(desc(jobRuns.startedAt), desc(jobRuns.id))
     .limit(1)
-  return row ? { ...row, resolution: playlistResolution(row.resolution) } : null
+  return row
+    ? {
+        ...row,
+        resolution: playlistResolution(row.resolution),
+        exports: playlistExportOutcomes(row.exports),
+      }
+    : null
+}
+
+export type IntegrationKind = 'target' | 'library' | 'source' | 'subscription' | 'scrobbler'
+
+export type IntegrationHealth = {
+  id: string
+  kind: IntegrationKind
+  name: string
+  label: string | null
+  owner: { id: number; username: string } | null
+  status: 'ok' | 'failing'
+  lastSuccess: string | null
+  lastError: { at: string; message: string | null } | null
+  itemFailures: number
+}
+
+export const INTEGRATION_HEALTH_WINDOW_DAYS = 30
+const INTEGRATION_ERROR_MAX_LENGTH = 300
+
+function toIso(value: unknown): string | null {
+  if (value == null) return null
+  const date = value instanceof Date ? value : new Date(String(value))
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+// Derived only from recorded job_runs outcomes; never probes the services.
+// One row per concrete instance (target, subscription, per-user connection); `outage` events
+// flip a row to failing, other failures only add to itemFailures (see classifyFailure).
+export async function getIntegrationHealth(db: Database): Promise<IntegrationHealth[]> {
+  const since = new Date(Date.now() - INTEGRATION_HEALTH_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const result = await db.execute(sql`
+    WITH events AS (
+      SELECT
+        'target' AS kind,
+        'target:' || t.id AS instance,
+        t.type AS name,
+        t.name AS label,
+        t.user_id AS owner_id,
+        j.status = 'completed' AS ok,
+        j.status = 'failed' AND j.metadata->>'failureScope' = 'integration' AS outage,
+        j.error,
+        coalesce(j.completed_at, j.started_at) AS at
+      FROM ${jobRuns} j
+      JOIN ${targets} t
+        ON t.id = CASE WHEN j.metadata->>'targetId' ~ '^[0-9]{1,9}$'
+          THEN (j.metadata->>'targetId')::integer END
+      WHERE j.type = 'target'
+        AND j.metadata->>'writeBackService' IS NULL
+        AND j.status IN ('completed', 'failed')
+        AND j.started_at >= ${since}
+        AND coalesce(j.metadata->>'skipped', '') <> 'true'
+      UNION ALL
+      SELECT
+        'scrobbler',
+        'scrobbler:' || u.id || ':' || (j.metadata->>'writeBackService'),
+        j.metadata->>'writeBackService',
+        NULL,
+        u.id,
+        j.status = 'completed',
+        j.status = 'failed' AND j.metadata->>'failureScope' IS DISTINCT FROM 'item',
+        j.error,
+        coalesce(j.completed_at, j.started_at)
+      FROM ${jobRuns} j
+      JOIN ${users} u
+        ON u.id = j.user_id
+        AND CASE WHEN j.metadata->>'writeBackService' = 'listenbrainz'
+          THEN u.listenbrainz_token IS NOT NULL ELSE u.lastfm_api_key IS NOT NULL END
+      WHERE j.type = 'target'
+        AND j.metadata->>'writeBackService' IS NOT NULL
+        AND j.status IN ('completed', 'failed')
+        AND j.started_at >= ${since}
+        AND coalesce(j.metadata->>'skipped', '') <> 'true'
+      UNION ALL
+      SELECT
+        'library',
+        'library:' || coalesce(j.user_id, 0) || ':' || (j.metadata->>'source'),
+        j.metadata->>'source',
+        NULL,
+        j.user_id,
+        j.status = 'completed',
+        j.status = 'failed' AND j.metadata->>'failureScope' IS DISTINCT FROM 'item',
+        j.error,
+        coalesce(j.completed_at, j.started_at)
+      FROM ${jobRuns} j
+      WHERE j.type = 'library_sync'
+        AND j.status IN ('completed', 'failed')
+        AND j.started_at >= ${since}
+        AND coalesce(j.metadata->>'skipped', '') <> 'true'
+      UNION ALL
+      SELECT
+        'subscription',
+        'subscription:' || sub.id,
+        j.metadata->>'adapterType',
+        sub.name,
+        sub.user_id,
+        j.status = 'completed',
+        j.status = 'failed' AND j.metadata->>'failureScope' IS DISTINCT FROM 'item',
+        j.error,
+        coalesce(j.completed_at, j.started_at)
+      FROM ${jobRuns} j
+      JOIN ${subscriptions} sub ON sub.id = j.subscription_id
+      WHERE j.type = 'subscription'
+        AND j.status IN ('completed', 'failed')
+        AND j.started_at >= ${since}
+        AND coalesce(j.metadata->>'skipped', '') <> 'true'
+      UNION ALL
+      SELECT
+        'source',
+        'source:' || coalesce(j.user_id, 0) || ':' || s.key,
+        s.key,
+        NULL,
+        j.user_id,
+        s.value->>'status' = 'ok',
+        s.value->>'status' = 'error',
+        s.value->>'error',
+        coalesce(j.completed_at, j.started_at)
+      FROM ${jobRuns} j
+      CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(j.source_results) = 'object' THEN j.source_results ELSE '{}'::jsonb END
+      ) AS s
+      WHERE j.type IN ('pipeline', 'quick_discover')
+        AND j.started_at >= ${since}
+        AND s.value->>'status' IN ('ok', 'error')
+    )
+    SELECT
+      e.kind,
+      e.instance,
+      e.name,
+      e.label,
+      e.owner_id,
+      u.username AS owner_username,
+      max(e.at) FILTER (WHERE e.ok) AS last_success,
+      max(e.at) FILTER (WHERE e.outage) AS last_error_at,
+      (array_agg(e.error ORDER BY e.at DESC) FILTER (WHERE e.outage))[1] AS last_error,
+      count(*) FILTER (WHERE NOT e.ok AND NOT e.outage)::integer AS item_failures
+    FROM events e
+    LEFT JOIN ${users} u ON u.id = e.owner_id
+    WHERE e.name IS NOT NULL AND e.name <> ''
+    GROUP BY e.kind, e.instance, e.name, e.label, e.owner_id, u.username
+    ORDER BY e.kind, e.name, e.label NULLS FIRST, u.username NULLS FIRST, e.instance
+  `)
+
+  const rows = result.rows as Array<{
+    kind: IntegrationKind
+    instance: string
+    name: string
+    label: string | null
+    owner_id: number | null
+    owner_username: string | null
+    last_success: unknown
+    last_error_at: unknown
+    last_error: string | null
+    item_failures: number
+  }>
+  return rows.map((row) => {
+    const lastSuccess = toIso(row.last_success)
+    const lastErrorAt = toIso(row.last_error_at)
+    const message = row.last_error
+      ? redactSecrets(row.last_error).slice(0, INTEGRATION_ERROR_MAX_LENGTH)
+      : null
+    return {
+      id: row.instance,
+      kind: row.kind,
+      name: row.name,
+      label: row.label,
+      owner:
+        row.owner_id != null && row.owner_username != null
+          ? { id: row.owner_id, username: row.owner_username }
+          : null,
+      status: lastErrorAt && (!lastSuccess || lastErrorAt > lastSuccess) ? 'failing' : 'ok',
+      lastSuccess,
+      lastError: lastErrorAt ? { at: lastErrorAt, message } : null,
+      itemFailures: Number(row.item_failures),
+    }
+  })
 }
 
 export type HealthSummary = {
@@ -148,6 +421,7 @@ export type HealthSummary = {
   playlists: { status: string; lastRun: string | null }
   librarySync?: { status: string; lastRun: string | null }
   sources: Record<string, string>
+  integrations: IntegrationHealth[]
 }
 
 export async function getJobHealth(
@@ -279,6 +553,7 @@ export async function getJobHealth(
       lastRun: lastLibrarySync?.completedAt?.toISOString() ?? null,
     },
     sources,
+    integrations: await getIntegrationHealth(db),
   }
 }
 
@@ -292,7 +567,8 @@ export type DigestStats = {
  * Aggregate notification-digest stats for the trailing window starting at
  * `since`. Derived from existing tables (no bookmark/migration):
  * - `discovered`: recommendations created in the window.
- * - `added`: recommendations approved or added to Lidarr in the window.
+ * - `added`: recommendations approved or added to Lidarr in the window
+ *   (by action time, so older recommendations acted on now count).
  * - `runs`: discovery job runs (pipeline/subscription/quick_discover) that
  *   completed in the window.
  */
@@ -301,13 +577,19 @@ export async function getDigestStats(db: Database, since: Date): Promise<DigestS
     db
       .select({ count: count() })
       .from(recommendations)
-      .where(gte(recommendations.createdAt, since)),
+      .where(
+        and(
+          gte(recommendations.createdAt, since),
+          sql`coalesce(${recommendations.sources}->>'album_request', '') <> '0'`,
+        ),
+      ),
     db
       .select({ count: count() })
       .from(recommendations)
       .where(
         and(
-          gte(recommendations.createdAt, since),
+          gte(recommendations.actedOnAt, since),
+          sql`coalesce(${recommendations.sources}->>'album_request', '') <> '0'`,
           inArray(recommendations.status, ['approved', 'added_to_lidarr']),
         ),
       ),

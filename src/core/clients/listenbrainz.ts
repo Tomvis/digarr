@@ -32,6 +32,8 @@ export type RecentListen = {
   listenedAt: number
   artistMbid?: string
   recordingMbid?: string
+  /** LB's own mapping; can differ from a stale or redirected MBID the scrobbler submitted. */
+  mappedRecordingMbid?: string
   releaseName?: string
 }
 
@@ -72,6 +74,10 @@ type LbListensResponse = {
         additional_info?: {
           artist_mbids?: string[]
           recording_mbid?: string
+        }
+        mbid_mapping?: {
+          recording_mbid?: string
+          artist_mbids?: string[]
         }
       }
     }>
@@ -175,7 +181,9 @@ export function createListenBrainzClient(username: string, token: string) {
   }
 
   async function getTopArtists(range: ListenBrainzRange): Promise<TopArtist[]> {
-    const res = await getArtistStats(`/1/stats/user/${username}/artists?range=${range}`)
+    const res = await getArtistStats(
+      `/1/stats/user/${encodeURIComponent(username)}/artists?range=${range}`,
+    )
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,
@@ -191,7 +199,9 @@ export function createListenBrainzClient(username: string, token: string) {
     const params = new URLSearchParams({ range })
     if (options.offset != null) params.set('offset', String(options.offset))
     if (options.count != null) params.set('count', String(options.count))
-    const res = await getArtistStats(`/1/stats/user/${username}/artists?${params.toString()}`)
+    const res = await getArtistStats(
+      `/1/stats/user/${encodeURIComponent(username)}/artists?${params.toString()}`,
+    )
     return {
       artists: res.payload.artists.map((a) => ({
         name: a.artist_name,
@@ -203,26 +213,37 @@ export function createListenBrainzClient(username: string, token: string) {
     }
   }
 
-  async function getListens(count = 20): Promise<RecentListen[]> {
-    const res = await http.get<LbListensResponse>(`/1/user/${username}/listens?count=${count}`)
-    return res.payload.listens.map((l) => ({
-      artist: l.track_metadata.artist_name,
-      track: l.track_metadata.track_name,
-      listenedAt: l.listened_at,
-      artistMbid: l.track_metadata.additional_info?.artist_mbids?.[0],
-      recordingMbid: l.track_metadata.additional_info?.recording_mbid,
-      releaseName: l.track_metadata.release_name,
-    }))
+  async function getListens(count = 20, options: { maxTs?: number } = {}): Promise<RecentListen[]> {
+    const params = new URLSearchParams({ count: String(count) })
+    if (options.maxTs != null) params.set('max_ts', String(options.maxTs))
+    const res = await http.get<LbListensResponse>(
+      `/1/user/${encodeURIComponent(username)}/listens?${params.toString()}`,
+    )
+    return res.payload.listens.map((l) => {
+      const info = l.track_metadata.additional_info
+      const mapping = l.track_metadata.mbid_mapping
+      return {
+        artist: l.track_metadata.artist_name,
+        track: l.track_metadata.track_name,
+        listenedAt: l.listened_at,
+        artistMbid: info?.artist_mbids?.[0] ?? mapping?.artist_mbids?.[0],
+        recordingMbid: info?.recording_mbid ?? mapping?.recording_mbid,
+        mappedRecordingMbid: mapping?.recording_mbid,
+        releaseName: l.track_metadata.release_name,
+      }
+    })
   }
 
   async function getListenCount(): Promise<number> {
-    const res = await http.get<LbListenCountResponse>(`/1/user/${username}/listen-count`)
+    const res = await http.get<LbListenCountResponse>(
+      `/1/user/${encodeURIComponent(username)}/listen-count`,
+    )
     return res.payload.count
   }
 
   async function getListeningActivity(): Promise<ListeningActivityEntry[]> {
     const res = await http.get<LbListeningActivityResponse>(
-      `/1/stats/user/${username}/listening-activity?range=month`,
+      `/1/stats/user/${encodeURIComponent(username)}/listening-activity?range=month`,
     )
     return res.payload.listening_activity
   }
@@ -235,7 +256,9 @@ export function createListenBrainzClient(username: string, token: string) {
       pop_begin: '0',
       pop_end: '100',
     })
-    const res = await http.get<LbRadioResponse>(`/1/lb-radio/artist/${mbid}?${params.toString()}`)
+    const res = await http.get<LbRadioResponse>(
+      `/1/lb-radio/artist/${encodeURIComponent(mbid)}?${params.toString()}`,
+    )
     // Each key is an artist MBID containing recordings from that similar artist.
     // Deduplicate by MBID and filter out the seed artist.
     const seen = new Set<string>()
@@ -259,7 +282,9 @@ export function createListenBrainzClient(username: string, token: string) {
       pop_begin: '0',
       pop_end: '100',
     })
-    const res = await http.get<LbRadioResponse>(`/1/lb-radio/artist/${mbid}?${params.toString()}`)
+    const res = await http.get<LbRadioResponse>(
+      `/1/lb-radio/artist/${encodeURIComponent(mbid)}?${params.toString()}`,
+    )
     return extractRadioArtists(res, mbid)
   }
 
@@ -276,7 +301,9 @@ export function createListenBrainzClient(username: string, token: string) {
   }
 
   async function getSimilarUsers(): Promise<SimilarUser[]> {
-    const res = await http.get<LbSimilarUsersResponse>(`/1/user/${username}/similar-users`)
+    const res = await http.get<LbSimilarUsersResponse>(
+      `/1/user/${encodeURIComponent(username)}/similar-users`,
+    )
     return (res.payload ?? []).map((u) => ({
       username: u.user_name,
       similarity: u.similarity,
@@ -287,7 +314,9 @@ export function createListenBrainzClient(username: string, token: string) {
     targetUsername: string,
     range: ListenBrainzRange,
   ): Promise<TopArtist[]> {
-    const res = await getArtistStats(`/1/stats/user/${targetUsername}/artists?range=${range}`)
+    const res = await getArtistStats(
+      `/1/stats/user/${encodeURIComponent(targetUsername)}/artists?range=${range}`,
+    )
     return res.payload.artists.map((a) => ({
       name: a.artist_name,
       mbid: a.artist_mbid || undefined,

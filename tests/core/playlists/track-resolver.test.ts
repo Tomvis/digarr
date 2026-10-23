@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { generatePlaylist } from '@/core/playlists/generator'
+import type { StrategyDeps } from '@/core/playlists/strategies/types'
 import {
-  resolvePlaylistTracks,
-  resolveTracksForArtist,
+  resolvePlaylistTracksDetailed,
   resolveTracksForArtistDetailed,
 } from '@/core/playlists/track-resolver'
 import type {
@@ -13,6 +14,14 @@ import type {
   TrackResolverConfig,
   TrackResolverDeps,
 } from '@/core/playlists/types'
+
+async function resolveTracksForArtist(...args: Parameters<typeof resolveTracksForArtistDetailed>) {
+  return (await resolveTracksForArtistDetailed(...args)).tracks
+}
+
+async function resolvePlaylistTracks(...args: Parameters<typeof resolvePlaylistTracksDetailed>) {
+  return (await resolvePlaylistTracksDetailed(...args)).flatMap((result) => result.tracks)
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -361,16 +370,101 @@ describe('resolveTracksForArtist()', () => {
       })
     })
 
-    it('passes Deezer artist query syntax to deezerSearch', async () => {
-      const deezerSearch = vi.fn().mockResolvedValue(DEEZER_RESULTS)
-      const deps: TrackResolverDeps = { deezerSearch }
+    it('resolves the one exact-name artist and takes its top tracks', async () => {
+      const deezerArtists = vi.fn().mockResolvedValue([
+        { id: 7, name: 'radiohead' },
+        { id: 8, name: 'Radiohead Tribute' },
+      ])
+      const deezerArtistTopTracks = vi.fn().mockResolvedValue(DEEZER_RESULTS)
+      const deezerSearch = vi.fn()
 
-      await resolveTracksForArtist('Radiohead', ARTIST_MBID, deps, {
-        ...DEFAULT_CONFIG,
-        sourcePriority: ['deezer'],
-      })
+      const result = await resolveTracksForArtistDetailed(
+        'Radiohead',
+        ARTIST_MBID,
+        { deezerArtists, deezerArtistTopTracks, deezerSearch },
+        { tracksPerArtist: 2, sourcePriority: ['deezer'] },
+      )
 
-      expect(deezerSearch).toHaveBeenCalledWith('artist:"Radiohead"', 3)
+      expect(deezerArtistTopTracks).toHaveBeenCalledWith(7, 2)
+      expect(deezerSearch).not.toHaveBeenCalled()
+      expect(result.tracks.map((t) => [t.deezerId, t.source])).toEqual([
+        ['dz-1', 'deezer'],
+        ['dz-2', 'deezer'],
+      ])
+      expect(result.outcome.titleOnly).toBeUndefined()
+    })
+
+    it('falls back to a plain exact-artist track search when the artist name is ambiguous', async () => {
+      const deezerArtists = vi.fn().mockResolvedValue([
+        { id: 7, name: 'Radiohead' },
+        { id: 9, name: 'Radiohead' },
+      ])
+      const deezerArtistTopTracks = vi.fn()
+      const deezerSearch = vi
+        .fn()
+        .mockResolvedValue([
+          { id: 'cover', name: 'Creep', artists: ['Radiohead Tribute'], rank: 999999 },
+          ...DEEZER_RESULTS.slice(0, 2),
+        ])
+
+      const tracks = await resolveTracksForArtist(
+        'Radiohead',
+        ARTIST_MBID,
+        { deezerArtists, deezerArtistTopTracks, deezerSearch },
+        { tracksPerArtist: 3, sourcePriority: ['deezer'] },
+      )
+
+      expect(deezerArtistTopTracks).not.toHaveBeenCalled()
+      expect(deezerSearch).toHaveBeenCalledWith('Radiohead', 25)
+      expect(tracks.map((t) => t.deezerId)).toEqual(['dz-1', 'dz-2'])
+    })
+
+    it('picks the dominant artist when the other exact matches are near-empty duplicates', async () => {
+      const deezerArtists = vi.fn().mockResolvedValue([
+        { id: 412970591, name: 'Radiohead', fans: 0 },
+        { id: 7, name: 'Radiohead', fans: 1300000 },
+      ])
+      const deezerArtistTopTracks = vi.fn().mockResolvedValue(DEEZER_RESULTS)
+
+      await resolveTracksForArtist(
+        'Radiohead',
+        ARTIST_MBID,
+        { deezerArtists, deezerArtistTopTracks },
+        { tracksPerArtist: 2, sourcePriority: ['deezer'] },
+      )
+
+      expect(deezerArtistTopTracks).toHaveBeenCalledWith(7, 2)
+    })
+
+    it('still refuses same-name artists with comparable fan counts', async () => {
+      const deezerArtists = vi.fn().mockResolvedValue([
+        { id: 7, name: 'Radiohead', fans: 900000 },
+        { id: 9, name: 'Radiohead', fans: 400000 },
+      ])
+      const deezerArtistTopTracks = vi.fn()
+
+      await resolveTracksForArtist(
+        'Radiohead',
+        ARTIST_MBID,
+        { deezerArtists, deezerArtistTopTracks, deezerSearch: vi.fn().mockResolvedValue([]) },
+        { tracksPerArtist: 2, sourcePriority: ['deezer'] },
+      )
+
+      expect(deezerArtistTopTracks).not.toHaveBeenCalled()
+    })
+
+    it('matches artist names that differ only by Unicode hyphen variant', async () => {
+      const deezerArtists = vi.fn().mockResolvedValue([{ id: 5, name: 'Glenn-Copeland' }])
+      const deezerArtistTopTracks = vi.fn().mockResolvedValue(DEEZER_RESULTS)
+
+      await resolveTracksForArtist(
+        'Glenn\u2010Copeland',
+        ARTIST_MBID,
+        { deezerArtists, deezerArtistTopTracks },
+        { tracksPerArtist: 2, sourcePriority: ['deezer'] },
+      )
+
+      expect(deezerArtistTopTracks).toHaveBeenCalledWith(5, 2)
     })
 
     it('sorts Deezer results by rank descending', async () => {
@@ -402,6 +496,49 @@ describe('resolveTracksForArtist()', () => {
         mbid: 'mb-rec-1',
         source: 'musicbrainz',
       })
+    })
+
+    it('flags a MusicBrainz-only resolution as title-only', async () => {
+      const result = await resolveTracksForArtistDetailed(
+        'Radiohead',
+        ARTIST_MBID,
+        { musicbrainzRecordings: vi.fn().mockResolvedValue(MB_RECORDINGS) },
+        DEFAULT_CONFIG,
+      )
+      expect(result.outcome).toMatchObject({ status: 'resolved', titleOnly: true })
+    })
+
+    it.each([
+      '[untitled]',
+      'Peel Session (1997-03-02)',
+      'Radio Broadcast Fragment',
+      'Rehearsal Take',
+      'Creep (demo)',
+      'Live at the BBC',
+      'Interview',
+    ])('skips the non-track title %j when real songs exist', async (title) => {
+      const tracks = await resolveTracksForArtist(
+        'Radiohead',
+        ARTIST_MBID,
+        {
+          musicbrainzRecordings: vi.fn().mockResolvedValue([
+            { id: 'bad', title },
+            { id: 'good', title: 'Demolition' },
+          ]),
+        },
+        { tracksPerArtist: 1, sourcePriority: [] },
+      )
+      expect(tracks.map((t) => t.mbid)).toEqual(['good'])
+    })
+
+    it('keeps the first recording when every title looks like a non-track', async () => {
+      const tracks = await resolveTracksForArtist(
+        'Radiohead',
+        ARTIST_MBID,
+        { musicbrainzRecordings: vi.fn().mockResolvedValue([{ id: 'a', title: '[untitled]' }]) },
+        { tracksPerArtist: 1, sourcePriority: [] },
+      )
+      expect(tracks.map((t) => t.mbid)).toEqual(['a'])
     })
 
     it('does not call musicbrainzRecordings when local resolves', async () => {
@@ -588,7 +725,7 @@ describe('resolvePlaylistTracks()', () => {
     const deezerSearch = vi
       .fn()
       .mockImplementation(async (query: string) =>
-        DEEZER_RESULTS.map((track) => ({ ...track, artists: [query.slice(8, -1)] })),
+        DEEZER_RESULTS.map((track) => ({ ...track, artists: [query] })),
       )
     const deps: TrackResolverDeps = { deezerSearch }
     const config: TrackResolverConfig = { tracksPerArtist: 2, sourcePriority: ['deezer'] }
@@ -602,8 +739,8 @@ describe('resolvePlaylistTracks()', () => {
 
     expect(tracks).toHaveLength(4)
     expect(deezerSearch).toHaveBeenCalledTimes(2)
-    expect(deezerSearch).toHaveBeenCalledWith('artist:"Radiohead"', 2)
-    expect(deezerSearch).toHaveBeenCalledWith('artist:"Portishead"', 2)
+    expect(deezerSearch).toHaveBeenCalledWith('Radiohead', 25)
+    expect(deezerSearch).toHaveBeenCalledWith('Portishead', 25)
   })
 
   it('returns tracks in artist order (not interleaved)', async () => {
@@ -672,5 +809,133 @@ describe('resolvePlaylistTracks()', () => {
     expect(spotifySearch).toHaveBeenCalledTimes(6)
 
     void callOrder // silence unused warning
+  })
+})
+
+describe('recommended recordings', () => {
+  const RECORDING = { mbid: 'e8f9b188-f819-4e43-ab0f-4bd26ce9ff56', title: 'Roads' }
+  const portisheadTracks = (roads: SpotifySearchResult): SpotifySearchResult[] => [
+    { name: 'Glory Box', artists: ['Portishead'], uri: 'spotify:track:glory', popularity: 99 },
+    roads,
+  ]
+
+  it('Audition plays the stored recording, not the artist top track', async () => {
+    const strategyDeps: StrategyDeps = {
+      getPendingArtists: vi
+        .fn()
+        .mockResolvedValue([
+          { name: 'Portishead', mbid: 'mbid-ph', score: 0.9, recording: RECORDING },
+        ]),
+      getApprovedArtists: vi.fn(),
+      getOlderApprovedArtists: vi.fn(),
+    }
+    const spotifySearch = vi.fn().mockResolvedValue(
+      portisheadTracks({
+        name: 'Roads',
+        artists: ['Portishead'],
+        uri: 'spotify:track:roads',
+        popularity: 80,
+      }),
+    )
+
+    const result = await generatePlaylist(
+      'audition',
+      { trackSourcePriority: ['spotify'] },
+      strategyDeps,
+      { spotifySearch },
+    )
+
+    expect(result.tracks).toEqual([
+      {
+        artistName: 'Portishead',
+        trackName: 'Roads',
+        mbid: RECORDING.mbid,
+        spotifyUri: 'spotify:track:roads',
+        source: 'spotify',
+      },
+    ])
+  })
+
+  it.each([
+    { name: 'remaster only', match: { name: 'Roads - 2008 Remaster', artists: ['Portishead'] } },
+    {
+      name: 'same title by another artist',
+      match: { name: 'Roads', artists: ['Portishead Tribute'] },
+    },
+  ])('keeps the MusicBrainz identity instead of swapping songs: $name', async (testCase) => {
+    const spotifySearch = vi
+      .fn()
+      .mockResolvedValue(
+        portisheadTracks({ ...testCase.match, uri: 'spotify:track:roads', popularity: 80 }),
+      )
+    const localSearch = vi.fn().mockResolvedValue(LOCAL_TRACKS)
+
+    const result = await resolveTracksForArtistDetailed(
+      'Portishead',
+      'mbid-ph',
+      { spotifySearch, jellyfinSearch: localSearch },
+      { tracksPerArtist: 1, sourcePriority: ['local', 'spotify'] },
+      RECORDING,
+    )
+
+    expect(result.tracks).toEqual([
+      { artistName: 'Portishead', trackName: 'Roads', mbid: RECORDING.mbid, source: 'musicbrainz' },
+    ])
+  })
+
+  it('resolves the artist the usual way when the stored recording has no title', async () => {
+    const spotifySearch = vi.fn().mockResolvedValue(
+      portisheadTracks({
+        name: 'Roads',
+        artists: ['Portishead'],
+        uri: 'spotify:track:roads',
+        popularity: 80,
+      }),
+    )
+
+    const result = await resolveTracksForArtistDetailed(
+      'Portishead',
+      'mbid-ph',
+      { spotifySearch },
+      { tracksPerArtist: 1, sourcePriority: ['spotify'] },
+      { mbid: RECORDING.mbid },
+    )
+
+    expect(result.tracks).toEqual([
+      expect.objectContaining({ trackName: 'Glory Box', spotifyUri: 'spotify:track:glory' }),
+    ])
+  })
+
+  it.each([
+    {
+      source: 'spotify' as const,
+      query: 'artist:"David Bowie" track:"Heroes"',
+      deps: (search: ReturnType<typeof vi.fn>): TrackResolverDeps => ({
+        spotifySearch: search.mockResolvedValue([
+          { name: '"Heroes"', artists: ['David Bowie'], uri: 'spotify:track:h', popularity: 1 },
+        ]) as unknown as TrackResolverDeps['spotifySearch'],
+      }),
+    },
+    {
+      source: 'deezer' as const,
+      query: 'David Bowie "Heroes"',
+      deps: (search: ReturnType<typeof vi.fn>): TrackResolverDeps => ({
+        deezerSearch: search.mockResolvedValue([
+          { id: 'h', name: '"Heroes"', artists: ['David Bowie'], rank: 1 },
+        ]) as unknown as TrackResolverDeps['deezerSearch'],
+      }),
+    },
+  ])('matches a quoted title on $source without breaking the query', async (testCase) => {
+    const search = vi.fn()
+    const result = await resolveTracksForArtistDetailed(
+      'David Bowie',
+      'mbid-db',
+      testCase.deps(search),
+      { tracksPerArtist: 1, sourcePriority: [testCase.source] },
+      { mbid: RECORDING.mbid, title: '"Heroes"' },
+    )
+
+    expect(search).toHaveBeenCalledWith(testCase.query, 10)
+    expect(result.tracks[0]).toMatchObject({ source: testCase.source, mbid: RECORDING.mbid })
   })
 })

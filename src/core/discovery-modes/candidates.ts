@@ -30,6 +30,7 @@ export function discoveryCandidatesToDiscoveredArtists(
         sourceUrl: candidate.sourceUrl,
         releaseGroupMbid: candidate.releaseGroupMbid,
         releaseDate: candidate.freshnessDate,
+        releaseGroupTypes: candidate.releaseGroupTypes,
       })
       return results
     }
@@ -41,6 +42,8 @@ export function discoveryCandidatesToDiscoveredArtists(
       aiReasoning: candidate.explanationHint,
       source: candidate.provenanceMode,
       sourceUrl: candidate.sourceUrl,
+      recordingMbid: candidate.recordingMbid,
+      recordingTitle: candidate.recordingTitle,
     })
     return results
   }, [])

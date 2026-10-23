@@ -8,18 +8,16 @@ import type { PreviewSource } from '@/web/hooks/use-preview'
 import { I18nProvider } from '@/web/lib/i18n'
 
 const { mockUseSpotifyEmbed } = vi.hoisted(() => ({
-  mockUseSpotifyEmbed: vi.fn(() => ({ hostRef: { current: null }, failed: false })),
+  mockUseSpotifyEmbed: vi.fn(() => ({ hostRef: { current: null }, ready: false, failed: false })),
 }))
 
 vi.mock('@/web/hooks/use-spotify-embed', () => ({
   useSpotifyEmbed: mockUseSpotifyEmbed,
 }))
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 function withI18n(node: ReactNode) {
   return <I18nProvider>{node}</I18nProvider>
@@ -212,8 +210,36 @@ describe('PreviewPlayer', () => {
     expect(screen.queryByTitle('Radiohead')).not.toBeInTheDocument()
   })
 
+  it.each([
+    [false, true],
+    [true, false],
+  ])('covers the Spotify host until the controller is ready (ready=%s)', (ready, covered) => {
+    mockUseSpotifyEmbed.mockReturnValueOnce({ hostRef: { current: null }, ready, failed: false })
+
+    render(
+      withI18n(
+        <PreviewPlayer
+          playing={false}
+          loading={false}
+          artistName="Radiohead"
+          source={spotifySource}
+          onStop={vi.fn()}
+          spotify={spotify}
+          volume={1}
+          onVolumeChange={vi.fn()}
+        />,
+      ),
+    )
+
+    expect(screen.queryByText('Loading preview...') !== null).toBe(covered)
+  })
+
   it('falls back to a usable Spotify iframe when controller initialization fails', () => {
-    mockUseSpotifyEmbed.mockReturnValueOnce({ hostRef: { current: null }, failed: true })
+    mockUseSpotifyEmbed.mockReturnValueOnce({
+      hostRef: { current: null },
+      ready: false,
+      failed: true,
+    })
 
     render(
       withI18n(
@@ -235,7 +261,7 @@ describe('PreviewPlayer', () => {
 
   it('reports a controller failure to an active queue instead of parking it', async () => {
     const onPlaybackUnavailable = vi.fn()
-    mockUseSpotifyEmbed.mockReturnValue({ hostRef: { current: null }, failed: true })
+    mockUseSpotifyEmbed.mockReturnValue({ hostRef: { current: null }, ready: false, failed: true })
 
     render(
       <StrictMode>
@@ -257,6 +283,6 @@ describe('PreviewPlayer', () => {
 
     await waitFor(() => expect(onPlaybackUnavailable).toHaveBeenCalledTimes(1))
     expect(screen.queryByTitle('Radiohead')).not.toBeInTheDocument()
-    mockUseSpotifyEmbed.mockReturnValue({ hostRef: { current: null }, failed: false })
+    mockUseSpotifyEmbed.mockReturnValue({ hostRef: { current: null }, ready: false, failed: false })
   })
 })

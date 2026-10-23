@@ -9,6 +9,8 @@ const ERROR_MESSAGE_KEYS = {
   no_pending_auth: 'oauth.error.noPendingAuth',
   state_expired: 'oauth.error.stateExpired',
   browser_mismatch: 'oauth.error.browserMismatch',
+  token_mismatch: 'oauth.error.tokenMismatch',
+  authorization_denied: 'oauth.error.authorizationDenied',
   missing_credentials: 'oauth.error.missingCredentials',
   token_exchange_unreachable: 'oauth.error.tokenExchangeUnreachable',
   token_exchange_failed: 'oauth.error.tokenExchangeFailed',
@@ -19,6 +21,7 @@ const ERROR_MESSAGE_KEYS = {
 
 const PROVIDER_LABELS = {
   spotify: 'Spotify',
+  lastfm: 'Last.fm',
   deezer: 'Deezer',
   tidal: 'TIDAL',
 } as const
@@ -102,7 +105,7 @@ export function OAuthCallbackNotice() {
         {isError ? (
           <TriangleAlert size={18} className="shrink-0 text-reject" />
         ) : (
-          <CheckCircle2 size={18} className="shrink-0 text-accent" />
+          <CheckCircle2 size={18} className="shrink-0 text-accent-text" />
         )}
         <div className="space-y-1">
           <div className="text-sm font-semibold text-text">

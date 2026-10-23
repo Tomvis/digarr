@@ -1,0 +1,189 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { type ReactNode, useState } from 'react'
+import { toast } from 'sonner'
+import type { MessageKey } from '@/core/i18n/messages/types'
+import { errMsg } from '@/core/validation'
+import {
+  getScrobblerWriteBackStatus,
+  getUserPreferences,
+  initiateOAuth,
+  updateUserPreferences,
+} from '../lib/api'
+import { useI18n } from '../lib/i18n'
+import { Button } from './ui/button'
+
+type Preference = 'listenbrainzLoveEnabled' | 'listenbrainzPlaylistEnabled' | 'lastfmLoveEnabled'
+
+function useWriteBack() {
+  const { t } = useI18n()
+  const client = useQueryClient()
+  const preferences = useQuery({ queryKey: ['user-preferences'], queryFn: getUserPreferences })
+  const status = useQuery({
+    queryKey: ['scrobbler-write-back'],
+    queryFn: getScrobblerWriteBackStatus,
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function connectLastFm() {
+    setSaving(true)
+    try {
+      const { authUrl } = await initiateOAuth('lastfm', {})
+      window.location.assign(authUrl)
+    } catch (error) {
+      toast.error(errMsg(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function change(preference: Preference, enabled: boolean) {
+    if (preference === 'lastfmLoveEnabled' && enabled && !status.data?.lastfm.connected) {
+      await connectLastFm()
+      return
+    }
+    setSaving(true)
+    try {
+      await updateUserPreferences({ [preference]: enabled })
+      client.setQueryData(['user-preferences'], (old: Record<string, unknown> | undefined) => ({
+        ...old,
+        [preference]: enabled,
+      }))
+    } catch (error) {
+      toast.error(errMsg(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function toggle(preference: Preference, label: MessageKey, configured: boolean) {
+    const checked = preferences.data?.[preference] === true
+    return (
+      <label className="flex items-start gap-2 text-sm text-text">
+        <input
+          type="checkbox"
+          className="mt-1 accent-accent"
+          checked={checked}
+          disabled={saving || (!configured && !checked)}
+          onChange={(event) => void change(preference, event.target.checked)}
+        />
+        <span>{t(label)}</span>
+      </label>
+    )
+  }
+
+  const error = preferences.error ?? status.error
+  const retry = () => {
+    void preferences.refetch()
+    void status.refetch()
+  }
+
+  return {
+    saving,
+    connectLastFm,
+    toggle,
+    error,
+    retry,
+    status: status.data,
+    ready: !!preferences.data && !!status.data,
+  }
+}
+
+type WriteBack = ReturnType<typeof useWriteBack>
+
+function WriteBackShell({
+  writeBack,
+  children,
+}: {
+  writeBack: WriteBack
+  children: (status: NonNullable<WriteBack['status']>) => ReactNode
+}) {
+  const { t } = useI18n()
+  return (
+    <div className="space-y-3 border-t border-border pt-3">
+      <p className="text-xs text-muted">{t('writeBack.scope')}</p>
+      <p className="text-xs text-muted">{t('writeBack.offHelp')}</p>
+      {writeBack.error ? (
+        <div role="alert" className="space-y-2 text-sm text-reject">
+          <p>{t('writeBack.loadFailed')}</p>
+          <Button variant="outline" size="sm" onClick={writeBack.retry}>
+            {t('errorBoundary.retry')}
+          </Button>
+        </div>
+      ) : !writeBack.ready || !writeBack.status ? (
+        <p className="text-sm text-muted">{t('common.loading')}</p>
+      ) : (
+        <div className="space-y-2">{children(writeBack.status)}</div>
+      )}
+    </div>
+  )
+}
+
+export function ListenBrainzWriteBack() {
+  const { t } = useI18n()
+  const writeBack = useWriteBack()
+  return (
+    <WriteBackShell writeBack={writeBack}>
+      {(status) => (
+        <>
+          {writeBack.toggle(
+            'listenbrainzLoveEnabled',
+            'writeBack.listenbrainzLoves',
+            status.listenbrainz.configured,
+          )}
+          <p className="text-xs text-muted">{t('writeBack.listenbrainzHelp')}</p>
+          {writeBack.toggle(
+            'listenbrainzPlaylistEnabled',
+            'writeBack.listenbrainzPlaylists',
+            status.listenbrainz.configured,
+          )}
+          <p className="text-xs text-muted">{t('writeBack.playlistHelp')}</p>
+          {!status.listenbrainz.configured && (
+            <p className="text-xs text-muted">{t('writeBack.listenbrainzMissing')}</p>
+          )}
+          {status.listenbrainz.lastError && (
+            <p role="status" className="text-xs text-reject">
+              {t('writeBack.lastError').replace('{0}', status.listenbrainz.lastError)}
+            </p>
+          )}
+        </>
+      )}
+    </WriteBackShell>
+  )
+}
+
+export function LastfmWriteBack() {
+  const { t } = useI18n()
+  const writeBack = useWriteBack()
+  return (
+    <WriteBackShell writeBack={writeBack}>
+      {(status) => (
+        <>
+          {writeBack.toggle('lastfmLoveEnabled', 'writeBack.lastfmLoves', status.lastfm.configured)}
+          <p className="text-xs text-muted">{t('writeBack.lastfmHelp')}</p>
+          {!status.lastfm.configured ? (
+            <p className="text-xs text-muted">{t('writeBack.lastfmMissing')}</p>
+          ) : (
+            <p className="text-xs text-muted">
+              {t(status.lastfm.connected ? 'writeBack.lastfmConnected' : 'writeBack.lastfmConnect')}
+            </p>
+          )}
+          {status.lastfm.configured && status.lastfm.connected && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={writeBack.saving}
+              onClick={() => void writeBack.connectLastFm()}
+            >
+              {t('writeBack.lastfmReconnect')}
+            </Button>
+          )}
+          {status.lastfm.lastError && (
+            <p role="status" className="text-xs text-reject">
+              {t('writeBack.lastError').replace('{0}', status.lastfm.lastError)}
+            </p>
+          )}
+        </>
+      )}
+    </WriteBackShell>
+  )
+}

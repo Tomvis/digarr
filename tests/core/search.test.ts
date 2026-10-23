@@ -9,6 +9,7 @@ describe('search source catalog', () => {
     const sources = buildSearchSourceCatalog({
       hasSpotifyOAuth: false,
       hasTidalSearch: false,
+      showExperimentalIntegrations: true,
     })
 
     expect(sources).toEqual([
@@ -32,10 +33,16 @@ describe('search source catalog', () => {
     ])
   })
 
+  it('omits experimental sources by default even when credentials are saved', () => {
+    const sources = buildSearchSourceCatalog({ hasSpotifyOAuth: true, hasTidalSearch: true })
+    expect(sources.map((source) => source.id)).toEqual(['spotify', 'deezer', 'musicbrainz'])
+  })
+
   it('marks TIDAL available once client credentials are configured', () => {
     const sources = buildSearchSourceCatalog({
       hasSpotifyOAuth: false,
       hasTidalSearch: true,
+      showExperimentalIntegrations: true,
     })
 
     expect(sources).toContainEqual({
@@ -51,6 +58,7 @@ describe('Deezer search source', () => {
   it('prioritizes close name matches and trims noisy results', async () => {
     const source = createDeezerSearchSource({
       getArtistTopTracks: async () => [],
+      getArtistTopTrackResults: async () => [],
       searchArtists: async () => [
         { id: 1, name: 'Head Radio', fans: 999_999, url: 'https://deezer.example/head-radio' },
         { id: 2, name: 'Radiohead', fans: 500_000, url: 'https://deezer.example/radiohead' },

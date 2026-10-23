@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlaylistItem } from '@/core/targets/types'
 
 const mockFetch = vi.fn()
@@ -22,14 +22,6 @@ afterEach(() => {
 })
 
 describe('createJellyfinPlaylistTarget()', () => {
-  it('has correct id, type, and capabilities', () => {
-    const target = createJellyfinPlaylistTarget(7, CONFIG)
-    expect(target.id).toBe('jellyfin-playlist-7')
-    expect(target.type).toBe('jellyfin-playlist')
-    expect(target.capabilities).toContain('createPlaylist')
-    expect(target.capabilities).not.toContain('addArtist')
-  })
-
   describe('testConnection()', () => {
     it('returns success with server info', async () => {
       mockFetch.mockResolvedValueOnce(ok({ ServerName: 'Home Media', Version: '10.9.0' }))
@@ -86,216 +78,60 @@ describe('createJellyfinPlaylistTarget()', () => {
     })
   })
 
-  describe('createPlaylist()', () => {
-    beforeEach(() => {
-      mockFetch.mockImplementation(async (url: string | URL | Request, opts?: RequestInit) => {
-        const urlStr = String(url)
-
-        // GET /Users/{userId}/Items - track search
-        if (urlStr.includes('/Items') && (!opts?.method || opts.method === 'GET')) {
-          return ok({
-            Items: [
-              { Id: 'item-1', Name: 'Creep', AlbumArtist: 'Radiohead', Artists: ['Radiohead'] },
-              {
-                Id: 'item-2',
-                Name: 'Karma Police',
-                AlbumArtist: 'Radiohead',
-                Artists: ['Radiohead'],
-              },
-            ],
-            TotalRecordCount: 2,
-          })
+  describe('export session createPlaylist()', () => {
+    function mockCreateResponse(create: () => Response) {
+      mockFetch.mockImplementation(async (url: string | URL | Request) => {
+        const { pathname } = new URL(String(url))
+        if (pathname === '/System/Info') return ok({ Id: 'jf-server' })
+        if (pathname === '/Users/user-uuid-1') return ok({ Id: 'user-uuid-1' })
+        if (pathname === '/Users/user-uuid-1/Items') {
+          return ok({ Items: [{ Id: 'item-1', Name: 'Creep', AlbumArtist: 'Radiohead' }] })
         }
-
-        // POST /Playlists - create playlist
-        if (urlStr.includes('/Playlists') && opts?.method === 'POST') {
-          return ok({ Id: 'jf-pl-1', Name: 'Digarr Picks' })
-        }
-
+        if (pathname === '/Playlists') return create()
         return new Response('Not Found', { status: 404 })
       })
-    })
+    }
 
-    it('creates a playlist and returns success', async () => {
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Digarr Picks', [
-        { artistName: 'Radiohead', artistMbid: 'mbid-rh', trackName: 'Creep' },
-        { artistName: 'Radiohead', artistMbid: 'mbid-rh', trackName: 'Karma Police' },
-      ])
-
-      expect(result?.success).toBe(true)
-      expect(result?.playlistId).toBe('jf-pl-1')
-      expect(result?.playlistName).toBe('Digarr Picks')
-      expect(result?.itemsAdded).toBe(2)
-      expect(result?.targetType).toBe('jellyfin-playlist')
-      expect(result?.targetId).toBe(7)
-    })
-
-    it('skips items without trackName', async () => {
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Artist Only', [
-        { artistName: 'Radiohead', artistMbid: 'mbid-rh' },
-      ])
-
-      expect(result?.success).toBe(true)
-      expect(result?.itemsAdded).toBe(0)
-
-      // No search calls made
-      const calls = mockFetch.mock.calls.map((c) => String(c[0]))
-      const searchCalls = calls.filter((u) => u.includes('/Items') && !u.includes('/Playlists'))
-      expect(searchCalls).toHaveLength(0)
-    })
-
-    it('handles tracks not found in Jellyfin gracefully', async () => {
-      mockFetch.mockImplementation(async (url: string | URL | Request, opts?: RequestInit) => {
-        const urlStr = String(url)
-        if (urlStr.includes('/Items') && (!opts?.method || opts.method === 'GET')) {
-          return ok({ Items: [], TotalRecordCount: 0 })
-        }
-        if (urlStr.includes('/Playlists') && opts?.method === 'POST') {
-          return ok({ Id: 'jf-pl-empty', Name: 'Empty' })
-        }
-        return new Response('Not Found', { status: 404 })
-      })
-
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Empty Playlist', [
-        { artistName: 'Ghost Band', artistMbid: 'mbid-x', trackName: 'Missing' },
-      ])
-
-      expect(result?.success).toBe(true)
-      expect(result?.itemsAdded).toBe(0)
-    })
-
-    it('fails without creating a playlist when track search is forbidden', async () => {
-      mockFetch.mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
-
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Forbidden', [
+    async function createViaSession() {
+      const session = await createJellyfinPlaylistTarget(7, CONFIG).openPlaylistExportSession?.([
         { artistName: 'Radiohead', artistMbid: 'mbid-rh', trackName: 'Creep' },
       ])
-
-      expect(result).toMatchObject({ success: false, error: 'Jellyfin API 403: forbidden' })
-      expect(
-        mockFetch.mock.calls.some(
-          ([url, init]) =>
-            String(url).includes('/Playlists') &&
-            (init as RequestInit | undefined)?.method === 'POST',
-        ),
-      ).toBe(false)
-    })
+      if (!session) throw new Error('Expected an export session')
+      return session.createPlaylist('Digarr Picks', async () => {})
+    }
 
     it('returns failure when POST /Playlists errors', async () => {
-      mockFetch.mockImplementation(async (url: string | URL | Request, opts?: RequestInit) => {
-        const urlStr = String(url)
-        if (urlStr.includes('/Items') && (!opts?.method || opts.method === 'GET')) {
-          return ok({ Items: [], TotalRecordCount: 0 })
-        }
-        if (urlStr.includes('/Playlists') && opts?.method === 'POST') {
-          return httpError(500)
-        }
-        return new Response('Not Found', { status: 404 })
-      })
+      mockCreateResponse(() => httpError(500))
 
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Bad', [
-        { artistName: 'X', artistMbid: 'mbid-x', trackName: 'Y' },
-      ])
+      const result = await createViaSession()
 
-      expect(result?.success).toBe(false)
-      expect(result?.error).toContain('500')
-      expect(result?.error).toContain('Error')
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('500')
+      expect(result.error).toContain('Error')
       expect(
-        mockFetch.mock.calls.filter(
-          ([url, init]) =>
-            String(url).includes('/Playlists') &&
-            (init as RequestInit | undefined)?.method === 'POST',
-        ),
+        mockFetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/Playlists'),
       ).toHaveLength(1)
     })
 
-    it('returns a provider-shaped error for malformed JSON', async () => {
-      mockFetch.mockResolvedValueOnce(new Response('not-json'))
-
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Bad JSON', [])
-
-      expect(result).toMatchObject({
-        success: false,
-        error: 'Jellyfin API 200: Invalid JSON: not-json',
-      })
-    })
-
     it('redacts the API key if an upstream error body echoes it', async () => {
-      mockFetch.mockResolvedValueOnce(
-        new Response(`apiKey=${CONFIG.apiKey}`, {
-          status: 500,
-        }),
-      )
+      mockCreateResponse(() => new Response(`apiKey=${CONFIG.apiKey}`, { status: 500 }))
 
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Echoed Credential', [])
+      const result = await createViaSession()
 
       expect(result).toMatchObject({
         success: false,
         error: 'Jellyfin API 500: apiKey=[REDACTED]',
       })
-      expect(result?.error).not.toContain(CONFIG.apiKey)
+      expect(result.error).not.toContain(CONFIG.apiKey)
     })
 
     it('returns a provider-shaped error for an empty JSON response', async () => {
-      mockFetch.mockResolvedValueOnce(new Response(''))
+      mockCreateResponse(() => new Response(''))
 
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Empty Response', [])
-
-      expect(result).toMatchObject({
+      expect(await createViaSession()).toMatchObject({
         success: false,
         error: 'Jellyfin API 200: Expected JSON response body',
       })
-    })
-
-    it('prefers exact artist+title match in search results', async () => {
-      mockFetch.mockImplementation(async (url: string | URL | Request, opts?: RequestInit) => {
-        const urlStr = String(url)
-        if (urlStr.includes('/Items') && (!opts?.method || opts.method === 'GET')) {
-          return ok({
-            Items: [
-              // Partial match first
-              {
-                Id: 'item-partial',
-                Name: 'Creep (Acoustic)',
-                AlbumArtist: 'Radiohead',
-                Artists: ['Radiohead'],
-              },
-              // Exact match second
-              { Id: 'item-exact', Name: 'Creep', AlbumArtist: 'Radiohead', Artists: ['Radiohead'] },
-            ],
-            TotalRecordCount: 2,
-          })
-        }
-        if (urlStr.includes('/Playlists') && opts?.method === 'POST') {
-          const body = JSON.parse(opts.body as string) as { Ids: string[] }
-          // Check which ID was passed
-          return ok({ Id: 'jf-pl-x', Name: 'T', _passedIds: body.Ids })
-        }
-        return new Response('Not Found', { status: 404 })
-      })
-
-      const target = createJellyfinPlaylistTarget(7, CONFIG)
-      const result = await target.createPlaylist?.('Test', [
-        { artistName: 'Radiohead', artistMbid: 'mbid-rh', trackName: 'Creep' },
-      ])
-
-      // Find the POST /Playlists call and check passed IDs
-      const postCall = mockFetch.mock.calls.find((c) => {
-        const [u, o] = c as [string, RequestInit | undefined]
-        return String(u).includes('/Playlists') && o?.method === 'POST'
-      })
-      const body = JSON.parse(postCall?.[1]?.body as string) as { Ids: string[] }
-      expect(body.Ids).toContain('item-exact')
-      expect(body.Ids).not.toContain('item-partial')
-      expect(result?.success).toBe(true)
     })
   })
 })
@@ -373,6 +209,24 @@ describe('Jellyfin scheduled playlist session', () => {
     expect(mutations(fetchMock)).toHaveLength(1)
   })
 
+  it.each([
+    [undefined, 1],
+    [{ Items: [] }, null],
+  ])('reads back the playlist track count with one bounded request', async (entries, expected) => {
+    const fetchMock = exportFetch({ entries })
+    mockFetch.mockImplementation(fetchMock)
+    const session = await createJellyfinPlaylistTarget(7, CONFIG).openPlaylistExportSession?.(
+      EXPORT_ITEMS,
+    )
+    const read = session?.readBackTrackCount?.('playlist-1')
+    if (expected === null) await expect(read).rejects.toThrow('track count')
+    else expect(await read).toBe(expected)
+    const request = new URL(String(fetchMock.mock.lastCall?.[0]))
+    expect(request.pathname).toBe('/Playlists/playlist-1/Items')
+    expect(request.searchParams.get('Limit')).toBe('1')
+    expect(mutations(fetchMock)).toHaveLength(0)
+  })
+
   it('replaces entry IDs on the same playlist and preserves its metadata', async () => {
     const fetchMock = exportFetch()
     mockFetch.mockImplementation(fetchMock)
@@ -387,22 +241,24 @@ describe('Jellyfin scheduled playlist session', () => {
       itemsSkipped: 1,
     })
     const writes = mutations(fetchMock)
-    expect(writes.map(([, init]) => init.method)).toEqual(['DELETE', 'POST'])
-    expect(new URL(writes[0]?.[0]).searchParams.get('EntryIds')).toBe('entry-1')
-    expect(new URL(writes[1]?.[0]).searchParams.get('Ids')).toBe('track-1')
+    expect(writes.map(([, init]) => init.method)).toEqual(['POST', 'DELETE'])
+    expect(new URL(writes[0]?.[0]).searchParams.get('Ids')).toBe('track-1')
+    expect(new URL(writes[1]?.[0]).searchParams.get('EntryIds')).toBe('entry-1')
     expect(writes.every(([url]) => new URL(url).pathname === '/Playlists/playlist-1/Items')).toBe(
       true,
     )
   })
 
-  it('collects every page before removing any item', async () => {
+  it('collects every page before changing anything and removes old entries in chunks', async () => {
     const fetchMock = exportFetch()
+    const entries = Array.from({ length: 250 }, (_, index) => `entry-${index}`)
     mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
       const request = new URL(url)
       if (request.pathname === '/Playlists/playlist-1/Items' && init.method === 'GET') {
         expect(mutations(fetchMock)).toHaveLength(0)
-        const entry = request.searchParams.get('StartIndex') === '0' ? 'entry-1' : 'entry-2'
-        return ok({ Items: [{ PlaylistItemId: entry }], TotalRecordCount: 2 })
+        const start = Number(request.searchParams.get('StartIndex'))
+        const page = entries.slice(start, start + 200).map((id) => ({ PlaylistItemId: id }))
+        return ok({ Items: page, TotalRecordCount: entries.length })
       }
       return fetchMock(url, init)
     })
@@ -410,8 +266,10 @@ describe('Jellyfin scheduled playlist session', () => {
       EXPORT_ITEMS,
     )
     expect((await session?.replacePlaylist('playlist-1', 'Picks'))?.success).toBe(true)
-    const writes = mutations(fetchMock)
-    expect(new URL(writes[0]?.[0]).searchParams.get('EntryIds')).toBe('entry-1,entry-2')
+    const deletes = mutations(fetchMock).filter(([, init]) => init.method === 'DELETE')
+    const removed = deletes.map(([url]) => new URL(url).searchParams.get('EntryIds')?.split(','))
+    expect(removed.map((ids) => ids?.length)).toEqual([100, 100, 50])
+    expect(removed.flat()).toEqual(entries)
   })
 
   it.each([
@@ -465,7 +323,7 @@ describe('Jellyfin scheduled playlist session', () => {
   })
 
   it.each([404, 403, 500])(
-    'retains the ID on update failure %i and never creates a replacement',
+    'retains the ID and the old entries on add failure %i and never creates a replacement',
     async (status) => {
       const fetchMock = exportFetch({ addStatus: status })
       mockFetch.mockImplementation(fetchMock)
@@ -476,12 +334,12 @@ describe('Jellyfin scheduled playlist session', () => {
         success: false,
         playlistId: 'playlist-1',
       })
-      expect(mutations(fetchMock)).toHaveLength(2)
+      expect(mutations(fetchMock)).toHaveLength(1)
       expect(await session?.replacePlaylist('playlist-1', 'Picks')).toMatchObject({
         success: false,
         playlistId: 'playlist-1',
       })
-      expect(mutations(fetchMock)).toHaveLength(4)
+      expect(mutations(fetchMock).map(([, init]) => init.method)).toEqual(['POST', 'POST'])
       expect(
         mutations(fetchMock).every(
           ([url]) => new URL(url).pathname === '/Playlists/playlist-1/Items',

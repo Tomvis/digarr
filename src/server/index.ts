@@ -1,25 +1,30 @@
 import { resolve } from 'node:path'
-import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
+import { compress } from 'hono/compress'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import { secureHeaders } from 'hono/secure-headers'
 import { envConfig } from '@/config/env'
+import { errMsg } from '@/core/validation'
+import { apiTokenQueries } from '@/db/queries/api-tokens'
 import { getUserCredentialsById, linkOidcIdentity } from '@/db/queries/users'
+import { effectiveIsAdmin } from '@/server/middleware/admin-guard'
 import { VERSION } from '@/version'
 import { openapiDoc } from './helpers/openapi-doc'
-import { problem } from './helpers/problem'
+import { problem, statusTitle } from './helpers/problem'
 import { maintenanceMiddleware } from './maintenance'
 import { adminGuard } from './middleware/admin-guard'
 import { authGuard } from './middleware/auth'
 import { csrfGuard } from './middleware/csrf'
 import { requestLogger } from './middleware/logger'
+import { problemJsonErrors } from './middleware/problem-json'
 import { proxyAuthMiddleware } from './middleware/proxy-auth'
 import { rateLimiter } from './middleware/rate-limit'
 import { setupGuard } from './middleware/setup-guard'
 import { adminRoutes } from './routes/admin'
 import { albumBlocksRoutes } from './routes/album-blocks'
 import { analyticsRoutes } from './routes/analytics'
+import { approvalRequestRoutes } from './routes/approval-requests'
 import { artistBlocksRoutes } from './routes/artist-blocks'
 import { artistRoutes } from './routes/artists'
 import { authRoutes } from './routes/auth'
@@ -33,6 +38,7 @@ import { jobRoutes } from './routes/jobs'
 import { libraryRoutes } from './routes/library'
 import { lidarrRoutes } from './routes/lidarr'
 import { listeningRoutes } from './routes/listening'
+import { mcpRoutes } from './routes/mcp'
 import { mediaRoutes } from './routes/media'
 import { moodRoutes } from './routes/mood'
 import { oauthRoutes } from './routes/oauth'
@@ -47,7 +53,9 @@ import { slskdRoutes } from './routes/slskd'
 import { subscriptionRoutes } from './routes/subscriptions'
 import { targetRoutes } from './routes/targets'
 import { testSeedRoutes } from './routes/test-seed'
+import { userNotificationRoutes } from './routes/user-notifications'
 import { userRoutes } from './routes/users'
+import { mountStatic } from './static'
 import type { HonoEnv } from './types'
 
 // AppDependencies is the intersection of every per-domain slice in deps.ts.
@@ -58,6 +66,8 @@ import type { HonoEnv } from './types'
 export type { AppDependencies } from './deps'
 
 import type { AppDependencies } from './deps'
+
+const JSON_CONTENT_TYPE = /^\s*application\/(?:[\w.-]+\+)?json(?:[;\s]|$)/i
 
 const SPOTIFY_BRIDGE_CSP = [
   "default-src 'none'",
@@ -74,10 +84,8 @@ const SPOTIFY_BRIDGE_CSP = [
 export function createApp(deps: AppDependencies) {
   const app = new Hono<HonoEnv>()
 
-  // Central error handler: maps HTTPException (including zJson's hook failures
-  // when a handler throws one) and unknown errors to RFC 9457 problem+json.
-  // Zod/validator hooks still return their {error, code, details} shape
-  // directly so existing clients keep working; only unhandled throws flow here.
+  // Central error handler: maps HTTPException and unknown errors to RFC 9457
+  // problem+json. Legacy `{error}` bodies are converted by problemJsonErrors().
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       const res = err.getResponse()
@@ -85,9 +93,15 @@ export function createApp(deps: AppDependencies) {
       // middleware that built its own body), prefer it over the problem+json
       // envelope to avoid clobbering specialised payloads.
       if (res.headers.get('content-type')?.includes('application/json')) return res
-      return problem(c, `http-${err.status}`, err.message || 'HTTP Error', err.status, undefined)
+      return problem(
+        c,
+        `http-${err.status}`,
+        statusTitle(err.status),
+        err.status,
+        err.message || undefined,
+      )
     }
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errMsg(err)
     console.error('[server] unhandled error:', msg, err instanceof Error ? err.stack : '')
     return problem(c, 'internal-error', 'Internal Server Error', 500)
   })
@@ -103,6 +117,9 @@ export function createApp(deps: AppDependencies) {
 
   // Log all requests first - before auth/cors so we capture everything
   app.use('*', requestLogger())
+  // JSON only: SSE, the audio proxy and images pass through untouched.
+  app.use('/api/*', compress({ contentTypeFilter: JSON_CONTENT_TYPE }))
+  app.use('*', problemJsonErrors())
 
   if (!envConfig.allowedOrigin && process.env.NODE_ENV === 'production') {
     console.warn(
@@ -139,6 +156,8 @@ export function createApp(deps: AppDependencies) {
         'X-Digarr-Locale',
         'X-Digarr-CSRF',
         'X-Digarr-Auth-Mode',
+        'MCP-Protocol-Version',
+        'MCP-Session-Id',
       ],
     }),
   )
@@ -166,24 +185,23 @@ export function createApp(deps: AppDependencies) {
       },
     }),
   )
-  app.use(
-    '*',
-    proxyAuthMiddleware({
-      enabled: envConfig.proxyAuthEnabled,
-      trustedProxies:
-        envConfig.proxyAuthTrustedProxies
-          ?.split(',')
-          .map((s) => s.trim())
-          .filter(Boolean) ?? [],
-      getUserByUsername: deps.getUserByUsername,
-      createUser: deps.createUser,
-    }),
-  )
+  const proxyAuth = proxyAuthMiddleware({
+    enabled: envConfig.proxyAuthEnabled,
+    trustedProxies:
+      envConfig.proxyAuthTrustedProxies
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [],
+    getUserByUsername: deps.getUserByUsername,
+    createUser: deps.createUser,
+  })
+  app.use('*', (c, next) => (c.req.path === '/api/v1/mcp' ? next() : proxyAuth(c, next)))
   app.use(
     '*',
     authGuard({
       hasUsers: async () => (await deps.getUserCount()) > 0,
       isSetupComplete: deps.isSetupComplete,
+      resolveApiToken: (token) => apiTokenQueries(deps.db).resolve(token),
     }),
   )
   app.use('*', csrfGuard)
@@ -212,7 +230,7 @@ export function createApp(deps: AppDependencies) {
     return c.json({
       authenticated: !!user,
       userId: user?.id,
-      isAdmin: user?.isAdmin ?? false,
+      isAdmin: effectiveIsAdmin(c, user),
       required: userCount > 0 || !!envConfig.authToken || setupComplete,
       hasUsers: userCount > 0,
       oidcEnabled,
@@ -233,10 +251,8 @@ export function createApp(deps: AppDependencies) {
   })
 
   // OpenAPI 3.1 spec. Intentionally public so integrators can read the
-  // contract without credentials. The spec is a skeleton today - see
-  // src/server/helpers/openapi-doc.ts. `/api/v1/docs` returns a tiny
-  // no-external-JS landing page pointing at the spec; rendering with
-  // Scalar/Swagger is deferred to keep the CSP strict.
+  // contract without credentials. `/api/v1/docs` returns a tiny
+  // no-external-JS landing page pointing at the spec.
   app.get('/api/v1/docs/openapi.json', (c) =>
     c.json(openapiDoc, 200, { 'cache-control': 'public, max-age=60' }),
   )
@@ -302,12 +318,16 @@ export function createApp(deps: AppDependencies) {
     rateLimiter({ windowMs: 60_000, max: 5, keyPrefix: 'oauth' }),
   )
   app.route('/', authRoutes(deps))
+  app.route('/', userNotificationRoutes(deps))
   app.route('/', oauthRoutes(deps))
   app.route('/', healthRoutes({ db: deps.db }))
   app.route('/', setupRoutes(deps))
   app.route('/', settingsRoutes(deps))
-  app.route('/', pipelineRoutes(deps))
+  const pipeline = pipelineRoutes(deps)
+  app.route('/', mcpRoutes(deps, pipeline))
+  app.route('/', pipeline)
   app.route('/', recommendationRoutes(deps))
+  app.route('/', approvalRequestRoutes(deps))
   app.route('/', batchRoutes(deps))
   app.use('/api/v1/admin/*', adminGuard(deps.getUserById))
   app.use('/api/v1/analytics/*', adminGuard(deps.getUserById))
@@ -431,8 +451,7 @@ export function createApp(deps: AppDependencies) {
   // to the module directory (dist/server/), not process.cwd()
   if (process.env.NODE_ENV === 'production') {
     const webRoot = resolve(process.cwd(), 'dist/web')
-    app.use('/*', serveStatic({ root: webRoot }))
-    app.get('*', serveStatic({ root: webRoot, path: 'index.html' }))
+    mountStatic(app, webRoot)
   }
 
   return app

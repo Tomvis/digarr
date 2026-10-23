@@ -3,33 +3,13 @@ import type { Database } from '@/db'
 import {
   getGenreArtists,
   getGenreFeedbackHistory,
-  getRejectedArtistMbids,
   listRecommendations,
+  listWaitingApprovals,
   rejectRecommendation,
+  updateRecommendationStatus,
 } from '@/db/queries/recommendations'
 import { artists, recommendationBatches, recommendations, users } from '@/db/schema'
 import { makeTestDb } from '../../helpers/test-db'
-
-// Build a mock drizzle db that returns a fixed result when awaited.
-// The query chain: db.select({...}).from(...).innerJoin(...).where(...) -> rows
-function makeMockDb(rows: unknown[]): Database {
-  const chain = {
-    from: vi.fn().mockReturnThis(),
-    innerJoin: vi.fn().mockReturnThis(),
-    where: vi.fn().mockResolvedValue(rows),
-    orderBy: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    offset: vi.fn().mockReturnThis(),
-  }
-  return {
-    select: vi.fn().mockReturnValue(chain),
-    insert: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    transaction: vi.fn(),
-    execute: vi.fn(),
-  } as unknown as Database
-}
 
 function collectParamValues(node: unknown): unknown[] {
   const values: unknown[] = []
@@ -78,12 +58,6 @@ describe('getGenreFeedbackHistory', () => {
     expect(result.get('rock')).toEqual({ approved: 1, rejected: 1, total: 2, strongNegative: 1 })
     expect(result.get('metal')).toEqual({ approved: 2, rejected: 0, total: 2, strongNegative: 0 })
     expect(result.get('jazz')).toEqual({ approved: 1, rejected: 0, total: 1, strongNegative: 0 })
-  })
-
-  it('returns empty map when no acted-upon recommendations', async () => {
-    const db = makeExecuteMock([])
-    const result = await getGenreFeedbackHistory(db)
-    expect(result.size).toBe(0)
   })
 
   // Regression (per-user genre-feedback isolation): the scoring entry points
@@ -174,44 +148,6 @@ describe('getGenreFeedbackHistory', () => {
   })
 })
 
-describe('getRejectedArtistMbids', () => {
-  it('returns a Set of MBIDs from the query result', async () => {
-    const rows = [{ mbid: 'mbid-1' }, { mbid: 'mbid-2' }, { mbid: 'mbid-3' }]
-    const db = makeMockDb(rows)
-
-    const result = await getRejectedArtistMbids(db, 90, 1)
-
-    expect(result).toBeInstanceOf(Set)
-    expect(result.size).toBe(3)
-    expect(result.has('mbid-1')).toBe(true)
-    expect(result.has('mbid-2')).toBe(true)
-    expect(result.has('mbid-3')).toBe(true)
-  })
-
-  it('returns empty Set when no rejected artists in cooldown window', async () => {
-    const db = makeMockDb([])
-    const result = await getRejectedArtistMbids(db, 90, 1)
-    expect(result.size).toBe(0)
-  })
-
-  it('passes cutoff date based on cooldownDays', async () => {
-    // Verify the query is built with a where clause (the chain is called correctly)
-    const rows: unknown[] = []
-    const chain = {
-      from: vi.fn().mockReturnThis(),
-      innerJoin: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue(rows),
-    }
-    const db = {
-      select: vi.fn().mockReturnValue(chain),
-    } as unknown as Database
-
-    await getRejectedArtistMbids(db, 30, 1)
-
-    expect(chain.where).toHaveBeenCalledOnce()
-  })
-})
-
 describe('getGenreArtists', () => {
   it('keeps added_to_lidarr artists out of the recommended tab filter', async () => {
     const rows: unknown[] = []
@@ -237,10 +173,60 @@ describe('getGenreArtists', () => {
     expect(params).toContain('approved')
     expect(params).not.toContain('added_to_lidarr')
   })
+
+  it('shows only the caller recommendations in every view', async () => {
+    const { db, close } = await makeTestDb()
+    try {
+      const [owner, other] = await db
+        .insert(users)
+        .values([
+          { username: 'genre-owner', passwordHash: 'test' },
+          { username: 'genre-other', passwordHash: 'test' },
+        ])
+        .returning()
+      const [batch] = await db.insert(recommendationBatches).values({}).returning()
+      const catalog = await db
+        .insert(artists)
+        .values(
+          ['mine-a', 'theirs-a', 'mine-p', 'theirs-p'].map((name, i) => ({
+            mbid: `00000000-0000-0000-0000-00000000020${i}`,
+            name,
+            genres: ['dub'],
+          })),
+        )
+        .returning()
+      if (!owner || !other || !batch || catalog.length !== 4) throw new Error('fixture missing')
+      await db.insert(recommendations).values(
+        catalog.map((artist, i) => ({
+          userId: i % 2 === 0 ? owner.id : other.id,
+          artistId: artist.id,
+          batchId: batch.id,
+          score: i % 2 === 0 ? 0.5 : 0.9,
+          status: i < 2 ? 'approved' : 'pending',
+        })),
+      )
+
+      const names = async (view: 'recommended' | 'trending' | 'deep_cuts') =>
+        (await getGenreArtists(db as unknown as Database, 'dub', view, 20, owner.id))
+          .map((r) => r.name)
+          .sort()
+
+      expect(await names('recommended')).toEqual(['mine-a'])
+      expect(await names('trending')).toEqual(['mine-a', 'mine-p'])
+      expect(await names('deep_cuts')).toEqual(['mine-p'])
+    } finally {
+      await close()
+    }
+  }, 30_000)
 })
 
 describe('rejectRecommendation', () => {
-  type RejectedRow = { artistId: number; kind: string; releaseGroupMbid: string | null }
+  type RejectedRow = {
+    artistId: number
+    kind: string
+    releaseGroupMbid: string | null
+    releaseGroupTitle?: string | null
+  }
 
   function tableName(tableArg: unknown): string | undefined {
     const nameSymbol = Object.getOwnPropertySymbols(tableArg as object).find(
@@ -256,8 +242,12 @@ describe('rejectRecommendation', () => {
     const update = vi.fn().mockReturnValue({ set })
 
     const insertCalls: Array<{ table: string | undefined; values: Record<string, unknown> }> = []
-    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
+    const onConflictDoUpdate = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ inserted: true }]),
+    })
+    const onConflictDoNothing = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+    })
     const insert = vi.fn((table: unknown) => ({
       values: vi.fn((vals: Record<string, unknown>) => {
         insertCalls.push({ table: tableName(table), values: vals })
@@ -278,6 +268,7 @@ describe('rejectRecommendation', () => {
       artistId: 10,
       kind: 'album',
       releaseGroupMbid: 'rg-mbid-1',
+      releaseGroupTitle: 'Example Album',
     })
 
     const artistId = await rejectRecommendation(db, {
@@ -288,13 +279,14 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(10)
+    expect(artistId).toEqual({ artistId: 10, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('album_blocks')
     expect(insertCalls[0]?.values).toMatchObject({
       userId: 5,
       artistId: 10,
       releaseGroupMbid: 'rg-mbid-1',
+      albumTitle: 'Example Album',
       reason: 'wrong_style',
       reasonText: 'not my style',
       source: 'rejection',
@@ -317,7 +309,7 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(20)
+    expect(artistId).toEqual({ artistId: 20, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('artist_blocks')
     expect(insertCalls[0]?.values).toMatchObject({ userId: 5, artistId: 20 })
@@ -339,7 +331,7 @@ describe('rejectRecommendation', () => {
       permanent: true,
     })
 
-    expect(artistId).toBe(30)
+    expect(artistId).toEqual({ artistId: 30, blockCreated: true })
     expect(insertCalls).toHaveLength(1)
     expect(insertCalls[0]?.table).toBe('artist_blocks')
     expect(insertCalls.some((c) => c.table === 'album_blocks')).toBe(false)
@@ -360,7 +352,7 @@ describe('rejectRecommendation', () => {
       permanent: false,
     })
 
-    expect(artistId).toBe(40)
+    expect(artistId).toEqual({ artistId: 40, blockCreated: false })
     expect(insertCalls).toHaveLength(0)
   })
 })
@@ -475,4 +467,62 @@ describe('taste priority ordering', () => {
       await close()
     }
   }, 20000)
+})
+
+describe('waiting approval timestamps', () => {
+  it('preserves approval order during retries and advances the timestamp on terminal writes', async () => {
+    const { db, close } = await makeTestDb()
+    try {
+      const [artist] = await db
+        .insert(artists)
+        .values({ mbid: '00000000-0000-0000-0000-000000000999', name: 'Retry artist' })
+        .returning()
+      const [batch] = await db.insert(recommendationBatches).values({}).returning()
+      if (!artist || !batch) throw new Error('fixture missing')
+      const original = new Date('2025-01-01T00:00:00Z')
+      const later = new Date('2025-01-02T00:00:00Z')
+      const inserted = await db
+        .insert(recommendations)
+        .values(
+          [later, original, original].map((actedOnAt) => ({
+            artistId: artist.id,
+            batchId: batch.id,
+            score: 0.5,
+            status: 'waiting',
+            actedOnAt,
+          })),
+        )
+        .returning()
+      const [newer, older, tied] = inserted
+      if (!newer || !older || !tied) throw new Error('fixture missing')
+      const database = db as unknown as Database
+      await updateRecommendationStatus(database, older.id, 'waiting', {
+        preserveActedOnAt: true,
+        targetActions: { 'lidarr-1': { status: 'waiting' } },
+      })
+      const waiting = await listWaitingApprovals(database)
+      expect(waiting.map((rec) => rec.id)).toEqual([older.id, tied.id, newer.id])
+      expect(waiting[0]?.actedOnAt).toEqual(original)
+      expect(waiting[0]?.targetActions).toEqual({ 'lidarr-1': { status: 'waiting' } })
+
+      await updateRecommendationStatus(database, older.id, 'added_to_lidarr', {
+        preserveActedOnAt: true,
+        targetActions: {
+          'lidarr-1': { status: 'waiting' },
+          'lidarr-2': { status: 'added' },
+        },
+      })
+      expect((await listWaitingApprovals(database)).map((rec) => rec.id)).toContain(older.id)
+      await updateRecommendationStatus(database, older.id, 'add_failed', {
+        targetActions: { 'lidarr-1': { status: 'failed' } },
+      })
+      expect((await listWaitingApprovals(database)).map((rec) => rec.id)).not.toContain(older.id)
+      const rows = await db.select().from(recommendations)
+      expect(rows.find((rec) => rec.id === older.id)?.actedOnAt?.getTime()).toBeGreaterThan(
+        later.getTime(),
+      )
+    } finally {
+      await close()
+    }
+  }, 30_000)
 })

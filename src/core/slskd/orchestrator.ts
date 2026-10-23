@@ -1,3 +1,4 @@
+import { HttpError } from '@/core/clients/http'
 import type { createLidarrClient, LidarrCommand } from '@/core/clients/lidarr'
 import type {
   SlskdDownloadUser,
@@ -9,6 +10,14 @@ import type {
 import { buildLidarrManualImport } from '@/core/slskd/importer'
 import { selectBestSlskdCandidate } from '@/core/slskd/match-engine'
 import { buildSlskdWorkKey } from '@/core/slskd/runner'
+import {
+  isFailedRelease,
+  normalizeInteger,
+  readFailedReleases,
+  SLSKD_MAX_AUTO_RETRIES,
+  type SlskdFailedRelease,
+} from '@/core/slskd/shared'
+import { errMsg, redactSecrets } from '@/core/validation'
 
 type SlskdPendingJobBase = { id: number }
 type SlskdActiveJobState = 'pending' | 'searching' | 'queued' | 'downloading' | 'import_pending'
@@ -52,6 +61,7 @@ type SlskdTargetRow = {
 
 type SlskdClient = {
   createSearch: (queryText: string) => Promise<Record<string, unknown>>
+  isSearchComplete?: (searchId: string) => Promise<boolean>
   getSearchResults: (searchId: string) => Promise<SlskdSearchResult[]>
   enqueueResult: (searchId: string, result: SlskdSearchResult) => Promise<SlskdEnqueueResponse>
   getDownloads: () => Promise<SlskdDownloadUser[]>
@@ -79,6 +89,7 @@ type SlskdSelectedRelease = {
   username: string
   files: SlskdSearchFile[]
   import?: SlskdImportProgress
+  failedReleases?: SlskdFailedRelease[]
 }
 
 type SlskdJobUpdate = {
@@ -132,14 +143,12 @@ export type SlskdOrchestrator<_TJob extends SlskdPendingJobBase = SlskdPendingJo
 }
 
 const MAX_IMPORT_CHECKS = 12
+const CHECKPOINT_ATTEMPTS = 3
+const CHECKPOINT_RETRY_MS = 200
+const SEARCH_MAX_AGE_MS = 10 * 60 * 1000
 
 function normalizeBoolean(value: unknown): boolean {
   return value === true
-}
-
-function normalizeInteger(value: unknown): number | null {
-  const parsed = Number(value)
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 function normalizeString(value: unknown): string | null {
@@ -207,18 +216,24 @@ function readSelectedRelease(value: Record<string, unknown> | null): SlskdSelect
     }
   }
 
+  const failedReleases = readFailedReleases(value)
   return {
     username,
     files,
     ...(importProgress ? { import: importProgress } : {}),
+    ...(failedReleases.length > 0 ? { failedReleases } : {}),
   }
 }
 
-function persistSelectedRelease(candidate: SlskdSearchResult): SlskdSelectedRelease {
+function persistSelectedRelease(
+  candidate: SlskdSearchResult,
+  failedReleases: SlskdFailedRelease[],
+): SlskdSelectedRelease {
   const files = candidate.files ?? [{ filename: candidate.filename, size: candidate.size }]
   return {
     username: candidate.username,
     files,
+    ...(failedReleases.length > 0 ? { failedReleases } : {}),
   }
 }
 
@@ -233,20 +248,27 @@ function flattenDownloads(downloads: SlskdDownloadUser[]): SlskdTransferFile[] {
   )
 }
 
+type DownloadSnapshot = Map<string, SlskdTransferFile>
+
+function indexDownloads(downloads: SlskdDownloadUser[]): DownloadSnapshot {
+  const index: DownloadSnapshot = new Map()
+  for (const transfer of flattenDownloads(downloads)) {
+    for (const batchId of [null, transfer.batchId]) {
+      const key = JSON.stringify([batchId, transfer.username, transfer.filename])
+      if (!index.has(key)) index.set(key, transfer)
+    }
+  }
+  return index
+}
+
 function findTransfers(
   selected: SlskdSelectedRelease,
-  downloads: SlskdDownloadUser[],
+  downloads: DownloadSnapshot,
   batchId: string | null,
 ): Array<{ expected: SlskdSearchFile; transfer?: SlskdTransferFile }> {
-  const transfers = flattenDownloads(downloads)
   return selected.files.map((expected) => ({
     expected,
-    transfer: transfers.find(
-      (transfer) =>
-        (batchId == null || transfer.batchId === batchId) &&
-        transfer.username === selected.username &&
-        transfer.filename === expected.filename,
-    ),
+    transfer: downloads.get(JSON.stringify([batchId, selected.username, expected.filename])),
   }))
 }
 
@@ -281,6 +303,7 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
   const processPendingJobs = deps.processPendingJobs ?? (async () => {})
   const chooseCandidate = deps.selectBestCandidate ?? selectBestSlskdCandidate
   let activeRun: Promise<void> | null = null
+  const searchPacing = new Map<number, { nextAt: number; throttles: number }>()
 
   async function updateRecommendationAction(
     recommendationId: number | null,
@@ -297,8 +320,12 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
   }
 
   async function failJob(job: SlskdPendingJob, error: string) {
-    await deps.updateJobState?.(job.id, 'failed', { lastError: error })
-    await updateRecommendationAction(job.recommendationId, job.targetId, 'failed', error)
+    const detail =
+      job.attempts > 1
+        ? `${error} (attempt ${job.attempts} of ${SLSKD_MAX_AUTO_RETRIES + 1})`
+        : error
+    await deps.updateJobState?.(job.id, 'failed', { lastError: detail })
+    await updateRecommendationAction(job.recommendationId, job.targetId, 'failed', detail)
   }
 
   async function intakeWantedReleases() {
@@ -352,7 +379,11 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
     }
   }
 
-  async function processSearchableJob(job: SlskdPendingJob, slskd: SlskdClient) {
+  async function processSearchableJob(
+    job: SlskdPendingJob,
+    slskd: SlskdClient,
+    config: Record<string, unknown>,
+  ) {
     if (!deps.updateJobState) return
     const searchQuery = buildSearchQuery(job)
     if (!searchQuery) {
@@ -362,18 +393,56 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
 
     let searchId = job.slskdSearchId
     if (!searchId) {
+      const pacing = searchPacing.get(job.targetId) ?? { nextAt: 0, throttles: 0 }
+      searchPacing.set(job.targetId, pacing)
+      if (pacing.throttles > 0 && Date.now() < pacing.nextAt) return
+      const gapSeconds = Number(config.searchIntervalSeconds ?? 3)
+      const gapMs = (Number.isFinite(gapSeconds) ? Math.min(60, Math.max(1, gapSeconds)) : 3) * 1000
+      const waitMs = pacing.nextAt - Date.now()
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs))
       await deps.updateJobState(job.id, 'searching', {
         attempts: job.attempts + 1,
         lastError: null,
       })
-      const search = await slskd.createSearch(searchQuery)
+      job.attempts += 1
+      pacing.nextAt = Date.now() + gapMs
+      let search: Record<string, unknown>
+      try {
+        search = await slskd.createSearch(searchQuery)
+        pacing.throttles = 0
+      } catch (error) {
+        if (!(error instanceof HttpError) || ![409, 429].includes(error.status)) throw error
+        pacing.throttles = Math.min(pacing.throttles + 1, 4)
+        pacing.nextAt =
+          Date.now() + Math.min(60 * 60 * 1000, 10 * 60 * 1000 * 2 ** (pacing.throttles - 1))
+        job.attempts -= 1
+        await deps.updateJobState(job.id, 'searching', { attempts: job.attempts, lastError: null })
+        return
+      }
       searchId = normalizeString(search.id)
       if (!searchId) throw new Error(`slskd search did not return an id for job ${job.id}`)
       await deps.updateJobState(job.id, 'searching', { slskdSearchId: searchId, lastError: null })
     }
 
-    const results = await slskd.getSearchResults(searchId)
-    if (results.length === 0) return
+    const searchAgeMs = Date.now() - new Date(job.updatedAt).getTime()
+    const timedOut = job.slskdSearchId != null && searchAgeMs > SEARCH_MAX_AGE_MS
+    const complete = slskd.isSearchComplete ? await slskd.isSearchComplete(searchId) : null
+    const failedReleases = readFailedReleases(job.selectedResult)
+    const found = await slskd.getSearchResults(searchId)
+    const results = found.filter((candidate) => !isFailedRelease(candidate, failedReleases))
+    if (results.length === 0) {
+      if (complete === true || timedOut) {
+        const reason =
+          found.length > 0
+            ? 'slskd search only found releases that already failed'
+            : complete
+              ? 'slskd search finished with no results'
+              : 'slskd search timed out with no results'
+        await failJob(job, reason)
+      }
+      return
+    }
+    if (complete === false && !timedOut) return
     const selected = chooseCandidate(
       { artistName: job.artistName, releaseTitle: job.releaseTitle },
       results,
@@ -399,7 +468,7 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
       confidence: selected.confidence,
       slskdSearchId: searchId,
       slskdQueueId: enqueue.batch.id,
-      selectedResult: persistSelectedRelease(selected.candidate),
+      selectedResult: persistSelectedRelease(selected.candidate, failedReleases),
       lastError: null,
     })
     await updateRecommendationAction(job.recommendationId, job.targetId, 'queued')
@@ -461,8 +530,8 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
 
   async function processTransferJob(
     job: SlskdPendingJob,
-    slskd: SlskdClient,
     targets: SlskdTargetRow[] | null,
+    getDownloads: () => Promise<DownloadSnapshot>,
   ) {
     if (!deps.updateJobState) return
     const selected = readSelectedRelease(job.selectedResult)
@@ -484,7 +553,7 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
       return
     }
 
-    const matches = findTransfers(selected, await slskd.getDownloads(), job.slskdQueueId)
+    const matches = findTransfers(selected, await getDownloads(), job.slskdQueueId)
     const failed = matches.find((match) => match.transfer && transferFailed(match.transfer.state))
     if (failed?.transfer) {
       const suffix = failed.transfer.exception ? `: ${failed.transfer.exception}` : ''
@@ -540,7 +609,9 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
     const command = await lidarr.manualImport(manualImport.files)
     const commandId = normalizeInteger(command.id)
     if (!commandId) throw new Error('Lidarr ManualImport did not return a command id')
-    await deps.updateJobState(job.id, 'import_pending', {
+    // Lidarr is already moving files; losing this checkpoint would fail the job
+    // while the import proceeds, so retry before giving up.
+    const checkpoint = {
       slskdDownloadId: firstTransferId ?? job.slskdDownloadId,
       selectedResult: {
         ...selected,
@@ -552,7 +623,21 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
         },
       },
       lastError: null,
-    })
+    }
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await deps.updateJobState(job.id, 'import_pending', checkpoint)
+        break
+      } catch (err: unknown) {
+        if (attempt >= CHECKPOINT_ATTEMPTS) {
+          const reason = errMsg(err)
+          throw new Error(
+            `Lidarr ManualImport command ${commandId} was started but its checkpoint could not be saved: ${reason}`,
+          )
+        }
+        await new Promise((resolve) => setTimeout(resolve, CHECKPOINT_RETRY_MS * attempt))
+      }
+    }
     await updateRecommendationAction(job.recommendationId, job.targetId, 'import_pending')
   }
 
@@ -560,6 +645,15 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
     if (!deps.createSlskdClient || jobs.length === 0) return
     const targets = deps.listTargets ? await deps.listTargets() : null
     const cache = new Map<number, SlskdClient>()
+    const snapshots = new Map<number, Promise<DownloadSnapshot>>()
+    function getDownloads(targetId: number, client: SlskdClient): Promise<DownloadSnapshot> {
+      let snapshot = snapshots.get(targetId)
+      if (!snapshot) {
+        snapshot = client.getDownloads().then(indexDownloads)
+        snapshots.set(targetId, snapshot)
+      }
+      return snapshot
+    }
     const createClient = deps.createSlskdClient
     function getSlskdClient(targetId: number): SlskdClient {
       const cached = cache.get(targetId)
@@ -585,19 +679,31 @@ export function createSlskdOrchestrator<TJob extends SlskdPendingJobBase = Slskd
           if (!target || target.userId !== job.userId) {
             throw new Error('slskd job target is missing or its owner changed')
           }
+          if (
+            target.config.lidarrTargetId != null &&
+            !normalizeString(target.config.lidarrDownloadPath)
+          ) {
+            throw new Error(
+              'Set the Lidarr download path (lidarrDownloadPath) on this slskd target in Settings > Targets before downloading - it is required when a Lidarr target is linked',
+            )
+          }
           if (target.config.lidarrTargetId != null && !getLinkedLidarrTarget(targets, target.id)) {
             throw new Error('slskd job linked Lidarr target is unavailable for its owner')
           }
         }
         const slskd = getSlskdClient(job.targetId)
         if (job.state === 'pending' || job.state === 'searching') {
-          await processSearchableJob(job, slskd)
+          await processSearchableJob(
+            job,
+            slskd,
+            targets?.find((target) => target.id === job.targetId)?.config ?? {},
+          )
         } else {
-          await processTransferJob(job, slskd, targets)
+          await processTransferJob(job, targets, () => getDownloads(job.targetId, slskd))
         }
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err)
-        logger.error(`[slskd] Job ${job.id} (${job.state}) failed:`, err)
+        const message = redactSecrets(errMsg(err)).replace(/\s+/g, ' ').trim()
+        logger.error(`[slskd] Job ${job.id} failed: ${message}`)
         try {
           await failJob(job, message)
         } catch (markErr) {

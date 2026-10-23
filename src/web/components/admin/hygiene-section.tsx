@@ -47,6 +47,21 @@ const TOOLS: ToolDef[] = [
   },
 ]
 
+const RESULT_LABELS: [string, MessageKey][] = [
+  ['cleared', 'admin.result.cleared'],
+  ['purged', 'admin.result.purged'],
+  ['duplicateGroups', 'admin.result.duplicateGroups'],
+  ['removed', 'admin.result.removed'],
+  ['genres', 'admin.result.genres'],
+  ['elapsed', 'admin.result.elapsed'],
+  ['rescored', 'admin.result.rescored'],
+  ['skipped', 'admin.result.skipped'],
+  ['skippedInvalid', 'admin.result.skippedInvalid'],
+  ['skippedConcurrent', 'admin.result.skippedConcurrent'],
+  ['scanned', 'admin.result.scanned'],
+  ['flagged', 'admin.result.flagged'],
+]
+
 export function HygieneSection() {
   const { t } = useI18n()
   const [running, setRunning] = useState<string | null>(null)
@@ -56,7 +71,8 @@ export function HygieneSection() {
   const { data: auditStatus } = useQuery({
     queryKey: ['aiAuditStatus'],
     queryFn: getAiAuditResults,
-    refetchInterval: running === 'ai-audit' ? 3000 : false,
+    refetchInterval: (query) =>
+      running === 'ai-audit' || query.state.data?.inProgress ? 3000 : false,
   })
 
   async function handleRun(tool: ToolDef) {
@@ -74,9 +90,8 @@ export function HygieneSection() {
   }
 
   function formatResult(result: Record<string, unknown>): string {
-    const entries = Object.entries(result).filter(([k]) => k !== 'tool')
-    return entries
-      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+    return RESULT_LABELS.filter(([field]) => ['number', 'string'].includes(typeof result[field]))
+      .map(([field, key]) => `${t(key)}: ${result[field]}`)
       .join(', ')
   }
 
@@ -91,7 +106,7 @@ export function HygieneSection() {
             <p className="text-sm font-medium text-text">{t(tool.nameKey)}</p>
             <p className="text-xs text-muted">{t(tool.descKey)}</p>
             {results[tool.id] != null && (
-              <p className="text-xs text-accent mt-1">
+              <p className="text-xs text-accent-text mt-1">
                 {formatResult(results[tool.id] as Record<string, unknown>)}
               </p>
             )}

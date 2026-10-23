@@ -12,6 +12,8 @@ import { rateLimiter } from '@/server/middleware/rate-limit'
 
 const ENRICHMENT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const ENRICHMENT_NEG_TTL_MS = 24 * 60 * 60 * 1000
+const MAX_PREVIEW_REDIRECTS = 3
+const PREVIEW_URL_PATTERN = /^https:\/\/cdn[st]-?preview[a-z0-9-]*\.dzcdn\.net\//
 
 export function artistRoutes(deps: AppDependencies) {
   const router = new Hono()
@@ -55,7 +57,11 @@ export function artistRoutes(deps: AppDependencies) {
     // Always fetch fresh from Deezer (preview URLs are signed and expire)
     let tracks: TopTrack[] = []
     if (deezerId) {
-      tracks = await deezer.getArtistTopTracks(deezerId, 5)
+      try {
+        tracks = await deezer.getArtistTopTracks(deezerId, 5)
+      } catch {
+        // Deezer failed; fall through to cached names / MusicBrainz
+      }
     }
 
     // Fallback: use cached track names if Deezer fails but we have prior data
@@ -91,17 +97,35 @@ export function artistRoutes(deps: AppDependencies) {
     rateLimiter({ windowMs: 60_000, max: 30, keyPrefix: 'preview' }),
     async (c) => {
       const url = c.req.query('url')
-      if (!url?.match(/^https:\/\/cdn[st]-?preview[a-z0-9-]*\.dzcdn\.net\//)) {
+      if (!url || !PREVIEW_URL_PATTERN.test(url)) {
         return c.json({ error: 'Invalid preview URL' }, 400)
       }
       try {
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), 10_000)
-        const res = await fetch(url, { signal: controller.signal })
-        clearTimeout(timer)
+        let res: Response
+        try {
+          let target = url
+          let hops = 0
+          for (;;) {
+            res = await fetch(target, { signal: controller.signal, redirect: 'manual' })
+            if (res.status < 300 || res.status >= 400) break
+            const location = res.headers.get('Location')
+            const next = location ? new URL(location, target).href : null
+            if (!next || !PREVIEW_URL_PATTERN.test(next) || ++hops > MAX_PREVIEW_REDIRECTS) {
+              return c.json({ error: 'Preview not available' }, 502)
+            }
+            target = next
+          }
+        } finally {
+          clearTimeout(timer)
+        }
         const contentType = res.headers.get('Content-Type') ?? ''
         if (!res.ok || !contentType.startsWith('audio/')) {
-          return c.json({ error: 'Preview not available', status: res.status, contentType }, 502)
+          return c.json(
+            { error: 'Preview not available', upstreamStatus: res.status, contentType },
+            502,
+          )
         }
         const MAX_PREVIEW_BYTES = 2 * 1024 * 1024
         const cl = res.headers.get('Content-Length')
@@ -155,7 +179,13 @@ export function artistRoutes(deps: AppDependencies) {
       })
     }
 
-    const result = await wikidata.getArtistEnrichment(row.mbid, locale)
+    let result: Awaited<ReturnType<typeof wikidata.getArtistEnrichment>>
+    try {
+      result = await wikidata.getArtistEnrichment(row.mbid, locale)
+    } catch {
+      // Outage or bad response: skip the negative cache so the next view retries.
+      return c.json(emptyPayload)
+    }
     if (!result.wikidataId && !result.description) {
       await deps.db.update(artists).set({ wikidataFailedAt: new Date() }).where(eq(artists.id, id))
       return c.json(emptyPayload)

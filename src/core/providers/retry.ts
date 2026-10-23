@@ -24,6 +24,8 @@ export type RetriableFetchOptions = {
   onAbort?: () => void
 }
 
+const MAX_RETRY_AFTER_MS = 30_000
+
 const DEFAULTS: Required<Pick<RetriableFetchOptions, 'retries' | 'factor' | 'minTimeout'>> = {
   retries: 3,
   factor: 2,
@@ -48,6 +50,8 @@ export async function fetchWithRetry(
   const factor = options.factor ?? DEFAULTS.factor
   const minTimeout = options.minTimeout ?? DEFAULTS.minTimeout
   const maxTimeout = options.maxTimeout
+  const secrets = requestSecrets(url, init)
+  const signal = init.signal ?? undefined
 
   return pRetry(
     async () => {
@@ -69,13 +73,16 @@ export async function fetchWithRetry(
         if (retryAfter && retryAfter > 0) {
           // Consume any pending body to avoid leaked connections.
           await res.arrayBuffer().catch(() => undefined)
-          await delay(Math.min(retryAfter * 1000, maxTimeout ?? retryAfter * 1000))
+          await delay(
+            Math.min(retryAfter * 1000, maxTimeout ?? MAX_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS),
+            signal,
+          )
         }
         throw new Error(`rate limited (${res.status})`)
       }
 
       if (res.status >= 500 && res.status <= 599) {
-        const snippet = await errorBodySnippet(res)
+        const snippet = await errorBodySnippet(res, secrets)
         throw new Error(`upstream ${res.status}${snippet ? `: ${snippet}` : ''}`)
       }
 
@@ -83,13 +90,13 @@ export async function fetchWithRetry(
         // 4xx (not 429): give up, but keep the body - a bare status code
         // ("client error 404") gives users nothing to act on, while provider
         // bodies name the missing model or malformed field.
-        const snippet = await errorBodySnippet(res)
+        const snippet = await errorBodySnippet(res, secrets)
         throw new AbortError(`client error ${res.status}${snippet ? `: ${snippet}` : ''}`)
       }
 
       return res
     },
-    { retries, factor, minTimeout, ...(maxTimeout ? { maxTimeout } : {}) },
+    { retries, factor, minTimeout, signal, ...(maxTimeout ? { maxTimeout } : {}) },
   )
 }
 
@@ -105,8 +112,37 @@ function parseRetryAfter(raw: string | null): number | null {
   return null
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer)
+      reject(new AbortError('aborted'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    if (signal?.aborted) abort()
+    else signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
+const CREDENTIAL_NAME_RE = /auth|key|token|secret|sig/i
+
+/** Credential values this request sends, so an echoing error body can be scrubbed exactly. */
+function requestSecrets(url: string, init: RequestInit): string[] {
+  const out: string[] = []
+  for (const [name, value] of new Headers(init.headers)) {
+    if (CREDENTIAL_NAME_RE.test(name)) out.push(value, value.replace(/^(?:Bearer|Basic)\s+/i, ''))
+  }
+  try {
+    for (const [name, value] of new URL(url).searchParams) {
+      if (CREDENTIAL_NAME_RE.test(name)) out.push(value)
+    }
+  } catch {
+    // relative or invalid URL: fetch will reject it anyway
+  }
+  return out
 }
 
 /**
@@ -114,9 +150,9 @@ function delay(ms: number): Promise<void> {
  * Snippets end up in thrown error messages that routes may echo to clients,
  * so credential-shaped substrings are redacted first.
  */
-async function errorBodySnippet(res: Response): Promise<string> {
+async function errorBodySnippet(res: Response, secrets: readonly string[]): Promise<string> {
   const text = await res.text().catch(() => '')
-  return redactSecrets(text.replace(/\s+/g, ' ').trim()).slice(0, 200)
+  return redactSecrets(text.replace(/\s+/g, ' ').trim(), secrets).slice(0, 200)
 }
 
 function isAbortError(err: unknown): boolean {

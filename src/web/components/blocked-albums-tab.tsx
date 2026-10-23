@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { type BlockedAlbumApi, deleteAlbumBlock, listAlbumBlocks } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 
-export function BlockedAlbumsTab() {
+export function BlockedAlbumsTab({ onChange }: { onChange?: () => void } = {}) {
   const { locale, t } = useI18n()
   const [items, setItems] = useState<BlockedAlbumApi[]>([])
   const [loading, setLoading] = useState(false)
@@ -30,6 +30,7 @@ export function BlockedAlbumsTab() {
     setItems((prev) => prev.filter((x) => x.id !== row.id))
     try {
       await deleteAlbumBlock(row.releaseGroupMbid)
+      onChange?.()
       toast.success(t('settings.blockedAlbums.unblock_success'))
     } catch {
       toast.error(t('settings.blockedAlbums.unblock_failed'))
@@ -62,21 +63,26 @@ export function BlockedAlbumsTab() {
           >
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="font-medium text-text truncate">{row.artistName}</span>
+                <span className="font-medium text-text truncate">
+                  {row.albumTitle ?? row.releaseGroupMbid}
+                </span>
                 {row.reason && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-bg border border-border text-muted">
                     {t(`rejectionReason.${row.reason}`)}
                   </span>
                 )}
               </div>
-              <span className="text-xs text-muted truncate">{row.releaseGroupMbid}</span>
+              <span className="text-sm text-muted truncate">{row.artistName}</span>
+              {row.albumTitle && (
+                <span className="text-xs text-muted truncate">{row.releaseGroupMbid}</span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-xs text-muted">
               <span>{new Date(row.blockedAt).toLocaleDateString(locale)}</span>
               <button
                 type="button"
                 onClick={() => unblock(row)}
-                className="text-accent hover:underline"
+                className="text-accent-text hover:underline"
               >
                 {t('settings.blockedAlbums.unblock')}
               </button>

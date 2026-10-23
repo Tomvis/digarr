@@ -18,11 +18,18 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
     { key: 'playlist', label: t('jobHistory.playlists') },
   ]
   const [type, setType] = useState('')
+  const [failuresOnly, setFailuresOnly] = useState(false)
   const [offset, setOffset] = useState(0)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['jobs', type, offset],
-    queryFn: () => listJobs({ type: type || undefined, limit: PAGE_SIZE, offset }),
+    queryKey: ['jobs', type, failuresOnly, offset],
+    queryFn: () =>
+      listJobs({
+        type: type || undefined,
+        status: failuresOnly ? 'failed' : undefined,
+        limit: PAGE_SIZE,
+        offset,
+      }),
     staleTime: 15_000,
   })
 
@@ -30,11 +37,7 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
     <div className={embedded ? 'space-y-4' : 'mx-auto max-w-6xl space-y-4 p-6'}>
       <div>
         <h2
-          className={
-            embedded
-              ? 'text-sm font-semibold text-text uppercase tracking-wide'
-              : 'text-xl font-bold text-text'
-          }
+          className={embedded ? 'text-lead font-semibold text-text' : 'text-xl font-bold text-text'}
         >
           {t('jobHistory.title')}
         </h2>
@@ -51,13 +54,24 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
             }}
             className={`rounded px-3 py-1 text-sm ${
               type === tab.key
-                ? 'bg-accent text-white'
-                : 'bg-surface-alt text-muted hover:text-text'
+                ? 'bg-accent text-accent-fg'
+                : 'bg-surface-2 text-muted hover:text-text'
             }`}
           >
             {tab.label}
           </button>
         ))}
+        <label className="ml-auto flex items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={failuresOnly}
+            onChange={(e) => {
+              setFailuresOnly(e.target.checked)
+              setOffset(0)
+            }}
+          />
+          {t('jobHistory.failuresOnly')}
+        </label>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -81,7 +95,7 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
               type="button"
               onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
               disabled={offset === 0}
-              className="rounded bg-surface-alt px-3 py-1 disabled:opacity-50"
+              className="rounded bg-surface-2 px-3 py-1 disabled:opacity-50"
             >
               {t('common.previous')}
             </button>
@@ -89,7 +103,7 @@ export default function JobHistoryPage({ embedded = false }: { embedded?: boolea
               type="button"
               onClick={() => setOffset(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= data.total}
-              className="rounded bg-surface-alt px-3 py-1 disabled:opacity-50"
+              className="rounded bg-surface-2 px-3 py-1 disabled:opacity-50"
             >
               {t('common.next')}
             </button>

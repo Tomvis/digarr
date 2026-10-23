@@ -1,19 +1,12 @@
 // @vitest-environment node
 
-import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SENSITIVE_USER_CONNECTIONS } from '@/core/crypto'
 import { clearAllSessions, createSession } from '@/core/sessions'
 import { LastAdminError } from '@/db/queries/users'
 import type { AppDependencies } from '@/server'
 import { createApp } from '@/server'
-
-function makeMockOrchestrator() {
-  const emitter = new EventEmitter()
-  return Object.assign(emitter, {
-    isRunning: false,
-    run: vi.fn(async () => ({ batchId: 1 })),
-  })
-}
+import { makeDeps as makeSharedDeps } from '../../helpers/test-app'
 
 const adminUser = {
   id: 1,
@@ -86,128 +79,28 @@ const regularUser = {
 }
 
 function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
-  return {
-    db: { execute: vi.fn(async () => []) } as unknown as AppDependencies['db'],
+  return makeSharedDeps({
     storeDb: {} as unknown as AppDependencies['storeDb'],
-    orchestrator: makeMockOrchestrator() as unknown as AppDependencies['orchestrator'],
     scheduler: {} as AppDependencies['scheduler'],
     providerRegistry: {} as unknown as AppDependencies['providerRegistry'],
-    isSetupComplete: async () => true,
     getSettings: vi.fn(async () => null),
-    updateSettings: vi.fn(async () => {}),
-    completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
-    getLastBatch: vi.fn(async () => null),
-    listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
-    getRecommendation: vi.fn(async () => null),
-    updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
-    listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
-    removeArtistBlock: vi.fn(async () => true),
-    addArtistBlock: vi.fn(async () => {}),
-    listAlbumBlocks: vi.fn(async () => []),
-    removeAlbumBlock: vi.fn(async () => {}),
-    bulkUpdateStatus: vi.fn(async () => {}),
-    filterOwnedIds: vi.fn(async (ids: number[]) => ids),
-    listBatches: vi.fn(async () => []),
-    getBatch: vi.fn(async () => null),
-    getArtistById: vi.fn(async () => null),
-    restartScheduler: vi.fn(),
-    restartPlaylistScheduler: vi.fn(),
     createUser: vi.fn(async (data) => ({
       id: 1,
       username: data.username,
       isAdmin: data.isAdmin ?? false,
-      preferences: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
       authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
       createdAt: new Date(),
-    })),
-    getUserByUsername: vi.fn(async () => null),
-    // By default: caller is the admin user
-    getUserById: vi.fn(async (id: number) => (id === 1 ? adminUser : null)),
-    // Users exist so auth is required
+    })) as unknown as AppDependencies['createUser'],
+    getUserById: vi.fn(async (id: number) =>
+      id === 1 ? adminUser : null,
+    ) as unknown as AppDependencies['getUserById'],
     getUserCount: vi.fn(async () => 1),
-    updateUserPreferredLocale: vi.fn(async () => {}),
-    genreService: {} as unknown as AppDependencies['genreService'],
-    libraryHealth: {} as unknown as AppDependencies['libraryHealth'],
-    librarySync: {} as unknown as AppDependencies['librarySync'],
-    librarySyncStore: {} as unknown as AppDependencies['librarySyncStore'],
-    targetQueries: {
-      createTarget: vi.fn().mockResolvedValue({ id: 1 }),
-      getTargetsByUser: vi.fn().mockResolvedValue([]),
-      getAllTargets: vi.fn().mockResolvedValue([]),
-      getTarget: vi.fn().mockResolvedValue(null),
-      updateTarget: vi.fn().mockResolvedValue(undefined),
-      deleteTarget: vi.fn().mockResolvedValue(undefined),
-    },
-    testTargetConnection: vi.fn().mockResolvedValue({ success: true, message: 'ok' }),
-    getEnabledTargetsForUser: vi.fn().mockResolvedValue([]),
-    subscriptionQueries: {
-      createSubscription: vi.fn(async () => ({}) as never),
-      getSubscription: vi.fn(async () => null),
-      getSubscriptionsByUser: vi.fn(async () => []),
-      getEnabledSubscriptions: vi.fn(async () => []),
-      updateSubscription: vi.fn(async () => {}),
-      deleteSubscription: vi.fn(async () => {}),
-    },
-    runSubscription: vi.fn(async () => {}),
-    getOidcService: vi.fn(async () => null),
-    getUserByOidcIdentity: vi.fn(async () => null),
-    getUserByEmail: vi.fn(async () => null),
-    updateUser: vi.fn(async () => {}),
-    listUsers: vi.fn(async () => [adminUser, regularUser]),
-    deleteUser: vi.fn(async () => {}),
-    getFeedbackHistory: vi.fn(async () => new Map()),
-    dashboardQueries: {
-      getTopGenresForUser: vi.fn(async () => []),
-      getLatestGenreCoverage: vi.fn(async () => null),
-      getRecentActivity: vi.fn(async () => []),
-    },
-    jobRecorder: {
-      start: vi.fn().mockResolvedValue(1),
-      complete: vi.fn().mockResolvedValue(undefined),
-      fail: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-      markStuck: vi.fn().mockResolvedValue(0),
-    },
-    jobQueries: {
-      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      getJobById: vi.fn().mockResolvedValue(null),
-      getJobHealth: vi.fn().mockResolvedValue({
-        pipeline: { status: 'ok', lastRun: null, nextRun: null },
-        subscriptions: { status: 'ok', healthy: 0, total: 0 },
-        playlists: { status: 'ok', lastRun: null },
-        sources: {},
-      }),
-      getJobsForSubscription: vi.fn().mockResolvedValue([]),
-    },
+    listUsers: vi.fn(async () => [
+      adminUser,
+      regularUser,
+    ]) as unknown as AppDependencies['listUsers'],
     ...overrides,
-  }
+  })
 }
 
 /** Register a session for userId 1 (admin) and return the bearer token. */
@@ -261,6 +154,29 @@ describe('GET /api/v1/users', () => {
     expect(Array.isArray(body)).toBe(true)
     expect(body).toHaveLength(2)
     expect(body[0].username).toBe('admin')
+  })
+
+  it.each([
+    ['/api/v1/users', (body: unknown) => body],
+    ['/api/v1/users?limit=10', (body: unknown) => (body as { data: unknown }).data],
+  ])('omits stored connection values from %s', async (path, pick) => {
+    const token = await adminToken()
+    const secrets = Object.fromEntries(SENSITIVE_USER_CONNECTIONS.map((f) => [f, `secret-${f}`]))
+    const app = createApp(
+      makeDeps({ listUsers: vi.fn(async () => [{ ...regularUser, ...secrets }, adminUser]) }),
+    )
+
+    const res = await app.request(path, { headers: { Authorization: `Bearer ${token}` } })
+
+    expect(res.status).toBe(200)
+    const rows = pick(await res.json()) as Record<string, unknown>[]
+    expect(rows).toHaveLength(2)
+    expect(JSON.stringify(rows)).not.toContain('secret-')
+    for (const field of SENSITIVE_USER_CONNECTIONS) {
+      for (const row of rows) expect(row).not.toHaveProperty(field)
+    }
+    expect(rows[0]?.hasDiscogsToken).toBe(true)
+    expect(rows[1]?.hasDiscogsToken).toBe(false)
   })
 
   it('returns 403 for non-admin', async () => {
@@ -323,7 +239,13 @@ describe('PATCH /api/v1/users/:id', () => {
     })
     expect(updateUser).toHaveBeenCalledWith(2, { isAdmin: false })
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'Cannot remove admin from the last admin user' })
+    expect(await res.json()).toEqual({
+      type: '/problems/http-400',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'Cannot remove admin from the last admin user',
+      error: 'Cannot remove admin from the last admin user',
+    })
   })
 
   it('admin can toggle isAdmin on another user', async () => {
@@ -406,7 +328,13 @@ describe('DELETE /api/v1/users/:id', () => {
     })
     expect(deleteUser).toHaveBeenCalledWith(2)
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'Cannot delete the last admin user' })
+    expect(await res.json()).toEqual({
+      type: '/problems/http-400',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'Cannot delete the last admin user',
+      error: 'Cannot delete the last admin user',
+    })
   })
 
   it('admin can delete another user', async () => {
@@ -460,5 +388,48 @@ describe('DELETE /api/v1/users/:id', () => {
     })
 
     expect(res.status).toBe(404)
+  })
+})
+
+describe('approval policy administration', () => {
+  it.each([true, false])(
+    'restricts policy updates to administrators (admin=%s)',
+    async (isAdmin) => {
+      const token = isAdmin ? await adminToken() : await regularToken()
+      const updateUser = vi.fn(async () => {})
+      const app = createApp(
+        makeDeps({
+          updateUser,
+          getUserById: vi.fn(async (id: number) => (id === 1 ? adminUser : regularUser)),
+        }),
+      )
+      const policy = { approvalPolicy: 'request_only', maxOpenRequests: 0, approvalThreshold: 0.85 }
+      const res = await app.request('/api/v1/users/2', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(policy),
+      })
+      expect(res.status).toBe(isAdmin ? 204 : 403)
+      if (isAdmin) expect(updateUser).toHaveBeenCalledWith(2, policy)
+      else expect(updateUser).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { approvalPolicy: 'unknown' },
+    { maxOpenRequests: -1 },
+    { maxOpenRequests: 0.5 },
+    { approvalThreshold: 1.1 },
+  ])('rejects invalid admin policy %j', async (body) => {
+    const token = await adminToken()
+    const updateUser = vi.fn(async () => {})
+    const app = createApp(makeDeps({ updateUser }))
+    const res = await app.request('/api/v1/users/2', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    expect(res.status).toBe(400)
+    expect(updateUser).not.toHaveBeenCalled()
   })
 })

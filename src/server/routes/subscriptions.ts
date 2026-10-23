@@ -7,6 +7,7 @@ import {
 } from '@/core/discovery-modes/availability'
 import type { DiscoveryModeRegistry } from '@/core/discovery-modes/registry'
 import { isConnectedToken, resolveProviderToken } from '@/core/provider-auth'
+import { validateSpotifyChartsConfig } from '@/core/subscriptions/adapters/spotify-charts'
 import { DISCOVERY_MODE_SUBSCRIPTION_TYPE } from '@/core/subscriptions/registry'
 import { errMsg } from '@/core/validation'
 import { getOAuthToken } from '@/db/queries/oauth-tokens'
@@ -225,6 +226,8 @@ export function subscriptionRoutes(deps: AppDependencies) {
                 { value: 'top50', label: 'Top 50' },
                 { value: 'viral50', label: 'Viral 50 (Global only)' },
               ],
+              helpText:
+                'Viral 50 is only available for the Global region. Spotify no longer serves these playlists to newer or development-mode apps, so charts may fail.',
             },
           ],
           requiredService: 'spotify',
@@ -255,6 +258,7 @@ export function subscriptionRoutes(deps: AppDependencies) {
               options: [
                 { value: 'fresh-releases', label: 'Fresh Releases' },
                 { value: 'weekly-jams', label: 'Weekly Jams' },
+                { value: 'weekly-exploration', label: 'Weekly Exploration' },
               ],
             },
           ],
@@ -304,6 +308,10 @@ export function subscriptionRoutes(deps: AppDependencies) {
 
     const body = c.req.valid('json')
     let normalizedSourceConfig = body.sourceConfig
+    if (body.sourceType === 'spotify-charts') {
+      const valid = validateSpotifyChartsConfig(asRecord(body.sourceConfig) ?? {})
+      if (!valid.ok) return c.json({ error: valid.error }, 400)
+    }
     if (body.sourceType === DISCOVERY_MODE_SUBSCRIPTION_TYPE) {
       const { error, normalizedConfig } = await resolveDiscoveryModeSourceConfig(
         body.sourceConfig,
@@ -405,16 +413,28 @@ export function subscriptionRoutes(deps: AppDependencies) {
       return c.json({ error: 'File too large (max 1MB)' }, 413)
     }
 
-    const { parseCsvArtists } = await import('@/core/subscriptions/adapters/csv-import')
+    const { parsePlaylistFile, playlistFormatFor, PlaylistFormatError } = await import(
+      '@/core/playlist-import'
+    )
     const text = await file.text()
-    const artists = parseCsvArtists(text, 500)
+    const format = playlistFormatFor(file.name)
+    let parsed: Awaited<ReturnType<typeof parsePlaylistFile>>
+    try {
+      parsed = parsePlaylistFile(text, format, 500)
+    } catch (err) {
+      if (err instanceof PlaylistFormatError) {
+        return c.json({ error: err.message }, 400)
+      }
+      throw err
+    }
+    const { artists, unreadable } = parsed
 
     if (artists.length === 0) {
-      return c.json({ error: 'No valid artist names found in CSV' }, 400)
+      return c.json({ error: 'No valid artist names found in file' }, 400)
     }
 
     const subscription = await deps.subscriptionQueries.createSubscription({
-      name: `CSV Import (${artists.length} artists)`,
+      name: `${format === 'csv' ? 'CSV' : 'Playlist file'} Import (${artists.length} artists)`,
       userId,
       sourceType: 'csv-import',
       sourceProvider: 'csv',
@@ -437,6 +457,7 @@ export function subscriptionRoutes(deps: AppDependencies) {
         subscriptionId: subscription.id,
         artistCount: artists.length,
         truncated,
+        unreadable,
       },
       202,
     )
@@ -721,6 +742,11 @@ export function subscriptionRoutes(deps: AppDependencies) {
 
       const body = c.req.valid('json')
       const update: Record<string, unknown> = { ...body, action: 'add_to_recommendations' }
+
+      if (existing.sourceType === 'spotify-charts' && update.sourceConfig !== undefined) {
+        const valid = validateSpotifyChartsConfig(asRecord(update.sourceConfig) ?? {})
+        if (!valid.ok) return c.json({ error: valid.error }, 400)
+      }
 
       if (
         existing.sourceType === DISCOVERY_MODE_SUBSCRIPTION_TYPE &&

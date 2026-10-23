@@ -3,63 +3,20 @@ import { Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import type { MessageKey } from '@/core/i18n/messages/types'
-import { Hint } from '../components/hint'
 import { PlaylistCard } from '../components/playlist-card'
 import { PlaylistForm } from '../components/playlist-form'
+import { Button } from '../components/ui/button'
+import { EmptyState } from '../components/ui/empty-state'
+import { PageHeader } from '../components/ui/page-header'
 import { Skeleton } from '../components/ui/skeleton'
 import {
   createPlaylistApi,
-  getPlaylistScheduler,
   getPlaylists,
   type PlaylistInsert,
   type PlaylistRow,
   updatePlaylistApi,
 } from '../lib/api'
 import { useI18n } from '../lib/i18n'
-
-function getCronLabels(t: (key: MessageKey) => string): Record<string, string> {
-  return {
-    '0 0 * * *': t('common.daily'),
-    '0 6 * * 1': t('common.everyMonday'),
-    '0 8 * * 1': t('common.everyMonday'),
-    '0 8 * * 0': t('common.everySunday'),
-    '0 8 * * 1,4': t('common.monThu'),
-    '0 8 1,15 * *': t('common.firstAndFifteenth'),
-    '0 8 1 * *': t('common.monthly'),
-  }
-}
-
-function formatNextRun(locale: string, nextRun: string): string {
-  const date = new Date(nextRun)
-  const diffMinutes = Math.round((date.getTime() - Date.now()) / 60_000)
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-  if (diffMinutes < 0) return formatter.format(diffMinutes, 'minute')
-  if (diffMinutes < 60) return formatter.format(diffMinutes, 'minute')
-  const diffHours = Math.round(diffMinutes / 60)
-  if (diffHours < 24) return formatter.format(diffHours, 'hour')
-  return formatter.format(Math.round(diffHours / 24), 'day')
-}
-
-function formatSchedulerSubtitle(info: {
-  locale: string
-  t: (key: MessageKey) => string
-  nextRun: string | null
-  cron: string | null
-  enabled: boolean
-}): string {
-  if (info.enabled && info.nextRun) {
-    return `${info.t('playlists.nextGeneration')} ${formatNextRun(info.locale, info.nextRun)}`
-  }
-  if (info.enabled && info.cron) {
-    const label = getCronLabels(info.t)[info.cron] ?? info.cron
-    return `${info.t('playlists.scheduled')}: ${label}`
-  }
-  if (!info.enabled && info.cron) {
-    return info.t('playlists.schedulePaused')
-  }
-  return info.t('playlists.noScheduleConfigured')
-}
 
 function SkeletonGrid() {
   return (
@@ -87,7 +44,7 @@ function SkeletonGrid() {
 // PlaylistsPage
 
 export function PlaylistsPage() {
-  const { locale, t } = useI18n()
+  const { t } = useI18n()
   const queryClient = useQueryClient()
   const location = useLocation()
   const navigate = useNavigate()
@@ -97,15 +54,6 @@ export function PlaylistsPage() {
   const { data: playlists = [], isLoading } = useQuery<PlaylistRow[]>({
     queryKey: ['playlists'],
     queryFn: getPlaylists,
-  })
-
-  const { data: schedulerInfo } = useQuery<{
-    nextRun: string | null
-    cron: string | null
-    enabled: boolean
-  }>({
-    queryKey: ['playlists', 'scheduler'],
-    queryFn: getPlaylistScheduler,
   })
 
   useEffect(() => {
@@ -159,44 +107,34 @@ export function PlaylistsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold text-text">{t('playlists.title')}</h1>
-          <p className="text-xs text-muted mt-0.5">
-            {schedulerInfo
-              ? formatSchedulerSubtitle({ ...schedulerInfo, locale, t })
-              : t('playlists.automaticDigestGeneration')}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex items-center gap-1.5 px-4 py-2 bg-accent text-accent-fg rounded-md text-sm font-medium hover:opacity-90 transition-opacity self-start sm:self-auto"
-        >
-          <Plus size={15} aria-hidden="true" />
-          {t('playlists.create')}
-        </button>
-      </div>
+      <PageHeader
+        title={t('playlists.title')}
+        description={t('playlists.automaticDigestGeneration')}
+        actions={
+          <Button onClick={openCreate}>
+            <Plus size={15} aria-hidden="true" />
+            {t('playlists.create')}
+          </Button>
+        }
+      />
 
       {/* Content */}
       {isLoading ? (
         <SkeletonGrid />
       ) : isEmpty ? (
-        <div className="py-12 text-center space-y-4">
-          <p className="text-muted text-sm max-w-sm mx-auto">{t('playlists.empty')}</p>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-accent text-accent-fg rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus size={15} aria-hidden="true" />
-            {t('playlists.create')}
-          </button>
-          <Hint id="playlists-empty-state" type="empty-state" className="max-w-sm mx-auto">
-            {t('playlists.emptyHint')}
-          </Hint>
-        </div>
+        <EmptyState
+          className="py-12"
+          message={t('playlists.empty')}
+          action={
+            <>
+              <Button onClick={openCreate}>
+                <Plus size={15} aria-hidden="true" />
+                {t('playlists.create')}
+              </Button>
+              <p className="text-xs text-muted max-w-sm mx-auto">{t('playlists.emptyHint')}</p>
+            </>
+          }
+        />
       ) : (
         <>
           <div className="flex items-center justify-between">

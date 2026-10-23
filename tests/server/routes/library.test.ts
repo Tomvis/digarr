@@ -1,6 +1,5 @@
 // @vitest-environment node
 
-import { EventEmitter } from 'node:events'
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAllSessions, createSession } from '@/core/sessions'
@@ -8,6 +7,7 @@ import type { SettingsRow } from '@/db/queries/settings'
 import type { AppDependencies } from '@/server'
 import { createApp } from '@/server'
 import type { HonoEnv } from '@/server/types'
+import { makeDeps as makeSharedDeps } from '../../helpers/test-app'
 
 vi.mock('@/core/clients/lidarr', () => ({
   createLidarrClient: vi.fn(),
@@ -15,13 +15,7 @@ vi.mock('@/core/clients/lidarr', () => ({
 
 import { createLidarrClient } from '@/core/clients/lidarr'
 
-function makeMockOrchestrator() {
-  const emitter = new EventEmitter()
-  return Object.assign(emitter, {
-    isRunning: false,
-    run: vi.fn(async () => ({ batchId: 1 })),
-  })
-}
+const artistMbid = 'a74b1b7f-71a5-4011-9441-d0b5e4122711'
 
 const mockChecks = [
   {
@@ -90,6 +84,8 @@ function makeMockLibrarySync() {
   return {
     syncGlobal: vi.fn(async () => ({ userId: null, results: [] })),
     syncForUser: vi.fn(async () => ({ userId: 1, results: [] })),
+    resolveSourceScope: vi.fn(async (userId: number) => ({ userId })),
+    isRunning: vi.fn(() => false),
     syncSpecificSource: vi.fn(async () => ({
       source: 'plex',
       status: 'completed' as const,
@@ -115,22 +111,45 @@ function makeMockLibrarySyncStore() {
     userHasAnySyncState: vi.fn(async () => false),
     userHasOwnSyncState: vi.fn(async () => false),
     listSyncStateForUser: vi.fn(async () => []),
-    listUnreconciledForUser: vi.fn(async () => []),
-    listUnreconciledAlbumsForUser: vi.fn(async () => []),
+    listUnreconciledForUser: vi.fn(async () => ({ items: [], total: 0 })),
+    listUnreconciledAlbumsForUser: vi.fn(async () => ({ items: [], total: 0 })),
     listOwnedAlbumsForArtist: vi.fn(async () => []),
     upsertAlbumOverride: vi.fn(async () => {}),
     bulkIgnoreAlbums: vi.fn(async () => {}),
   }
 }
 
-function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
+function json(body: unknown, method = 'POST'): RequestInit {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+}
+
+function makeAlbumCoverage() {
   return {
-    db: { execute: vi.fn(async () => []) } as unknown as AppDependencies['db'],
+    artistMbid,
+    ownedCount: 1,
+    totalCount: 2,
+    owned: [
+      {
+        albumMbid: '11111111-1111-1111-1111-111111111111',
+        title: 'Dummy',
+        releaseYear: 1991,
+      },
+    ],
+    missing: [
+      {
+        albumMbid: '22222222-2222-2222-2222-222222222222',
+        title: 'Hex',
+        releaseYear: 1994,
+      },
+    ],
+  }
+}
+
+function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
+  return makeSharedDeps({
     storeDb: {} as unknown as AppDependencies['storeDb'],
-    orchestrator: makeMockOrchestrator() as unknown as AppDependencies['orchestrator'],
     scheduler: {} as AppDependencies['scheduler'],
     providerRegistry: {} as unknown as AppDependencies['providerRegistry'],
-    isSetupComplete: async () => true,
     getSettings: vi.fn(
       async () =>
         ({
@@ -140,118 +159,13 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
           preferences: { qualityProfileId: 1, rootFolderId: 1 },
         }) as SettingsRow,
     ),
-    updateSettings: vi.fn(async () => {}),
-    completeSetup: vi.fn(async () => ({ id: 1, setupComplete: true })),
-    getLastBatch: vi.fn(async () => null),
-    listRecommendations: vi.fn(async () => ({ items: [], total: 0 })),
-    getRecommendation: vi.fn(async () => null),
-    updateRecommendationStatus: vi.fn(async () => {}),
-    rejectRecommendation: vi.fn(async () => 1),
-    listArtistBlocks: vi.fn(async () => ({ items: [], nextCursor: null })),
-    removeArtistBlock: vi.fn(async () => true),
-    addArtistBlock: vi.fn(async () => {}),
-    listAlbumBlocks: vi.fn(async () => []),
-    removeAlbumBlock: vi.fn(async () => {}),
-    bulkUpdateStatus: vi.fn(async () => {}),
-    filterOwnedIds: vi.fn(async (ids: number[]) => ids),
-    listBatches: vi.fn(async () => []),
-    getBatch: vi.fn(async () => null),
-    getArtistById: vi.fn(async () => null),
-    restartScheduler: vi.fn(),
-    restartPlaylistScheduler: vi.fn(),
-    createUser: vi.fn(async () => ({
-      id: 1,
-      username: 'test',
-      isAdmin: false,
-      preferences: null,
-      email: null,
-      oidcSubject: null,
-      oidcIssuer: null,
-      authProvider: 'local',
-      listenbrainzUsername: null,
-      listenbrainzToken: null,
-      lastfmUsername: null,
-      lastfmApiKey: null,
-      plexUrl: null,
-      plexToken: null,
-      plexSectionId: null,
-      plexAccountId: null,
-      plexAccountName: null,
-      plexMachineIdentifier: null,
-      jellyfinUrl: null,
-      jellyfinApiKey: null,
-      jellyfinUserId: null,
-      jellyfinLibraryId: null,
-      embyUrl: null,
-      embyApiKey: null,
-      embyUserId: null,
-      embyLibraryId: null,
-      discogsToken: null,
-      discogsUsername: null,
-      subsonicUrl: null,
-      subsonicUsername: null,
-      subsonicPassword: null,
-      createdAt: new Date(),
-    })),
-    getUserByUsername: vi.fn(async () => null),
     getUserById: vi.fn(async () => ({
       id: 1,
       username: 'admin',
       isAdmin: true,
     })) as unknown as AppDependencies['getUserById'],
     getUserCount: vi.fn(async () => 0),
-    updateUserPreferredLocale: vi.fn(async () => {}),
-    genreService: {} as unknown as AppDependencies['genreService'],
     libraryHealth: makeMockLibraryHealth() as unknown as AppDependencies['libraryHealth'],
-    targetQueries: {
-      createTarget: vi.fn().mockResolvedValue({ id: 1 }),
-      getTargetsByUser: vi.fn().mockResolvedValue([]),
-      getAllTargets: vi.fn().mockResolvedValue([]),
-      getTarget: vi.fn().mockResolvedValue(null),
-      updateTarget: vi.fn().mockResolvedValue(undefined),
-      deleteTarget: vi.fn().mockResolvedValue(undefined),
-    },
-    testTargetConnection: vi.fn().mockResolvedValue({ success: true, message: 'ok' }),
-    getEnabledTargetsForUser: vi.fn().mockResolvedValue([]),
-    subscriptionQueries: {
-      createSubscription: vi.fn(async () => ({}) as never),
-      getSubscription: vi.fn(async () => null),
-      getSubscriptionsByUser: vi.fn(async () => []),
-      getEnabledSubscriptions: vi.fn(async () => []),
-      updateSubscription: vi.fn(async () => {}),
-      deleteSubscription: vi.fn(async () => {}),
-    },
-    runSubscription: vi.fn(async () => {}),
-    getOidcService: vi.fn(async () => null),
-    getUserByOidcIdentity: vi.fn(async () => null),
-    getUserByEmail: vi.fn(async () => null),
-    updateUser: vi.fn(async () => {}),
-    listUsers: vi.fn(async () => []),
-    deleteUser: vi.fn(async () => {}),
-    getFeedbackHistory: vi.fn(async () => new Map()),
-    dashboardQueries: {
-      getTopGenresForUser: vi.fn(async () => []),
-      getLatestGenreCoverage: vi.fn(async () => null),
-      getRecentActivity: vi.fn(async () => []),
-    },
-    jobRecorder: {
-      start: vi.fn().mockResolvedValue(1),
-      complete: vi.fn().mockResolvedValue(undefined),
-      fail: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-      markStuck: vi.fn().mockResolvedValue(0),
-    },
-    jobQueries: {
-      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      getJobById: vi.fn().mockResolvedValue(null),
-      getJobHealth: vi.fn().mockResolvedValue({
-        pipeline: { status: 'ok', lastRun: null, nextRun: null },
-        subscriptions: { status: 'ok', healthy: 0, total: 0 },
-        playlists: { status: 'ok', lastRun: null },
-        sources: {},
-      }),
-      getJobsForSubscription: vi.fn().mockResolvedValue([]),
-    },
     librarySync: makeMockLibrarySync() as unknown as AppDependencies['librarySync'],
     librarySyncStore: makeMockLibrarySyncStore() as unknown as AppDependencies['librarySyncStore'],
     albumCoverage: {
@@ -264,7 +178,7 @@ function makeDeps(overrides: Partial<AppDependencies> = {}): AppDependencies {
       })),
     } as unknown as AppDependencies['albumCoverage'],
     ...overrides,
-  }
+  })
 }
 
 const SESSION_TOKEN = 'library-session-token'
@@ -285,6 +199,8 @@ async function authedRequest(
 }
 
 const mockLidarrClient = {
+  getTags: vi.fn(async () => []),
+  createTag: vi.fn(async (label: string) => ({ id: 1, label })),
   getCommand: vi.fn(async () => ({ id: 0, name: '', status: '' })),
   getManualImport: vi.fn(async () => []),
   updateManualImport: vi.fn(async () => []),
@@ -297,11 +213,13 @@ const mockLidarrClient = {
   getArtists: vi.fn(async () => []),
   findArtistByMbid: vi.fn(async () => null),
   lookupArtist: vi.fn(async () => []),
+  lookupAlbum: vi.fn(async () => null),
   getAlbums: vi.fn(async () => []),
   getWantedMissing: vi.fn(async () => []),
   setArtistsMonitored: vi.fn(async () => []),
   setAlbumsMonitored: vi.fn(async () => []),
   triggerCommand: vi.fn(async () => ({ id: 0, name: '', status: '' })),
+  canListPath: vi.fn(async () => true),
   testConnection: vi.fn(async () => ({ success: true, message: 'ok' })),
 }
 
@@ -467,11 +385,11 @@ describe('POST /api/v1/library/warm', () => {
     const app = createApp(
       makeDeps({ skyhookWarmer: mockWarmer as unknown as AppDependencies['skyhookWarmer'] }),
     )
-    const res = await authedRequest(app, '/api/v1/library/warm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mbids: ['mbid-1', 'mbid-2'] }),
-    })
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/warm',
+      json({ mbids: ['mbid-1', 'mbid-2'] }),
+    )
     expect(res.status).toBe(202)
     const body = await res.json()
     expect(body.queued).toBe(2)
@@ -483,37 +401,16 @@ describe('POST /api/v1/library/warm', () => {
 
   it('returns 400 when warmer not available', async () => {
     const app = createApp(makeDeps({ skyhookWarmer: null }))
-    const res = await authedRequest(app, '/api/v1/library/warm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mbids: ['mbid-1'] }),
-    })
+    const res = await authedRequest(app, '/api/v1/library/warm', json({ mbids: ['mbid-1'] }))
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/not available/i)
   })
 
-  it('returns 400 for missing mbids', async () => {
+  it.each([{}, { mbids: [] }])('rejects missing or empty warm MBIDs: %j', async (fields) => {
     const skyhookWarmer = makeMockWarmer() as unknown as AppDependencies['skyhookWarmer']
     const app = createApp(makeDeps({ skyhookWarmer }))
-    const res = await authedRequest(app, '/api/v1/library/warm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(body.error.toLowerCase()).toContain('mbids')
-  })
-
-  it('returns 400 for empty mbids array', async () => {
-    const skyhookWarmer = makeMockWarmer() as unknown as AppDependencies['skyhookWarmer']
-    const app = createApp(makeDeps({ skyhookWarmer }))
-    const res = await authedRequest(app, '/api/v1/library/warm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mbids: [] }),
-    })
+    const res = await authedRequest(app, '/api/v1/library/warm', json(fields))
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.toLowerCase()).toContain('mbids')
@@ -525,11 +422,7 @@ describe('POST /api/v1/library/warm', () => {
       makeDeps({ skyhookWarmer: mockWarmer as unknown as AppDependencies['skyhookWarmer'] }),
     )
     const mbids = Array.from({ length: 60 }, (_, i) => `mbid-${i}`)
-    const res = await authedRequest(app, '/api/v1/library/warm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mbids }),
-    })
+    const res = await authedRequest(app, '/api/v1/library/warm', json({ mbids }))
     expect(res.status).toBe(202)
     const body = await res.json()
     expect(body.queued).toBe(50)
@@ -548,31 +441,20 @@ describe('GET /api/v1/library/warm/status', () => {
     expect(body.statuses['mbid-2']).toBe('unknown')
   })
 
-  it('returns empty statuses object when warmer not available', async () => {
-    const app = createApp(makeDeps({ skyhookWarmer: null }))
-    const res = await authedRequest(app, '/api/v1/library/warm/status?mbids=mbid-1')
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.statuses).toEqual({})
-  })
-
-  it('returns empty statuses when no mbids param', async () => {
-    const skyhookWarmer = makeMockWarmer() as unknown as AppDependencies['skyhookWarmer']
+  it.each([
+    ['no warmer', false, '?mbids=mbid-1'],
+    ['no MBIDs', true, ''],
+  ] as const)('returns empty warm statuses for %s', async (_case, available, query) => {
+    const skyhookWarmer = (available
+      ? makeMockWarmer()
+      : null) as unknown as AppDependencies['skyhookWarmer']
     const app = createApp(makeDeps({ skyhookWarmer }))
-    const res = await authedRequest(app, '/api/v1/library/warm/status')
+    const res = await authedRequest(app, `/api/v1/library/warm/status${query}`)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.statuses).toEqual({})
   })
 })
-
-// ---------------------------------------------------------------------------
-// New sync/sources/unreconciled/overrides/reconcile routes
-//
-// These handlers require userId to be set on the context. Rather than fighting
-// the authSkipped+userId gap in the full createApp path, we mount libraryRoutes
-// directly with a tiny middleware that sets userId - same pattern as jobs.test.ts.
-// ---------------------------------------------------------------------------
 
 import { libraryRoutes } from '@/server/routes/library'
 
@@ -676,91 +558,102 @@ describe('GET /api/v1/library/sources', () => {
 })
 
 describe('POST /api/v1/library/sync', () => {
-  it('POST /api/v1/library/sync runs global before user sync and returns the user summary', async () => {
+  const resolveUser = vi.fn(async (userId: number) => ({ userId }))
+
+  it('returns 202 for Sync all before the sync finishes, global before user', async () => {
     const order: string[] = []
-    let resolved = false
-    const syncForUser = vi.fn(async () => {
-      order.push('user')
-      // Async boundary (setImmediate) instead of a wall-clock sleep; the
-      // assertion only cares that the route awaited the user sync.
-      await new Promise<void>((r) => setImmediate(r))
-      resolved = true
-      return { userId: 1, results: [] }
-    })
+    let releaseGlobal: () => void = () => {}
     const syncGlobal = vi.fn(async () => {
       order.push('global')
+      await new Promise<void>((r) => {
+        releaseGlobal = r
+      })
       return { userId: null, results: [] }
+    })
+    const syncForUser = vi.fn(async () => {
+      order.push('user')
+      return { userId: 1, results: [] }
     })
     const { app } = makeSyncApp({ syncForUser, syncGlobal })
 
-    const res = await authedRequest(app, '/api/v1/library/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const res = await authedRequest(app, '/api/v1/library/sync', json({}))
 
-    expect(resolved).toBe(true) // proves the route awaited
     expect(res.status).toBe(202)
-    const body = await res.json()
-    expect(body.userId).toBe(1)
-    expect(body.results).toEqual([])
+    expect(await res.json()).toEqual({ status: 'started' })
+    expect(syncForUser).not.toHaveBeenCalled()
+
+    // A second Sync all while the first is running is rejected.
+    const dup = await authedRequest(app, '/api/v1/library/sync', json({}))
+    expect(dup.status).toBe(409)
+    expect((await dup.json()).code).toBe('errors.library.syncAlreadyRunning')
+    expect(syncGlobal).toHaveBeenCalledTimes(1)
+
+    releaseGlobal()
+    await vi.waitFor(() => expect(syncForUser).toHaveBeenCalledWith(42, { force: true }))
     expect(order).toEqual(['global', 'user'])
-    expect(syncForUser).toHaveBeenCalledWith(42, { force: true })
-    expect(syncGlobal).toHaveBeenCalledWith({ force: true })
   })
 
-  it('fires syncSpecificSource when source provided', async () => {
-    const { app, librarySync } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'plex' }),
-    })
-    expect(res.status).toBe(200)
-    expect(librarySync.syncSpecificSource as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
-      42,
-      'plex',
-      { force: true },
+  it('starts a single source in the background under the resolved scope', async () => {
+    let release: () => void = () => {}
+    const syncSpecificSource = vi.fn(
+      () =>
+        new Promise<unknown>((r) => {
+          release = () => r({ source: 'plex', status: 'completed', counts: zeroCounts() })
+        }),
     )
-  })
+    const resolveSourceScope = vi.fn(async () => ({ userId: null }))
+    const { app } = makeSyncApp({ syncSpecificSource, resolveSourceScope, isRunning: () => false })
 
-  it('retries syncSpecificSource with userId=null when source not configured', async () => {
-    const syncSpecificSource = vi
-      .fn()
-      .mockResolvedValueOnce({
-        source: 'plex',
-        status: 'failed',
-        error: "Source 'plex' not configured",
-      })
-      .mockResolvedValueOnce({
-        source: 'plex',
-        status: 'completed',
-        counts: zeroCounts(),
-      })
-    const { app } = makeSyncApp({ syncSpecificSource })
+    const res = await authedRequest(app, '/api/v1/library/sync', json({ source: 'plex' }))
 
-    const res = await authedRequest(app, '/api/v1/library/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'plex' }),
-    })
-
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.status).toBe('completed')
-    expect(syncSpecificSource).toHaveBeenCalledTimes(2)
-    expect(syncSpecificSource).toHaveBeenNthCalledWith(1, 42, 'plex', { force: true })
-    expect(syncSpecificSource).toHaveBeenNthCalledWith(2, null, 'plex', { force: true })
-  })
-
-  it('POST /api/v1/library/sync returns 202 when body omits source', async () => {
-    const { app } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
     expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({ source: 'plex', status: 'started' })
+    expect(resolveSourceScope).toHaveBeenCalledWith(42, 'plex')
+    expect(syncSpecificSource).toHaveBeenCalledWith(null, 'plex', { force: true })
+    release()
+  })
+
+  it('returns 404 when the source is not configured and 409 when it is already running', async () => {
+    const syncSpecificSource = vi.fn()
+    const notConfigured = makeSyncApp({
+      syncSpecificSource,
+      resolveSourceScope: vi.fn(async () => null),
+    })
+    const missing = await authedRequest(
+      notConfigured.app,
+      '/api/v1/library/sync',
+      json({ source: 'plex' }),
+    )
+    expect(missing.status).toBe(404)
+
+    const running = makeSyncApp({
+      syncSpecificSource,
+      resolveSourceScope: resolveUser,
+      isRunning: () => true,
+    })
+    const dup = await authedRequest(running.app, '/api/v1/library/sync', json({ source: 'plex' }))
+    expect(dup.status).toBe(409)
+    expect(syncSpecificSource).not.toHaveBeenCalled()
+  })
+
+  it('catches a background failure instead of leaking an unhandled rejection', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const syncSpecificSource = vi.fn(async () => {
+      throw new Error('boom')
+    })
+    const { app } = makeSyncApp({
+      syncSpecificSource,
+      resolveSourceScope: resolveUser,
+      isRunning: () => false,
+    })
+
+    const res = await authedRequest(app, '/api/v1/library/sync', json({ source: 'plex' }))
+
+    expect(res.status).toBe(202)
+    await vi.waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith('[library/sync] plex error:', 'boom'),
+    )
+    errorSpy.mockRestore()
   })
 
   it('POST /api/v1/library/overrides returns 400 (not 500) when body is JSON null', async () => {
@@ -773,6 +666,29 @@ describe('POST /api/v1/library/sync', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe.each(['/api/v1/library/unreconciled', '/api/v1/library/unreconciled-albums'])(
+  '%s pagination',
+  (path) => {
+    it('passes the bounded page and returns its total', async () => {
+      const { app, librarySyncStore } = makeSyncApp()
+      const response = await authedRequest(app, `${path}?limit=20&offset=40`)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ items: [], total: 0 })
+      const query = path.endsWith('-albums')
+        ? librarySyncStore.listUnreconciledAlbumsForUser
+        : librarySyncStore.listUnreconciledForUser
+      expect(query).toHaveBeenCalledWith(42, { limit: 20, offset: 40 })
+    })
+    it.each(['limit=0', 'limit=501', 'offset=-1', 'offset=1.5'])(
+      'rejects invalid %s',
+      async (query) => {
+        const { app } = makeSyncApp()
+        expect((await authedRequest(app, `${path}?${query}`)).status).toBe(400)
+      },
+    )
+  },
+)
 
 describe('GET /api/v1/library/unreconciled', () => {
   it('returns unreconciled rows for the authed user', async () => {
@@ -792,7 +708,7 @@ describe('GET /api/v1/library/unreconciled', () => {
       },
     ]
     const { app, librarySyncStore } = makeSyncApp(undefined, {
-      listUnreconciledForUser: vi.fn(async () => mockItems),
+      listUnreconciledForUser: vi.fn(async () => ({ items: mockItems, total: mockItems.length })),
     })
     const res = await authedRequest(app, '/api/v1/library/unreconciled')
     expect(res.status).toBe(200)
@@ -821,7 +737,7 @@ describe('GET /api/v1/library/unreconciled', () => {
       lastGapCheckAt: null,
     }
     const { app } = makeSyncApp(undefined, {
-      listUnreconciledForUser: vi.fn(async () => [item]),
+      listUnreconciledForUser: vi.fn(async () => ({ items: [item], total: 1 })),
     })
 
     const res = await authedRequest(app, '/api/v1/library/unreconciled')
@@ -829,32 +745,40 @@ describe('GET /api/v1/library/unreconciled', () => {
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
       items: [{ ...item, unreconciledReason: null, syncedAt: item.syncedAt.toISOString() }],
+      total: 1,
     })
   })
 })
 
 describe('GET /api/v1/library/album-coverage/:artistMbid', () => {
-  it('returns owned and missing studio albums for the current user', async () => {
-    const artistMbid = 'a74b1b7f-71a5-4011-9441-d0b5e4122711'
-    const coverage = {
-      artistMbid,
-      ownedCount: 1,
-      totalCount: 2,
-      owned: [
-        {
-          albumMbid: '11111111-1111-1111-1111-111111111111',
-          title: 'Dummy',
-          releaseYear: 1991,
+  it('returns an empty studio album listing for the current user', async () => {
+    const { app, albumCoverage } = makeSyncApp(undefined, undefined, { userId: 73 })
+
+    const res = await authedRequest(app, `/api/v1/library/album-coverage/${artistMbid}`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ownedCount: 0, totalCount: 0, missing: [] })
+    expect(albumCoverage.getCoverageForArtist).toHaveBeenCalledWith(73, artistMbid)
+  })
+
+  it('returns a failure rather than an empty listing when coverage fails', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { app } = makeSyncApp(undefined, undefined, {
+        albumCoverageOverride: {
+          getCoverageForArtist: vi.fn().mockRejectedValue(new Error('upstream unavailable')),
         },
-      ],
-      missing: [
-        {
-          albumMbid: '22222222-2222-2222-2222-222222222222',
-          title: 'Hex',
-          releaseYear: 1994,
-        },
-      ],
+      })
+      const res = await authedRequest(app, `/api/v1/library/album-coverage/${artistMbid}`)
+      expect(res.status).toBe(500)
+      expect(await res.text()).not.toContain('upstream unavailable')
+    } finally {
+      log.mockRestore()
     }
+  })
+
+  it('returns owned and missing studio albums for the current user', async () => {
+    const coverage = makeAlbumCoverage()
     const { app, albumCoverage } = makeSyncApp(undefined, undefined, {
       albumCoverageOverride: {
         getCoverageForArtist: vi.fn(async () => coverage),
@@ -870,26 +794,7 @@ describe('GET /api/v1/library/album-coverage/:artistMbid', () => {
 
   it('allows non-admin authenticated users through the real app mount', async () => {
     const token = 'library-session-token'
-    const artistMbid = 'a74b1b7f-71a5-4011-9441-d0b5e4122711'
-    const coverage = {
-      artistMbid,
-      ownedCount: 1,
-      totalCount: 2,
-      owned: [
-        {
-          albumMbid: '11111111-1111-1111-1111-111111111111',
-          title: 'Dummy',
-          releaseYear: 1991,
-        },
-      ],
-      missing: [
-        {
-          albumMbid: '22222222-2222-2222-2222-222222222222',
-          title: 'Hex',
-          releaseYear: 1994,
-        },
-      ],
-    }
+    const coverage = makeAlbumCoverage()
     await createSession(7, token)
     const app = createApp(
       makeDeps({
@@ -982,7 +887,6 @@ describe('Mounted library legacy-token gating', () => {
 
   it('rejects legacy-token auth for album coverage', async () => {
     const token = 'legacy-library-token'
-    const artistMbid = 'a74b1b7f-71a5-4011-9441-d0b5e4122711'
     const app = await createMountedAppWithLegacyToken(token, {
       albumCoverage: {
         getCoverageForArtist: vi.fn(async () => ({
@@ -1029,7 +933,10 @@ describe('GET /api/v1/library/unreconciled-albums', () => {
       },
     ]
     const { app, librarySyncStore } = makeSyncApp(undefined, {
-      listUnreconciledAlbumsForUser: vi.fn(async () => mockItems),
+      listUnreconciledAlbumsForUser: vi.fn(async () => ({
+        items: mockItems,
+        total: mockItems.length,
+      })),
     })
 
     const res = await authedRequest(app, '/api/v1/library/unreconciled-albums')
@@ -1063,7 +970,7 @@ describe('GET /api/v1/library/unreconciled-albums', () => {
       syncedAt: new Date('2026-07-22T10:00:00.000Z'),
     }
     const { app } = makeSyncApp(undefined, {
-      listUnreconciledAlbumsForUser: vi.fn(async () => [item]),
+      listUnreconciledAlbumsForUser: vi.fn(async () => ({ items: [item], total: 1 })),
     })
 
     const res = await authedRequest(app, '/api/v1/library/unreconciled-albums')
@@ -1071,6 +978,7 @@ describe('GET /api/v1/library/unreconciled-albums', () => {
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
       items: [{ ...item, unreconciledReason: null, syncedAt: item.syncedAt.toISOString() }],
+      total: 1,
     })
   })
 })
@@ -1078,16 +986,16 @@ describe('GET /api/v1/library/unreconciled-albums', () => {
 describe('POST /api/v1/library/overrides', () => {
   it('calls upsertOverride with correct args and returns ok', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/overrides',
+      json({
         source: 'plex',
         sourceArtistId: 'plex-123',
         correctMbid: '123e4567-e89b-12d3-a456-426614174000',
         note: 'manual fix',
       }),
-    })
+    )
     expect(res.status).toBe(204)
     expect(librarySyncStore.upsertOverride as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
       42,
@@ -1100,11 +1008,11 @@ describe('POST /api/v1/library/overrides', () => {
 
   it('coerces empty string correctMbid to null', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    await authedRequest(app, '/api/v1/library/overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'plex', sourceArtistId: 'plex-123', correctMbid: '' }),
-    })
+    await authedRequest(
+      app,
+      '/api/v1/library/overrides',
+      json({ source: 'plex', sourceArtistId: 'plex-123', correctMbid: '' }),
+    )
     expect(librarySyncStore.upsertOverride as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
       42,
       'plex',
@@ -1116,15 +1024,15 @@ describe('POST /api/v1/library/overrides', () => {
 
   it('returns 400 when correctMbid is not a UUID', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/overrides',
+      json({
         source: 'plex',
         sourceArtistId: 'plex-123',
         correctMbid: 'not-a-uuid',
       }),
-    })
+    )
 
     expect(res.status).toBe(400)
     expect(librarySyncStore.upsertOverride as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1132,11 +1040,11 @@ describe('POST /api/v1/library/overrides', () => {
 
   it('returns 400 when source is missing', async () => {
     const { app } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceArtistId: 'plex-123' }),
-    })
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/overrides',
+      json({ sourceArtistId: 'plex-123' }),
+    )
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/source/i)
@@ -1146,16 +1054,16 @@ describe('POST /api/v1/library/overrides', () => {
 describe('POST /api/v1/library/album-overrides', () => {
   it('calls upsertAlbumOverride with correct args for admins', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/album-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides',
+      json({
         source: 'plex',
         sourceAlbumId: 'album-1',
         correctAlbumMbid: '123e4567-e89b-12d3-a456-426614174000',
         note: 'manual album fix',
       }),
-    })
+    )
 
     expect(res.status).toBe(204)
     expect(librarySyncStore.upsertAlbumOverride as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
@@ -1169,15 +1077,15 @@ describe('POST /api/v1/library/album-overrides', () => {
 
   it('returns 400 when correctAlbumMbid is not a UUID', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/album-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides',
+      json({
         source: 'plex',
         sourceAlbumId: 'album-1',
         correctAlbumMbid: 'not-a-uuid',
       }),
-    })
+    )
 
     expect(res.status).toBe(400)
     expect(librarySyncStore.upsertAlbumOverride as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1185,14 +1093,14 @@ describe('POST /api/v1/library/album-overrides', () => {
 
   it('returns 400 when sourceAlbumId is missing', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/album-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides',
+      json({
         source: 'plex',
         correctAlbumMbid: '123e4567-e89b-12d3-a456-426614174000',
       }),
-    })
+    )
 
     expect(res.status).toBe(400)
     expect(librarySyncStore.upsertAlbumOverride as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1200,15 +1108,15 @@ describe('POST /api/v1/library/album-overrides', () => {
 
   it('returns 403 for non-admin users', async () => {
     const { app, librarySyncStore } = makeSyncApp(undefined, undefined, { isAdmin: false })
-    const res = await authedRequest(app, '/api/v1/library/album-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides',
+      json({
         source: 'plex',
         sourceAlbumId: 'album-1',
         correctAlbumMbid: '123e4567-e89b-12d3-a456-426614174000',
       }),
-    })
+    )
 
     expect(res.status).toBe(403)
     expect(librarySyncStore.upsertAlbumOverride as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1223,11 +1131,7 @@ describe('POST /api/v1/library/overrides/bulk-ignore', () => {
 
   it('stores artist ignores for admins without triggering sync', async () => {
     const { app, librarySync, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    })
+    const res = await authedRequest(app, '/api/v1/library/overrides/bulk-ignore', json({ items }))
 
     expect(res.status).toBe(204)
     expect(await res.text()).toBe('')
@@ -1242,11 +1146,7 @@ describe('POST /api/v1/library/overrides/bulk-ignore', () => {
 
   it('does not store artist ignores for non-admin users', async () => {
     const { app, librarySyncStore } = makeSyncApp(undefined, undefined, { isAdmin: false })
-    const res = await authedRequest(app, '/api/v1/library/overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    })
+    const res = await authedRequest(app, '/api/v1/library/overrides/bulk-ignore', json({ items }))
 
     expect(res.status).toBe(403)
     expect(librarySyncStore.bulkIgnoreArtists as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1254,11 +1154,11 @@ describe('POST /api/v1/library/overrides/bulk-ignore', () => {
 
   it('rejects duplicate artist identities without storing them', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [items[0], items[0]] }),
-    })
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/overrides/bulk-ignore',
+      json({ items: [items[0], items[0]] }),
+    )
 
     expect(res.status).toBe(400)
     expect(librarySyncStore.bulkIgnoreArtists as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1273,11 +1173,11 @@ describe('POST /api/v1/library/album-overrides/bulk-ignore', () => {
 
   it('stores album ignores for admins without triggering sync', async () => {
     const { app, librarySync, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/album-overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    })
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides/bulk-ignore',
+      json({ items }),
+    )
 
     expect(res.status).toBe(204)
     expect(await res.text()).toBe('')
@@ -1292,11 +1192,11 @@ describe('POST /api/v1/library/album-overrides/bulk-ignore', () => {
 
   it('does not store album ignores for non-admin users', async () => {
     const { app, librarySyncStore } = makeSyncApp(undefined, undefined, { isAdmin: false })
-    const res = await authedRequest(app, '/api/v1/library/album-overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    })
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides/bulk-ignore',
+      json({ items }),
+    )
 
     expect(res.status).toBe(403)
     expect(librarySyncStore.bulkIgnoreAlbums as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()
@@ -1304,16 +1204,16 @@ describe('POST /api/v1/library/album-overrides/bulk-ignore', () => {
 
   it('rejects oversized album requests without storing them', async () => {
     const { app, librarySyncStore } = makeSyncApp()
-    const res = await authedRequest(app, '/api/v1/library/album-overrides/bulk-ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await authedRequest(
+      app,
+      '/api/v1/library/album-overrides/bulk-ignore',
+      json({
         items: Array.from({ length: 201 }, (_, index) => ({
           source: 'plex',
           sourceAlbumId: `album-${index}`,
         })),
       }),
-    })
+    )
 
     expect(res.status).toBe(400)
     expect(librarySyncStore.bulkIgnoreAlbums as ReturnType<typeof vi.fn>).not.toHaveBeenCalled()

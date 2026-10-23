@@ -89,7 +89,7 @@ export function AlbumPicker({
     /* biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss is intentional; keyboard handled by Escape key */
     /* biome-ignore lint/a11y/useKeyWithClickEvents: close button inside provides keyboard alternative */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-overlay"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel()
       }}
@@ -152,7 +152,7 @@ export function AlbumPicker({
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="text-xs text-accent underline"
+                  className="text-xs text-accent-text underline"
                 >
                   {t('albumPicker.selectAll')}
                 </button>
@@ -186,7 +186,7 @@ export function AlbumPicker({
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm text-text truncate">{album.title}</span>
                             {isSuggested && (
-                              <span className="text-micro px-1.5 py-0.5 rounded-full bg-accent/20 text-accent shrink-0">
+                              <span className="text-micro px-1.5 py-0.5 rounded-full bg-accent/5 text-accent-text shrink-0">
                                 {t('albumPicker.aiPick')}
                               </span>
                             )}

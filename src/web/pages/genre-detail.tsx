@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { GenreInfo } from '../../core/genre/types'
 import { ArtistThumb } from '../components/artist-thumb'
 import { Hint } from '../components/hint'
+import { Button } from '../components/ui/button'
+import { PageHeader } from '../components/ui/page-header'
 import { Skeleton } from '../components/ui/skeleton'
 import type { GenreArtist, LibraryArtist } from '../lib/api'
 import { getGenre, getGenreArtists, quickDiscover, warmArtists } from '../lib/api'
@@ -63,7 +65,7 @@ function GenreArtistCard({ artist }: { artist: GenreArtist }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-text truncate">{artist.name}</p>
-          <span className="shrink-0 text-micro font-semibold px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+          <span className="shrink-0 text-micro font-semibold px-1.5 py-0.5 rounded bg-accent/5 text-accent-text">
             {(artist.score * 100).toFixed(0)}
           </span>
         </div>
@@ -83,7 +85,7 @@ function GenreArtistCard({ artist }: { artist: GenreArtist }) {
                 ? preview.stop()
                 : preview.play(artist.mbid, artist.name, artist.streamingUrls ?? null)
             }
-            className="w-7 h-7 flex items-center justify-center rounded-full border border-border text-muted hover:text-accent hover:border-accent/60 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-border text-muted hover:text-accent-text hover:border-accent/60 transition-colors"
             aria-label={
               isPlaying ? t('recommendation.stopPreview') : t('recommendation.playPreview')
             }
@@ -252,17 +254,22 @@ export function GenreDetailPage() {
         &larr; {t('genreDetail.backToGenres')}
       </button>
 
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-text">{data.name}</h1>
-        <p className="text-sm text-muted mt-1">
-          {data.libraryArtists.length}{' '}
-          {data.libraryArtists.length === 1
+      <PageHeader
+        title={data.name}
+        description={`${data.libraryArtists.length} ${
+          data.libraryArtists.length === 1
             ? t('genreDetail.artistSingular')
-            : t('genreDetail.artistPlural')}{' '}
-          {t('genreDetail.inYourLibrary')}
-        </p>
-      </div>
+            : t('genreDetail.artistPlural')
+        } ${t('genreDetail.inYourLibrary')}`}
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/discovery-modes?genre=${encodeURIComponent(data.name)}`)}
+          >
+            {t('genreDetail.createSubscription')}
+          </Button>
+        }
+      />
 
       {/* Sub-genres */}
       {data.subGenres.length > 0 && (
@@ -358,17 +365,6 @@ export function GenreDetailPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Create subscription */}
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={() => navigate(`/subscriptions?genre=${encodeURIComponent(data.name)}`)}
-          className="px-4 py-2 bg-surface border border-border rounded-md text-sm text-muted hover:text-text hover:border-accent/60 transition-colors"
-        >
-          {t('genreDetail.createSubscription')}
-        </button>
       </div>
     </div>
   )

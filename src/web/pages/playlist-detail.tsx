@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Pencil, Play } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { MessageKey } from '@/core/i18n/messages/types'
 import { Hint } from '../components/hint'
+import { PageHeader } from '../components/ui/page-header'
 import { Skeleton } from '../components/ui/skeleton'
 import {
   exportPlaylistApi,
@@ -13,7 +14,9 @@ import {
   type PlaylistGeneration,
   type PlaylistRow,
   type PlaylistTrackRow,
+  updateRecommendation,
 } from '../lib/api'
+import { reportApprovalOutcome } from '../lib/approval'
 import { useI18n } from '../lib/i18n'
 import { formatShortDate } from '../lib/intl'
 
@@ -75,7 +78,7 @@ function detectSource(track: PlaylistTrackRow): string {
 
 function DetailSkeleton() {
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <Skeleton className="h-4 w-24" />
       <div className="space-y-2">
         <Skeleton className="h-8 w-64" />
@@ -96,7 +99,32 @@ function DetailSkeleton() {
 
 function TrackRow({ track, index }: { track: PlaylistTrackRow; index: number }) {
   const { t } = useI18n()
+  const queryClient = useQueryClient()
+  const [approving, setApproving] = useState(false)
+  const [approved, setApproved] = useState(false)
   const source = detectSource(track)
+
+  async function handleApprove() {
+    if (!track.recommendationId || approving) return
+    setApproving(true)
+    try {
+      const result = await updateRecommendation(track.recommendationId, {
+        status: 'approved',
+        auditionTrackId: track.id,
+      })
+      if (!reportApprovalOutcome(result, t)) return
+      setApproved(true)
+      toast.success(t('discover.approved'))
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['playlists', track.playlistId] }),
+        queryClient.invalidateQueries({ queryKey: ['recommendations'] }),
+      ])
+    } catch {
+      toast.error(t('dashboard.approveFailed'))
+    } finally {
+      setApproving(false)
+    }
+  }
   const badge =
     SOURCE_BADGES[source] ??
     ({ label: source, className: 'bg-surface text-muted border border-border' } as {
@@ -115,6 +143,16 @@ function TrackRow({ track, index }: { track: PlaylistTrackRow; index: number }) 
         </p>
         <p className="text-xs text-muted truncate">{track.artistName}</p>
       </div>
+      {track.recommendationId && !approved && (
+        <button
+          type="button"
+          onClick={handleApprove}
+          disabled={approving}
+          className="shrink-0 rounded-md px-2 py-1 text-xs text-approve hover:bg-approve/10 disabled:opacity-60"
+        >
+          {t('recommendation.approve')}
+        </button>
+      )}
       <span className={`shrink-0 text-micro font-medium px-1.5 py-0.5 rounded ${badge.className}`}>
         {t(badge.label as never)}
       </span>
@@ -166,7 +204,7 @@ function PlaylistActions({
         type="button"
         onClick={handleGenerate}
         disabled={generating}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/15 text-accent rounded-md text-sm font-medium hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/5 text-accent-text rounded-md text-sm font-medium hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
       >
         {generating ? (
           <svg
@@ -226,6 +264,50 @@ const OUTCOME_STATUS_KEYS: Record<string, MessageKey> = {
   unavailable: 'playlist.resolutionUnavailable',
   error: 'playlist.resolutionError',
   limited: 'playlist.resolutionLimited',
+}
+
+const EXPORT_STATUS: Record<string, { label: MessageKey; className: string }> = {
+  submitted: { label: 'playlist.exportSubmitted', className: 'bg-green-500/15 text-green-400' },
+  partial: { label: 'playlist.exportPartial', className: 'bg-yellow-500/15 text-yellow-400' },
+  failed: { label: 'common.failed', className: 'bg-red-500/15 text-red-400' },
+}
+
+function ExportOutcomes({ outcomes }: { outcomes: NonNullable<PlaylistGeneration['exports']> }) {
+  const { t } = useI18n()
+  if (outcomes.length === 0) return null
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold text-text">{t('playlist.exportResults')}</h3>
+      <ul className="space-y-2 text-sm">
+        {outcomes.map((outcome) => {
+          const status = EXPORT_STATUS[outcome.status] ?? EXPORT_STATUS.failed
+          return (
+            <li key={outcome.targetId} data-testid="playlist-export-outcome">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-text">{outcome.targetName}</span>
+                <span className={`px-2 py-0.5 rounded text-xs ${status?.className ?? ''}`}>
+                  {t(status?.label ?? 'common.failed')}
+                </span>
+                {outcome.status !== 'failed' && (
+                  <span className="text-xs text-muted">
+                    {t(outcome.verified ? 'playlist.exportVerified' : 'playlist.exportUnverified')}
+                  </span>
+                )}
+              </div>
+              {outcome.itemsAdded !== undefined && (
+                <p className="text-xs text-muted">
+                  {t('playlist.exportCounts')
+                    .replace('{0}', String(outcome.itemsAdded))
+                    .replace('{1}', String(outcome.itemsSkipped ?? 0))}
+                </p>
+              )}
+              {outcome.error && <p className="text-xs text-muted break-words">{outcome.error}</p>}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
 }
 
 function GenerationSummary({ generation }: { generation: PlaylistGeneration | null }) {
@@ -298,6 +380,7 @@ function GenerationSummary({ generation }: { generation: PlaylistGeneration | nu
           </ul>
         </>
       )}
+      {generation.exports && <ExportOutcomes outcomes={generation.exports} />}
     </section>
   )
 }
@@ -356,7 +439,7 @@ export function PlaylistDetailPage() {
 
   if (error || !data) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-6 max-w-6xl mx-auto">
         <button
           type="button"
           onClick={() => navigate('/playlists')}
@@ -374,11 +457,11 @@ export function PlaylistDetailPage() {
   const { playlist, tracks } = data
   const badge = STRATEGY_BADGES[playlist.strategy] ?? {
     label: playlist.strategy,
-    className: 'bg-accent/15 text-accent',
+    className: 'bg-accent/5 text-accent-text',
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto pb-24 md:pb-6">
+    <div className="p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6">
       {/* Back nav */}
       <button
         type="button"
@@ -388,37 +471,46 @@ export function PlaylistDetailPage() {
         &larr; {t('playlist.backToPlaylists')}
       </button>
 
-      {/* Title + meta */}
-      <div className="space-y-3">
-        <div className="flex items-start gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold text-text leading-tight">{playlist.name}</h1>
-          <span
-            className={`mt-0.5 text-micro-lg font-medium px-2 py-0.5 rounded-full ${badge.className}`}
-          >
-            {badge.label.startsWith('playlist.') ? t(badge.label as never) : badge.label}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-4 text-xs text-muted">
-          <span>
-            {t('common.schedule')}:{' '}
-            <span className="text-text">{formatSchedule(playlist.schedule, t)}</span>
-          </span>
-          <span>
-            {t('playlist.lastGenerated')}:{' '}
-            <span className="text-text">
-              {formatRelativeTime(locale, playlist.lastGeneratedAt, t('common.never'))}
+      <PageHeader
+        title={playlist.name}
+        description={
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className={`text-micro font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
+              {badge.label.startsWith('playlist.') ? t(badge.label as never) : badge.label}
             </span>
-          </span>
-          {playlist.trackCount != null && (
             <span>
-              {t('playlist.tracks')}: <span className="text-text">{playlist.trackCount}</span>
+              {t('common.schedule')}:{' '}
+              <span className="text-text">{formatSchedule(playlist.schedule, t)}</span>
             </span>
-          )}
-          {!playlist.enabled && (
-            <span className="text-muted/60 italic">{t('common.disabled')}</span>
-          )}
-        </div>
-      </div>
+            <span>
+              {t('playlist.lastGenerated')}:{' '}
+              <span className="text-text">
+                {formatRelativeTime(locale, playlist.lastGeneratedAt, t('common.never'))}
+              </span>
+            </span>
+            {playlist.trackCount != null && (
+              <span>
+                {t('playlist.tracks')}: <span className="text-text">{playlist.trackCount}</span>
+              </span>
+            )}
+          </span>
+        }
+        actions={
+          <PlaylistActions
+            playlist={playlist}
+            onEdit={handleEdit}
+            onRefetch={() => {
+              polling.current = {
+                playlistId: numId,
+                deadline: Date.now() + 300_000,
+                previousJobId: data.generation?.jobId ?? null,
+                awaitingNewJob: true,
+              }
+              refetch()
+            }}
+          />
+        }
+      />
 
       <Hint id="playlist-detail-intro-tip" type="inline">
         {t(
@@ -427,29 +519,12 @@ export function PlaylistDetailPage() {
         {t('playlist.detailActionsHint')}
       </Hint>
 
-      {/* Actions */}
-      <PlaylistActions
-        playlist={playlist}
-        onEdit={handleEdit}
-        onRefetch={() => {
-          polling.current = {
-            playlistId: numId,
-            deadline: Date.now() + 300_000,
-            previousJobId: data.generation?.jobId ?? null,
-            awaitingNewJob: true,
-          }
-          refetch()
-        }}
-      />
-
       <GenerationSummary generation={data.generation} />
 
       {/* Track listing */}
       <div className="space-y-1">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted uppercase tracking-wide font-semibold">
-            {t('playlist.tracks')}
-          </p>
+          <h2 className="text-lead font-semibold text-text">{t('playlist.tracks')}</h2>
           {tracks.length > 0 && (
             <span className="text-xs text-muted">{`${tracks.length} ${t('playlist.total')}`}</span>
           )}

@@ -15,6 +15,11 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import {
+  type DashboardLayout,
+  DEFAULT_DASHBOARD_LAYOUT,
+  mergeDashboardLayout,
+} from '@/core/dashboard-layout'
 import type { HealthCheckResult, UnreconciledReason } from '@/core/library/types'
 import type { NotificationChannel } from '@/core/notifications/types'
 import type { GenreCoverage } from '@/core/types'
@@ -80,6 +85,9 @@ export const libraryHealthState = pgTable('library_health_state', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+export type ApprovalPolicy = 'direct' | 'request_only' | 'auto_approve'
+export type ApprovalRequestStatus = 'pending' | 'approved' | 'declined'
+
 export const users = pgTable(
   'users',
   {
@@ -87,6 +95,9 @@ export const users = pgTable(
     username: text('username').unique().notNull(),
     passwordHash: text('password_hash').notNull(),
     isAdmin: boolean('is_admin').default(false).notNull(),
+    approvalPolicy: text('approval_policy').$type<ApprovalPolicy>().notNull().default('direct'),
+    maxOpenRequests: integer('max_open_requests'),
+    approvalThreshold: real('approval_threshold'),
     preferredLocale: text('preferred_locale'),
     email: text('email'),
     oidcIssuer: text('oidc_issuer'),
@@ -119,6 +130,18 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    approvalPolicyValid: check(
+      'users_approval_policy_valid',
+      sql`${table.approvalPolicy} IN ('direct', 'request_only', 'auto_approve')`,
+    ),
+    maxOpenRequestsValid: check(
+      'users_max_open_requests_valid',
+      sql`${table.maxOpenRequests} IS NULL OR ${table.maxOpenRequests} >= 0`,
+    ),
+    approvalThresholdValid: check(
+      'users_approval_threshold_valid',
+      sql`${table.approvalThreshold} IS NULL OR (${table.approvalThreshold} >= 0 AND ${table.approvalThreshold} <= 1)`,
+    ),
     emailUniqueIdx: uniqueIndex('users_email_unique_idx')
       .on(table.email)
       .where(sql`${table.email} IS NOT NULL`),
@@ -279,6 +302,8 @@ export const recommendations = pgTable(
     lidarrError: text('lidarr_error'),
     recommendedReleaseGroupId: text('recommended_release_group_id'),
     recommendedReleaseGroupTitle: text('recommended_release_group_title'),
+    recommendedRecordingMbid: text('recommended_recording_mbid'),
+    recommendedRecordingTitle: text('recommended_recording_title'),
     targetActions: jsonb('target_actions').$type<Record<string, unknown>>(),
     rejectionReason: text('rejection_reason'),
     rejectionReasonText: text('rejection_reason_text'),
@@ -298,6 +323,43 @@ export const recommendations = pgTable(
     statusActedOnIdx: index('recommendations_status_acted_on_idx').on(
       table.status,
       table.actedOnAt,
+    ),
+  }),
+)
+
+export const approvalRequests = pgTable(
+  'approval_requests',
+  {
+    id: integer('id').primaryKey().generatedByDefaultAsIdentity(),
+    token: uuid('token').notNull().defaultRandom().unique(),
+    recommendationId: integer('recommendation_id').references(() => recommendations.id, {
+      onDelete: 'set null',
+    }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').$type<ApprovalRequestStatus>().notNull().default('pending'),
+    options: jsonb('options').$type<Record<string, unknown>>().notNull(),
+    note: text('note'),
+    lastError: text('last_error'),
+    decidedBy: integer('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+  },
+  (table) => ({
+    pendingUnique: uniqueIndex('approval_requests_pending_unique_idx')
+      .on(table.recommendationId, table.userId)
+      .where(sql`${table.status} = 'pending'`),
+    recommendationIdx: index('approval_requests_recommendation_idx').on(table.recommendationId),
+    userIdx: index('approval_requests_user_idx').on(table.userId),
+    decidedByIdx: index('approval_requests_decided_by_idx').on(table.decidedBy),
+    statusCreatedIdx: index('approval_requests_status_created_idx').on(
+      table.status,
+      table.createdAt,
+    ),
+    statusValid: check(
+      'approval_requests_status_valid',
+      sql`${table.status} IN ('pending', 'approved', 'declined')`,
     ),
   }),
 )
@@ -328,6 +390,7 @@ export const jobRuns = pgTable(
     subscriptionIdx: index('idx_job_runs_subscription')
       .on(table.subscriptionId)
       .where(sql`${table.subscriptionId} IS NOT NULL`),
+    startedAtIdIdx: index('job_runs_started_at_id_idx').on(table.startedAt.desc(), table.id.desc()),
     typeStartedAtIdx: index('job_runs_type_started_at_idx').on(table.type, table.startedAt),
   }),
 )
@@ -400,6 +463,30 @@ export const slskdJobs = pgTable(
     targetIdx: index('slskd_jobs_target_id_idx').on(table.targetId),
     recommendationIdx: index('slskd_jobs_recommendation_id_idx').on(table.recommendationId),
   }),
+)
+
+export type ApiTokenScope = 'read' | 'write' | 'admin'
+
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    id: integer('id').primaryKey().generatedByDefaultAsIdentity(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    prefix: text('prefix').notNull(),
+    scope: text('scope').$type<ApiTokenScope>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('api_tokens_user_id_idx').on(table.userId),
+    check('api_tokens_scope_check', sql`${table.scope} in ('read', 'write', 'admin')`),
+    check('api_tokens_hash_check', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+  ],
 )
 
 export const sessions = pgTable(
@@ -580,6 +667,7 @@ export type PlaylistStrategy =
   | 'audition'
 
 export type Preferences = {
+  dashboardLayout?: DashboardLayout
   qualityProfileId: number
   metadataProfileId: number
   rootFolderId?: number
@@ -602,22 +690,37 @@ export type Preferences = {
   channels?: NotificationChannel[]
   digestCron?: string // cron string for the periodic digest webhook; absent/empty = disabled
   lidarrPublicUrl?: string // browser-accessible Lidarr URL (may differ from API URL)
+  lidarrRequireFiles?: boolean // library sync counts only Lidarr albums with files; absent = true
   autoApproveEnabled?: boolean
   autoApproveThreshold?: number // 0-1: minimum score to auto-approve
-  autoApproveMonitorOption?: 'all' | 'new' | 'none'
+  autoApproveMonitorOption?: 'all' | 'new' | 'missing' | 'existing' | 'latest' | 'first' | 'none'
   playlistSize?: number // default 25
   playlistSchedule?: string // cron, default '0 6 * * 1' (Monday 6am)
   playlistEnabled?: boolean // default false
   dismissedHints?: string[] // for UX hints system
   subscriptionMode?: 'active' | 'ai-only' | null
   fanartApiKey?: string
+  audiomuseUrl?: string
+  audiomuseToken?: string
+  audiomuseSkipTlsVerify?: boolean
   metadataFallbackUrl?: string
+  showExperimentalIntegrations?: boolean
   netNewAlbumDiscovery?: boolean // C: promote AI suggestedAlbum to a first-class album rec
+  listenbrainzLoveEnabled?: boolean
+  listenbrainzPlaylistEnabled?: boolean
+  lastfmLoveEnabled?: boolean
+  spotifyAutoloadDashboard?: boolean
+  excludeRecentlyPlayed?: ExcludeRecentlyPlayed
 }
+
+export type ExcludeRecentlyPlayed = { enabled: boolean; windowDays: number }
+
+const DEFAULT_EXCLUDE_RECENTLY_PLAYED: ExcludeRecentlyPlayed = { enabled: false, windowDays: 30 }
 
 export type ScoringWeights = Preferences['scoringWeights']
 
 export const DEFAULT_PREFERENCES: Preferences = {
+  dashboardLayout: DEFAULT_DASHBOARD_LAYOUT,
   qualityProfileId: 1,
   metadataProfileId: 1,
   scheduleCron: '0 0 * * 0',
@@ -642,6 +745,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   dismissedHints: [],
   subscriptionMode: null,
   netNewAlbumDiscovery: false,
+  listenbrainzLoveEnabled: false,
+  listenbrainzPlaylistEnabled: false,
+  lastfmLoveEnabled: false,
+  spotifyAutoloadDashboard: false,
+  showExperimentalIntegrations: false,
+  excludeRecentlyPlayed: DEFAULT_EXCLUDE_RECENTLY_PLAYED,
 }
 
 /**
@@ -654,9 +763,14 @@ export function mergePreferences(raw: Partial<Preferences> | null | undefined): 
   const merged: Preferences = {
     ...DEFAULT_PREFERENCES,
     ...partial,
+    dashboardLayout: mergeDashboardLayout(partial.dashboardLayout),
     scoringWeights: {
       ...DEFAULT_PREFERENCES.scoringWeights,
       ...partial.scoringWeights,
+    },
+    excludeRecentlyPlayed: {
+      ...DEFAULT_EXCLUDE_RECENTLY_PLAYED,
+      ...partial.excludeRecentlyPlayed,
     },
   }
   if ((!merged.channels || merged.channels.length === 0) && merged.webhookUrl) {
@@ -818,8 +932,23 @@ export const recordingArtistCache = pgTable('recording_artist_cache', {
   recordingMbid: uuid('recording_mbid').primaryKey(),
   artistMbid: uuid('artist_mbid').notNull(),
   artistName: text('artist_name').notNull(),
+  recordingTitle: text('recording_title'),
   cachedAt: timestamp('cached_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+// Rebuildable HTTP cache: excluded from backups and backend migration, safe to truncate.
+export const musicbrainzCache = pgTable(
+  'musicbrainz_cache',
+  {
+    key: text('key').primaryKey(),
+    kind: text('kind').notNull(),
+    status: integer('status').notNull(),
+    body: jsonb('body'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('musicbrainz_cache_expires_at_idx').on(table.expiresAt)],
+)
 
 export const artistBlocks = pgTable(
   'artist_blocks',
@@ -854,6 +983,7 @@ export const albumBlocks = pgTable(
       .notNull()
       .references(() => artists.id, { onDelete: 'cascade' }),
     releaseGroupMbid: text('release_group_mbid').notNull(),
+    albumTitle: text('album_title'),
     reason: text('reason'),
     reasonText: text('reason_text'),
     source: text('source').notNull().default('rejection'),

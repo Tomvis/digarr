@@ -80,7 +80,6 @@ vi.mock('@/db/queries/playlists', () => ({
   updatePlaylist: vi.fn(),
   deletePlaylist: vi.fn(),
   replacePlaylistTracks: vi.fn(),
-  getPlaylistsDueForGeneration: vi.fn(),
 }))
 
 vi.mock('@/db/queries/jobs', () => ({ getLatestPlaylistGeneration: vi.fn() }))
@@ -105,6 +104,11 @@ vi.mock('@/db/queries/settings', () => ({
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      leftJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    }),
+  })
   const exports = vi.mocked(await import('@/db/queries/playlist-exports'))
   exports.getPlaylistExports.mockResolvedValue([])
   exports.getPlaylistExport.mockResolvedValue(null)
@@ -321,13 +325,13 @@ describe('playlist configuration writes', () => {
       body: JSON.stringify(requestBody(method, config)),
     })
     expect(res.status).toBe(method === 'POST' ? 201 : 204)
+    if (method === 'PATCH' && config === undefined) {
+      expect(updatePlaylist).not.toHaveBeenCalled()
+      return
+    }
     const saved =
       method === 'POST' ? createPlaylist.mock.calls[0]?.[1] : updatePlaylist.mock.calls[0]?.[2]
-    if (method === 'PATCH' && config === undefined) {
-      expect(saved).not.toHaveProperty('config')
-    } else {
-      expect(saved).toHaveProperty('config', null)
-    }
+    expect(saved).toHaveProperty('config', null)
   })
 
   it.each(
@@ -374,14 +378,34 @@ describe('GET /api/v1/playlists/:id', () => {
     expect(getLatestPlaylistGeneration).toHaveBeenCalledWith(mockDb, 1, USER_ID)
   })
 
-  it('returns the latest failed run without inventing an older resolution', async () => {
+  it('returns the latest failed run with per-target outcomes and no older resolution', async () => {
     const { getLatestPlaylistGeneration } = vi.mocked(await import('@/db/queries/jobs'))
+    const exports = [
+      {
+        targetId: 1,
+        targetName: 'Plex',
+        targetType: 'plex-playlist',
+        status: 'submitted' as const,
+        verified: true,
+        itemsAdded: 3,
+        itemsSkipped: 0,
+      },
+      {
+        targetId: 2,
+        targetName: 'Spotify',
+        targetType: 'spotify-playlist',
+        status: 'failed' as const,
+        verified: false,
+        error: 'Spotify API 500',
+      },
+    ]
     getLatestPlaylistGeneration.mockResolvedValue({
       jobId: 8,
       status: 'failed',
       startedAt: new Date('2026-01-01'),
       completedAt: new Date('2026-01-01'),
       resolution: null,
+      exports,
     })
     const res = await createTestApp(makeDeps(), USER_ID).request('/api/v1/playlists/1')
     expect(res.status).toBe(200)
@@ -391,8 +415,47 @@ describe('GET /api/v1/playlists/:id', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
       completedAt: '2026-01-01T00:00:00.000Z',
       resolution: null,
+      exports,
     })
   })
+
+  it.each([
+    {
+      matches: [{ artistName: 'Radiohead', artistMbid: 'artist-1', recommendationId: 12 }],
+      expected: 12,
+    },
+    {
+      matches: [{ artistName: 'Radiohead', artistMbid: 'artist-1', recommendationId: null }],
+      expected: undefined,
+    },
+    {
+      matches: [
+        { artistName: 'Radiohead', artistMbid: 'artist-1', recommendationId: 12 },
+        { artistName: 'Radiohead', artistMbid: 'artist-2', recommendationId: null },
+      ],
+      expected: undefined,
+    },
+  ])(
+    'maps Audition approvals only for an unambiguous pending artist: $expected',
+    async ({ matches, expected }) => {
+      const { getPlaylistWithTracks } = vi.mocked(await import('@/db/queries/playlists'))
+      getPlaylistWithTracks.mockResolvedValue({
+        playlist: { ...mockPlaylist, strategy: 'audition' },
+        tracks: [mockTrack],
+      } as never)
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(matches) }),
+        }),
+      })
+      const res = await createTestApp(makeDeps(), USER_ID).request('/api/v1/playlists/1')
+      expect(res.status).toBe(200)
+      expect(
+        ((await res.json()) as { tracks: Array<{ recommendationId?: number }> }).tracks[0]
+          ?.recommendationId,
+      ).toBe(expected)
+    },
+  )
 
   it('hides cross-user playlist with 404', async () => {
     const app = createTestApp(makeDeps(), 999) // different user
@@ -400,6 +463,7 @@ describe('GET /api/v1/playlists/:id', () => {
     expect(res.status).toBe(404)
     const { getLatestPlaylistGeneration } = vi.mocked(await import('@/db/queries/jobs'))
     expect(getLatestPlaylistGeneration).not.toHaveBeenCalled()
+    expect(mockDb.select).not.toHaveBeenCalled()
   })
 
   it('returns 404 for missing playlist', async () => {

@@ -9,6 +9,7 @@ export type LidarrArtist = {
   artistName: string
   foreignArtistId: string // This is the MBID
   qualityProfileId: number
+  metadataProfileId?: number
   rootFolderPath: string
   monitored: boolean
   status: string
@@ -20,9 +21,21 @@ export type QualityProfile = {
   name: string
 }
 
+type ProfileTypeItem = { albumType?: { name?: string }; allowed?: boolean }
+
 export type MetadataProfile = {
   id: number
   name: string
+  primaryAlbumTypes?: ProfileTypeItem[]
+  secondaryAlbumTypes?: ProfileTypeItem[]
+  releaseStatuses?: Array<{ releaseStatus?: { name?: string }; allowed?: boolean }>
+}
+
+export type LidarrAlbumLookup = {
+  foreignAlbumId: string
+  albumType?: string
+  secondaryTypes?: string[]
+  releases?: Array<{ status?: string }>
 }
 
 export type RootFolder = {
@@ -98,17 +111,32 @@ export type LidarrManualImportFile = {
   disableReleaseSwitching: false
 }
 
+export type LidarrTag = { id: number; label: string }
+
 export type AddArtistOptions = {
-  monitorOption?: 'all' | 'new' | 'none'
+  tags?: number[]
+  monitorOption?: 'all' | 'new' | 'missing' | 'existing' | 'latest' | 'first' | 'none'
 }
 
 // digarr's monitor vocabulary is not Lidarr's. MonitorTypes has no `new`
 // member, so forwarding it verbatim fails JSON deserialization with a 400
 // before validation even runs (#611). Keep every digarr value mapped here --
 // the `satisfies` makes a new one a compile error rather than a runtime 400.
+const SEARCHING_MONITOR_OPTIONS: ReadonlySet<string> = new Set([
+  'all',
+  'missing',
+  'existing',
+  'latest',
+  'first',
+])
+
 export const LIDARR_MONITOR_TYPES = {
   all: 'all',
   new: 'future',
+  missing: 'missing',
+  existing: 'existing',
+  latest: 'latest',
+  first: 'first',
   none: 'none',
 } as const satisfies Record<NonNullable<AddArtistOptions['monitorOption']>, string>
 
@@ -120,6 +148,9 @@ const DEFAULT_ARTIST_LIST_TIMEOUT_SECONDS = 120
 export type LidarrClientOptions = {
   listTimeoutMs?: number
 }
+
+const WANTED_PAGE_SIZE = 250
+const WANTED_MAX_PAGES = 100
 
 export function createLidarrClient(
   url: string,
@@ -154,6 +185,7 @@ export function createLidarrClient(
       artistName: a.artistName as string,
       foreignArtistId: a.foreignArtistId as string,
       qualityProfileId: a.qualityProfileId as number,
+      metadataProfileId: a.metadataProfileId as number | undefined,
       rootFolderPath: a.rootFolderPath as string,
       monitored: a.monitored as boolean,
       status: a.status as string,
@@ -196,6 +228,14 @@ export function createLidarrClient(
     return http.get<LidarrArtist[]>(`/api/v1/artist/lookup?${encoded}`)
   }
 
+  // An album-id lookup is not filtered by any metadata profile, so it reports
+  // the types Lidarr would test even when the artist's album list omits them.
+  async function lookupAlbum(releaseGroupMbid: string): Promise<LidarrAlbumLookup | null> {
+    const encoded = new URLSearchParams({ term: `lidarr:${releaseGroupMbid}` }).toString()
+    const raw = await http.get<LidarrAlbumLookup[]>(`/api/v1/album/lookup?${encoded}`)
+    return raw.find((a) => a.foreignAlbumId === releaseGroupMbid) ?? null
+  }
+
   async function getQualityProfiles(): Promise<QualityProfile[]> {
     if (qualityProfileCache !== null) return qualityProfileCache
     const profiles = await http.get<QualityProfile[]>('/api/v1/qualityprofile')
@@ -216,12 +256,13 @@ export function createLidarrClient(
   // exist". Mirror the approve dialog: snap unknown ids to the first
   // available profile.
   function snapProfileId(
-    requested: number,
+    requested: number | undefined,
     profiles: { id: number; name: string }[],
     kind: string,
   ): number {
     const first = profiles[0]
     if (!first) throw new Error(`No ${kind} profiles configured in Lidarr`)
+    if (requested === undefined) return first.id
     if (profiles.some((p) => p.id === requested)) return requested
     console.warn(
       `[lidarr] ${kind} profile id ${requested} not found, falling back to "${first.name}" (id ${first.id})`,
@@ -239,8 +280,8 @@ export function createLidarrClient(
   async function addArtist(
     foreignArtistId: string,
     artistName: string,
-    qualityProfileId: number,
-    metadataProfileId: number,
+    qualityProfileId: number | undefined,
+    metadataProfileId: number | undefined,
     rootFolderId?: number | null,
     options?: AddArtistOptions,
   ): Promise<LidarrArtist> {
@@ -266,13 +307,22 @@ export function createLidarrClient(
       metadataProfileId: snapProfileId(metadataProfileId, metadataProfiles, 'metadata'),
       rootFolderPath: folder.path,
       monitored: true,
+      tags: options?.tags ?? [],
       addOptions: {
         monitor: LIDARR_MONITOR_TYPES[monitorOption],
-        // Derived from digarr's value, not the mapped one, so a future value
-        // that maps onto `all` does not silently inherit the search.
-        searchForMissingAlbums: monitorOption === 'all',
+        // Options that monitor existing albums search for them right away;
+        // `new` and `none` only wait for future releases.
+        searchForMissingAlbums: SEARCHING_MONITOR_OPTIONS.has(monitorOption),
       },
     })
+  }
+
+  function getTags(): Promise<LidarrTag[]> {
+    return http.get<LidarrTag[]>('/api/v1/tag')
+  }
+
+  function createTag(label: string): Promise<LidarrTag> {
+    return http.post<LidarrTag>('/api/v1/tag', { label })
   }
 
   async function getAlbums(artistId: number): Promise<LidarrAlbum[]> {
@@ -298,12 +348,24 @@ export function createLidarrClient(
   }
 
   async function getWantedMissing(): Promise<LidarrWantedMissing[]> {
-    const raw = await http.get<unknown>('/api/v1/wanted/missing')
-    const items = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === 'object' && Array.isArray((raw as { records?: unknown }).records)
-        ? ((raw as { records: unknown[] }).records as Record<string, unknown>[])
-        : []
+    const items: Record<string, unknown>[] = []
+    for (let page = 1; page <= WANTED_MAX_PAGES; page += 1) {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(WANTED_PAGE_SIZE),
+        includeArtist: 'true',
+      })
+      const raw = await http.get<unknown>(`/api/v1/wanted/missing?${params}`)
+      if (Array.isArray(raw)) {
+        items.push(...(raw as Record<string, unknown>[]))
+        break
+      }
+      const body = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+      const records = Array.isArray(body.records) ? (body.records as Record<string, unknown>[]) : []
+      items.push(...records)
+      const total = typeof body.totalRecords === 'number' ? body.totalRecords : null
+      if (records.length < WANTED_PAGE_SIZE || (total !== null && items.length >= total)) break
+    }
 
     return items.map((album) => ({
       id: album.id as number,
@@ -387,6 +449,30 @@ export function createLidarrClient(
     return http.get<LidarrTrack[]>(`/api/v1/track?${query}`)
   }
 
+  async function canListPath(path: string): Promise<boolean> {
+    const separator = path.includes('\\') ? '\\' : '/'
+    const directory = path.replace(/[\\/]+$/, '') + separator
+    const params = new URLSearchParams({ path: directory, includeFiles: 'false' })
+    const listing = await http.get<{ directories?: unknown }>(`/api/v1/filesystem?${params}`, {
+      retries: 0,
+    })
+    if (!Array.isArray(listing.directories)) return false
+    // Lidarr returns an empty list for missing folders too; verify the parent entry.
+    const trimmed = directory.slice(0, -1)
+    const index = trimmed.lastIndexOf(separator)
+    if (index < 0 || trimmed === '') return trimmed === ''
+    const parent = trimmed.slice(0, index + 1)
+    const parentParams = new URLSearchParams({ path: parent, includeFiles: 'false' })
+    const result = await http.get<{ directories?: Array<{ path?: string }> }>(
+      `/api/v1/filesystem?${parentParams}`,
+      { retries: 0 },
+    )
+    return (
+      Array.isArray(result.directories) &&
+      result.directories.some((entry) => entry.path?.replace(/[\\/]+$/, '') === trimmed)
+    )
+  }
+
   async function testConnection(): Promise<ServiceTestResult> {
     try {
       const profiles = await http.get<QualityProfile[]>('/api/v1/qualityprofile')
@@ -401,9 +487,12 @@ export function createLidarrClient(
   }
 
   return {
+    getTags,
+    createTag,
     getArtists,
     findArtistByMbid,
     lookupArtist,
+    lookupAlbum,
     addArtist,
     getAlbums,
     getWantedMissing,
@@ -419,5 +508,6 @@ export function createLidarrClient(
     getMetadataProfiles,
     getRootFolders,
     testConnection,
+    canListPath,
   }
 }

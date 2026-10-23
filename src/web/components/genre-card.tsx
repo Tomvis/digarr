@@ -22,7 +22,7 @@ export function GenreCard({ name, slug, artistCount, exampleArtists }: GenreCard
       style={{ borderTopColor: `hsl(${hue}, 45%, 45%)`, borderTopWidth: '3px' }}
     >
       <p
-        className="text-sm font-semibold text-text group-hover:text-accent transition-colors truncate"
+        className="text-sm font-semibold text-text group-hover:text-accent-text transition-colors truncate"
         title={name}
       >
         {name}
@@ -33,7 +33,7 @@ export function GenreCard({ name, slug, artistCount, exampleArtists }: GenreCard
           : t('genres.artistCountPlural').replace('{0}', String(artistCount))}
       </p>
       {exampleArtists && exampleArtists.length > 0 && (
-        <p className="text-micro-lg text-muted/70 mt-1.5 truncate">{exampleArtists.join(', ')}</p>
+        <p className="text-micro text-muted/70 mt-1.5 truncate">{exampleArtists.join(', ')}</p>
       )}
     </button>
   )

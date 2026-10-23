@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getLibrarySources, triggerLibrarySync } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { Button } from './ui/button'
 
 function statusColor(status: string | null): string {
-  if (status === 'completed') return 'text-green-500'
-  if (status === 'failed') return 'text-red-500'
-  if (status === 'running') return 'text-amber-500'
+  if (status === 'completed') return 'text-approve'
+  if (status === 'failed') return 'text-reject'
+  if (status === 'running') return 'text-warning'
   return 'text-muted'
 }
 
@@ -28,16 +29,24 @@ export function LibrarySourcesPanel() {
     return t('librarySources.hoursAgo').replace('{0}', String(Math.floor(ms / 3600_000)))
   }
 
+  // The server flips a source to 'running' a moment after the 202, so keep polling briefly
+  // even when the first refetch still shows the old status.
+  const pollUntil = useRef(0)
+
   const sourcesQuery = useQuery({
     queryKey: ['library', 'sources'],
     queryFn: getLibrarySources,
     refetchInterval: (query) =>
-      query.state.data?.sources?.some((s) => s.lastSyncStatus === 'running') ? 5000 : false,
+      query.state.data?.sources?.some((s) => s.lastSyncStatus === 'running') ||
+      Date.now() < pollUntil.current
+        ? 3000
+        : false,
   })
 
   const syncMutation = useMutation({
     mutationFn: triggerLibrarySync,
     onSuccess: () => {
+      pollUntil.current = Date.now() + 15_000
       toast.success(t('librarySources.syncStarted'))
       queryClient.invalidateQueries({ queryKey: ['library', 'sources'] })
     },
@@ -54,25 +63,28 @@ export function LibrarySourcesPanel() {
   const sourcePending = (sourceId: string) => isSyncing && pendingTarget === sourceId
 
   const sources = sourcesQuery.data?.sources ?? []
+  const anyRunning = sources.some((s) => s.lastSyncStatus === 'running')
+  const busy = isSyncing || anyRunning
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-sm font-semibold text-text uppercase tracking-wide">
-          {t('librarySources.title')}
-        </h2>
-        <button
-          type="button"
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => {
             setPendingTarget(null)
             syncMutation.mutate(undefined)
           }}
-          disabled={isSyncing}
-          className="flex items-center gap-2 px-3 py-1.5 bg-accent text-accent-fg rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+          disabled={busy}
         >
-          <RefreshCw size={14} className={allPending ? 'animate-spin' : undefined} />
+          <RefreshCw
+            size={14}
+            className={allPending || anyRunning ? 'animate-spin' : undefined}
+            aria-hidden="true"
+          />
           {t('librarySources.syncAll')}
-        </button>
+        </Button>
       </div>
 
       {sources.length === 0 ? (
@@ -113,33 +125,42 @@ export function LibrarySourcesPanel() {
                       setPendingTarget(row.source)
                       syncMutation.mutate(row.source)
                     }}
-                    disabled={isSyncing}
+                    disabled={busy}
                     className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text border border-border rounded hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
                   >
                     <RefreshCw
                       size={12}
-                      className={sourcePending(row.source) ? 'animate-spin' : undefined}
+                      className={
+                        sourcePending(row.source) || row.lastSyncStatus === 'running'
+                          ? 'animate-spin'
+                          : undefined
+                      }
                     />
-                    {t('librarySources.syncNow')}
+                    {row.lastSyncStatus === 'running'
+                      ? t('librarySources.syncing')
+                      : t('librarySources.syncNow')}
                   </button>
                 </div>
 
                 {counts != null && (
                   <div className="space-y-2">
                     <div className="text-xs text-muted">
-                      {counts.total} artists
+                      {t('librarySources.artistCount').replace('{0}', String(counts.total))}
                       {typeof counts.albumsSynced === 'number'
-                        ? ` - ${counts.albumsSynced} albums`
+                        ? ` - ${t('librarySources.albumCount').replace('{0}', String(counts.albumsSynced))}`
                         : ''}
                       {' - '}
-                      {counts.matchedMbid} MBID, {counts.matchedNameExact} exact,{' '}
-                      {counts.matchedNameAnchored} anchored, {counts.matchedDisambiguated}{' '}
-                      disambiguated, {unreconciled} unreconciled
+                      {t('librarySources.matchSummary')
+                        .replace('{0}', String(counts.matchedMbid))
+                        .replace('{1}', String(counts.matchedNameExact))
+                        .replace('{2}', String(counts.matchedNameAnchored))
+                        .replace('{3}', String(counts.matchedDisambiguated))
+                        .replace('{4}', String(unreconciled))}
                     </div>
 
                     {typeof counts.mbApiCallsFailed === 'number' && counts.mbApiCallsFailed > 0 && (
                       <div
-                        className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                        className="flex items-start gap-1.5 text-xs text-warning"
                         data-testid={`mb-warning-${row.source}`}
                       >
                         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
@@ -170,7 +191,7 @@ export function LibrarySourcesPanel() {
                 )}
 
                 {row.lastSyncError && (
-                  <div className="text-xs text-red-500">{row.lastSyncError}</div>
+                  <div className="text-xs text-reject">{row.lastSyncError}</div>
                 )}
               </div>
             )

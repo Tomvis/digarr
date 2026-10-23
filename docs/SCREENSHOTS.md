@@ -7,6 +7,8 @@ The descriptions below reflect v2.0.1. The captures predate its genre-priority c
 `bun scripts/capture-screenshots.ts`; see that script's header for environment
 variables.
 
+The web UI refresh tracked in [#889](https://github.com/iuliandita/digarr/issues/889) changes the font, type scale and surface styling; these captures predate it and will be recaptured once the refresh is complete.
+
 In v2.0.0, first-time browser setup starts with account creation before the existing wizard. These captures do not show that onboarding order; form layouts and translated labels are unchanged.
 
 ## Dashboard (dark)
@@ -14,6 +16,10 @@ In v2.0.0, first-time browser setup starts with account creation before the exis
 ![Dashboard](screenshots/dashboard-dark.png)
 
 In v1.19.0, listening tiles distinguish an unconfigured account, empty history, and a failed fetch. Network or request failures retain cached entries with a retry notice. In v2.0.0, upstream failures returned by the API as HTTP 200 with `status: error` also retain cached entries and show a retry notice; v1.19.0 can replace them with an empty error state ([#770](https://github.com/iuliandita/digarr/issues/770)).
+
+The upcoming customizable dashboard (#995) replaces the fixed layout shown above. Customize lists every card, including hidden and empty cards, with visibility, size, pointer drag handles, move buttons, and arrow-key reordering. Screen readers hear the new position. Small, medium, and large span one, two, and three desktop columns and fill the width on phones. Reset to default restores Today's Pick, Your decisions, Listening, Genres, and Subscriptions. The layout follows the signed-in account. Empty cards hide unless Show empty cards is enabled; listening-source failures remain visible in the affected view. When Today's Pick has no recommendations, Run Scan stays available in the dashboard header.
+
+Your decisions switches between Approved and All; Listening switches between Top artists and Recently Played. Card headings link to their source page. Genres, Subscriptions, Discover's pending and decision views, and Settings > Connections expose the same visibility preference through Show on dashboard. The existing screenshot capture script still navigates to `/` for both dashboard themes; its selectors need no update. The images above predate these controls.
 
 ## Dashboard (light)
 
@@ -23,21 +29,27 @@ In v1.19.0, listening tiles distinguish an unconfigured account, empty history, 
 
 ![Discover](screenshots/discover.png)
 
-The normal Run Scan action is artist-focused. Use Library Gap-Fill or Release Radar for album recommendations. The empty state also links to the default-off net-new album discovery setting. In v2.0.0, that toggle persists; v1.19.0 cannot save it ([#791](https://github.com/iuliandita/digarr/issues/791)). The links reveal the requested discovery mode or setting. In v2.0.0, non-admin saves omit global writes and shared AudioDB/Wikidata controls are shown only to admins; personal image settings stay visible. Admins receive an explicit partial-save notice if only their later global save fails. v1.19.0 retains the false save failure described in [#792](https://github.com/iuliandita/digarr/issues/792); read back user preferences there to verify the saved value. The existing admin layout is unchanged.
+The normal Run Scan action is artist-focused. Use Library Gap-Fill or Release Radar for album recommendations. The empty state also links to the default-off net-new album discovery setting. In v2.0.0, that toggle persists; v1.19.0 cannot save it ([#791](https://github.com/iuliandita/digarr/issues/791)). The links reveal the requested discovery mode or setting. Recommendation saves omit global writes. Image-source controls now live in Connections > Artist images; admins can edit them and members see a read-only row. An image save reports partial success if its later server write fails. v1.19.0 retains the false save failure described in [#792](https://github.com/iuliandita/digarr/issues/792); read back user preferences there to verify the saved value. The older capture predates the Connections picker and Artist images row.
 
 Since v1.19.0, Discover can order and browse genre-priority groups without changing scores. The Audition queue retains a dismissible summary of unavailable-preview reasons after skipping items or finishing.
+
+The **Get missing albums** action opens a studio-album checklist from a recommendation's expanded artist details, including Gap-Fill results and approved artists. All missing albums start selected; untick any you do not want and check the selected count before choosing **Get selected albums**. The dialog reports when nothing is missing or a lookup fails. Partial approval keeps failed albums visible for retry and shows how many succeeded and failed. Approval means the target accepted the album request, not that its download finished. Only MusicBrainz Album groups without secondary types appear, using your synced library to decide what is missing. Lidarr monitors and searches only the selected albums. These captures predate the dialog.
+
+Since the UI refresh (captures above predate it), the Discover toolbar is one row: status and kind controls, the view switch, a Filters popover (discovery order and decades) and a More menu with the bulk actions (approve above or reject below a threshold, Audition, Select), export, metadata refresh, Clear All and feedback insights. On small screens it is two rows and the view switch moves into More. Grid cards lead with the artist image and keep a single action row; streaming links and the metadata cache dot sit in the expanded card. Reject opens the same reason picker in every view, with a one-click "Reject without a reason" path. The mood search is a button until you click it or press `/`. Keyboard shortcuts are listed in the `?` dialog.
 
 ## Discovery Modes
 
 ![Discovery Modes](screenshots/discovery-modes.png)
 
-Discovery Modes lives on its own page under the Discover menu at `/discover/modes`. The shipped modes are ListenBrainz (Artist Radio, User Radio, Tag Radio, Similar Users Quick/Deep), Release Radar, Library Gap-Fill, Similar Artist Web, Artist Relationships (MusicBrainz graph), Labels (Discogs co-label artists), Charts (Last.fm global/regional), Deezer Flow, Spotify Saved Albums, Spotify Followed Artists, TIDAL Favorite Artists, and Subsonic Starred. Modes that need a connected account stay disabled until you connect it, and each blocked card shows an explicit reason. Manual runs preflight Artist Radio seeds and record job-backed feedback instead of a blind "started" toast. A `?mode=<id>` deep link scrolls to, focuses, and highlights the requested mode card.
+The capture above predates the unified Discovery Modes page at `/discovery-modes`, reached from the Discovery Modes tab on Discover. Your modes now shows compact scheduled and recently run rows. Run a mode opens a searchable picker, where connection requirements and experimental modes appear. Picking a mode opens its Easy/Advanced form with Run now and Schedule actions. Schedule stays in that card, with a preset select and Custom cron input; More options holds the name, artist cap, and scoring preset. Saved rows expand to the same compact editor. Presets and CSV/M3U/XSPF imports live in the add flow. Old `/discover/modes` and `/subscriptions` links redirect; `?mode=<id>` still opens and focuses the requested form.
 
-TIDAL Favorite Artists carries an "Experimental" badge on both its mode card (visible in the image above) and its Settings connect card under Your Connections. Live-account validation of connect, refresh, and populated favorite-artist results is deferred; see [TIDAL feedback](AUTHENTICATION.md#tidal-feedback) for how to report a test safely.
+The picker uses the same Show experimental integrations preference as Connections. TIDAL Favorite Artists remains experimental; live-account validation is deferred. See [TIDAL feedback](AUTHENTICATION.md#tidal-feedback).
 
 ## Search
 
 ![Search](screenshots/search.png)
+
+Since the UI refresh, the provider toggles sit under a collapsed Sources section, because every available source is searched by default; its title counts the sources narrowing a search. TIDAL and Bandcamp choices now appear only when the admin enables Show experimental integrations in the Connections picker. The search capture predates this switch.
 
 ## Genres
 
@@ -59,11 +71,17 @@ In v1.19.0, playlist details also show the latest local generation outcome, sele
 
 ![Subscriptions](screenshots/subscriptions.png)
 
-## Library Health
+This historical capture shows the retired standalone page. Its schedules, history, pause/resume, bulk controls, presets, and imports now live on Discovery Modes. Settings > Schedule collects the scan, mode, playlist, library-sync, and notification-digest schedules with edit links, and holds the admin Scheduled generation switch. No screenshots were regenerated for this change.
+
+## Library - Health
+
+Open `/library?tab=health`. The historical capture predates the shared Library tabs.
 
 ![Library Health](screenshots/library-health.png)
 
-## Library Reconciliation
+## Library - Reconciliation
+
+Open `/library?tab=reconciliation`. The historical capture predates the shared Library tabs.
 
 ![Library Reconciliation](screenshots/library-reconciliation.png)
 
@@ -73,7 +91,7 @@ Shipped in `v0.17.0`: unreconciled-artist review plus manual correct/ignore over
 
 ![Library Sources Panel](screenshots/library-sources.png)
 
-Admin panel on the Library Health page. Shipped in `v0.17.0` and expanded in `v0.18.0` with per-source album sync counts and snapshot status. Polished in `v0.19.0` with album sync coverage summaries.
+Admin panel on Library > Health. Shipped in `v0.17.0` and expanded in `v0.18.0` with per-source album sync counts and snapshot status. Polished in `v0.19.0` with album sync coverage summaries.
 
 ## Analytics
 
@@ -85,7 +103,7 @@ The Discovery over time chart shows per-batch recommendation totals, with the ap
 
 ![Settings](screenshots/settings.png)
 
-The tab row keeps native horizontal scrolling and shows conditional chevrons plus edge fades when more tabs are hidden in either direction. Selecting or deep-linking a tab scrolls it into view.
+Since the UI refresh, Settings sections sit in a grouped side menu (Personal, Library & services, Admin) on desktop and a grouped select on small screens; the capture above predates it. Connections now lists saved services only, plus the Artist images row for built-in image providers. Add connection opens a grouped searchable picker with the admin experimental switch at the bottom; the screenshots predate this layout. Each listed service is a collapsed row with its status (Not configured, Saved, Test passed, Test passed - not saved yet, Error, or Connected for OAuth links), and rarely used fields sit in collapsed Advanced blocks.
 
 In v1.18.0, the Settings > Targets flow includes `slskd` target creation with an optional linked Lidarr target and a download root visible to Lidarr. The Plex connection card also has a per-user listener selector populated by Test Connection; these controls are newer than the capture above.
 
@@ -97,14 +115,24 @@ In v2.0.0, Settings > Administration asks for confirmation before uploading a se
 
 ![Account](screenshots/settings-account.png)
 
-The Account page offers password-confirmed SSO linking when OIDC is enabled and the local account is not linked yet. Linked accounts show their status; callback outcomes appear in a dismissible message. This capture uses a sample account with OIDC enabled.
+The Account page offers password-confirmed SSO linking when OIDC is enabled and the local account is not linked yet. Linked accounts show their status; callback outcomes appear in a dismissible message. A Tips section brings back dismissed help tips. This capture uses a sample account with OIDC enabled.
+
+The current Account page also manages personal notification channels for your own request decisions. Subscribe explicitly to request outcomes; new channels leave the event off. These controls are newer than the capture above.
+
+The current Account page also manages personal API tokens. After creating a token, its one-time reveal includes a copyable MCP client configuration with `type: "http"`, the endpoint URL, and the bearer header. The capture above predates these controls; closing the dialog removes the token and configuration from view.
 
 ## Settings > Connections > Your Connections
 
 ![Your Connections](screenshots/settings-your-connections.png)
 
-This older capture shows ListenBrainz, Last.fm, Spotify, Deezer, and TIDAL, plus the top of the Plex card. The current Your Connections UI also includes Jellyfin, Emby, Subsonic, and Discogs. Input values and the instance host are redacted in the capture. The TIDAL card carries the Experimental badge while live-account connect, refresh, and populated favorite-artist results remain unverified; connecting TIDAL requires an admin to configure the app credentials first. See [TIDAL feedback](AUTHENTICATION.md#tidal-feedback) for safe community reporting.
+This older capture shows ListenBrainz, Last.fm, Spotify, Deezer, and TIDAL, plus the top of the Plex card. Jellyfin, Emby, Subsonic/Navidrome, and Discogs are also supported. The current list shows only saved services, including incomplete credentials; unconfigured services are in Add connection. The capture above shows the old all-services list. Input values and the instance host are redacted in the capture. The TIDAL card carries the Experimental badge while live-account connect, refresh, and populated favorite-artist results remain unverified; connecting TIDAL requires an admin to configure the app credentials first. See [TIDAL feedback](AUTHENTICATION.md#tidal-feedback) for safe community reporting.
 
-## Settings > Blocked
+The capture script can produce `settings-connections-picker.png` from the open Add connection panel. It uses the Add connection and Search connections accessible names; that artifact is not checked in yet.
 
-The screenshot capture script can produce `settings-blocked.png` for Settings > Blocked. That surface now includes separate permanent artist and album blocklists; no `settings-blocked.png` artifact is currently checked in.
+## Settings > Recommendations > Blocked
+
+The screenshot capture script can produce `settings-blocked.png` by opening `/settings?tab=blocked`, which lands on the Blocked section at the bottom of Settings > Recommendations. That section holds separate permanent artist and album blocklists; no `settings-blocked.png` artifact is currently checked in.
+
+## User management and approval requests
+
+The current user-management page adds per-user approval policies, a trusted score threshold, and an optional open-request limit. Its Requests section shows the admin queue with scores, reasons, and approve/decline decisions with optional notes. Members see their pending and declined requests on Discover > Approved. The existing captures predate these controls; see [approval policies](AUTHENTICATION.md#approval-policies) for the workflow.

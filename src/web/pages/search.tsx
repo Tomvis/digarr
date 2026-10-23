@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { SearchIcon } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
 import { SearchResultCard } from '../components/search-result-card'
+import { Disclosure } from '../components/ui/disclosure'
+import { PageHeader } from '../components/ui/page-header'
 import { getSearchSources, searchArtists } from '../lib/api'
 import { useI18n } from '../lib/i18n'
 import { cn } from '../lib/utils'
@@ -52,7 +54,9 @@ export function SearchPage() {
   })
 
   const sourceState = new Map(sourceData?.sources.map((source) => [source.id, source]))
-  const renderedSources = SOURCE_ORDER.map((id) => {
+  const renderedSources = SOURCE_ORDER.filter((id) =>
+    sourceData ? sourceState.has(id) : id !== 'tidal' && id !== 'bandcamp',
+  ).map((id) => {
     const known = sourceState.get(id)
     const style = SOURCE_STYLES[id]
     return {
@@ -95,10 +99,7 @@ export function SearchPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-text mb-1">{t('search.title')}</h1>
-        <p className="text-sm text-muted">{t('search.subtitle')}</p>
-      </div>
+      <PageHeader title={t('search.title')} description={t('search.subtitle')} />
 
       {/* Search input */}
       <div className="relative">
@@ -115,53 +116,65 @@ export function SearchPage() {
         />
       </div>
 
-      {/* Source filter toggles */}
-      <div className="flex flex-wrap gap-2">
-        {renderedSources.map((s) => {
-          const isActive = effectiveActiveSources.includes(s.id)
-          return (
-            <button
-              key={s.id}
-              type="button"
-              disabled={!s.available}
-              onClick={() => toggleSource(s.id)}
-              title={!s.available ? s.reason : undefined}
-              className={cn(
-                'text-xs px-2.5 py-1 rounded-full border font-medium transition-colors',
-                isActive
-                  ? s.active
-                  : s.available
-                    ? 'bg-surface border-border text-muted hover:text-text hover:border-accent/40'
-                    : 'bg-surface border-border text-muted/60 opacity-50 cursor-not-allowed',
-              )}
-            >
-              {s.label}
-              {s.stability === 'experimental' && (
-                <span className="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-600">
-                  {t('search.experimental')}
-                </span>
-              )}
-            </button>
-          )
-        })}
-        {activeSources.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setActiveSources([])}
-            className="text-xs px-2.5 py-1 rounded-full border border-border text-muted hover:text-text transition-colors"
-          >
-            {t('search.clearFilters')}
-          </button>
-        )}
-      </div>
+      {/* Sources stay tucked away: by default every available source is searched */}
+      <Disclosure
+        title={
+          effectiveActiveSources.length > 0
+            ? t('search.sourcesActive').replace('{0}', String(effectiveActiveSources.length))
+            : t('search.sources')
+        }
+      >
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {renderedSources.map((s) => {
+              const isActive = effectiveActiveSources.includes(s.id)
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={!s.available}
+                  onClick={() => toggleSource(s.id)}
+                  title={
+                    !s.available && s.reason ? t(s.reason as Parameters<typeof t>[0]) : undefined
+                  }
+                  className={cn(
+                    'min-h-11 text-xs px-2.5 py-1 rounded-full border font-medium transition-colors sm:min-h-0',
+                    isActive
+                      ? s.active
+                      : s.available
+                        ? 'bg-surface border-border text-muted hover:text-text hover:border-accent/40'
+                        : 'bg-surface border-border text-muted/60 opacity-50 cursor-not-allowed',
+                  )}
+                >
+                  {s.label}
+                  {s.stability === 'experimental' && (
+                    <span className="ml-1 rounded bg-warning/20 px-1.5 py-0.5 text-xs text-warning">
+                      {t('search.experimental')}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+            {activeSources.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveSources([])}
+                className="min-h-11 text-xs px-2.5 py-1 rounded-full border border-border text-muted hover:text-text transition-colors sm:min-h-0"
+              >
+                {t('search.clearFilters')}
+              </button>
+            )}
+          </div>
 
-      {disabledSources.length > 0 && (
-        <p className="text-xs text-muted">
-          {disabledSources
-            .map((source) => `${source.label}: ${t(source.reason as Parameters<typeof t>[0])}`)
-            .join(' ')}
-        </p>
-      )}
+          {disabledSources.length > 0 && (
+            <p className="text-xs text-muted">
+              {disabledSources
+                .map((source) => `${source.label}: ${t(source.reason as Parameters<typeof t>[0])}`)
+                .join(' ')}
+            </p>
+          )}
+        </div>
+      </Disclosure>
 
       {/* Results area */}
       {!showResults && (

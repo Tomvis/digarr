@@ -4,16 +4,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode, useLayoutEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthGate } from '@/web/components/auth-gate'
+import { ApiError } from '@/web/lib/api'
 import { I18nProvider } from '@/web/lib/i18n'
 import { queryClient } from '@/web/lib/query-client'
 import { SESSION_CHANGED_STORAGE_KEY } from '@/web/lib/session-broadcast'
 
-vi.mock('@/web/lib/locale-storage', () => ({
-  detectBrowserLocale: vi.fn(() => 'en'),
-  getRequestLocale: vi.fn(() => 'en'),
-  getStoredLocale: vi.fn(() => 'en'),
-  setStoredLocale: vi.fn(),
-}))
+vi.mock('@/web/lib/locale-storage', async () =>
+  (await import('../helpers/locale')).localeStorageMock(),
+)
 
 const apiMocks = vi.hoisted(() => ({
   clearStoredToken: vi.fn(),
@@ -25,6 +23,14 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/web/lib/api', () => ({
+  ApiError: class ApiError extends Error {
+    constructor(
+      public status: number,
+      public data: unknown,
+    ) {
+      super(`API ${status}`)
+    }
+  },
   AUTH_EXPIRED_EVENT: 'digarr:auth-expired',
   clearStoredToken: apiMocks.clearStoredToken,
   getAuthStatus: apiMocks.getAuthStatus,
@@ -329,6 +335,33 @@ describe('AuthGate', () => {
     expect(apiMocks.clearStoredToken).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['a network failure', () => new TypeError('Failed to fetch')],
+    ['a server error', () => new ApiError(503, { error: 'Service Unavailable' })],
+  ])('offers a retry instead of the login form on %s', async (_label, makeError) => {
+    apiMocks.getAuthStatus
+      .mockRejectedValueOnce(makeError())
+      .mockResolvedValueOnce(authenticatedStatus)
+
+    renderGate()
+
+    expect(await screen.findByText("Can't reach Digarr")).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Username')).toBeNull()
+    expect(screen.queryByText('Login failed')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('secret area')).toBeInTheDocument()
+  })
+
+  it('still shows the login form when the status check returns 401', async () => {
+    apiMocks.getAuthStatus.mockRejectedValueOnce(new ApiError(401, { error: 'Session expired' }))
+
+    renderGate()
+
+    expect(await screen.findByPlaceholderText('Username')).toBeInTheDocument()
+    expect(screen.queryByText("Can't reach Digarr")).toBeNull()
+  })
+
   it('requires the first account and verified cookie auth before mounting children', async () => {
     apiMocks.getAuthStatus
       .mockResolvedValueOnce({
@@ -590,5 +623,24 @@ describe('AuthGate', () => {
 
     await waitFor(() => expect(queryClient.getQueryData(['settings'])).toBeUndefined())
     expect(screen.getByText('secret area')).toBeInTheDocument()
+  })
+
+  it('shows an accessible loading state only after a short delay while auth resolves', async () => {
+    vi.useFakeTimers()
+    try {
+      apiMocks.getAuthStatus.mockReturnValue(new Promise(() => {}))
+      renderGate()
+
+      expect(screen.getByRole('status')).toBeInTheDocument()
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+      expect(screen.queryByText('secret area')).not.toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250)
+      })
+      expect(screen.getByRole('status')).toHaveTextContent('Loading...')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

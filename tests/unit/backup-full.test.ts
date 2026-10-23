@@ -6,7 +6,9 @@ import {
   createBackupSnapshot,
   PartialBackupConflictError,
   restoreBackup,
+  writeBackupSnapshot,
 } from '@/core/ops/backup'
+import type { BackupFile } from '@/core/ops/types'
 import { initializeDigestDeliveryPositions } from '@/db/queries/settings'
 import * as schema from '@/db/schema'
 import { makeTestDb } from '../helpers/test-db'
@@ -278,6 +280,15 @@ describe('backup full-fidelity', () => {
       })
       .returning()
     if (!recommendation) throw new Error('recommendation insert failed')
+    await db.insert(schema.approvalRequests).values({
+      recommendationId: recommendation.id,
+      userId: user.id,
+      status: 'approved',
+      options: { monitorOption: 'all' },
+      note: 'fidelity note',
+      decidedBy: user.id,
+      decidedAt: new Date('2026-01-02T00:00:00Z'),
+    })
     const [playlist] = await db
       .insert(schema.playlists)
       .values({
@@ -397,8 +408,20 @@ describe('backup full-fidelity', () => {
       for (const [key, table] of Object.entries(BACKUP_TABLE_BY_KEY)) {
         if (key === 'artistMetadata') continue
         const restoredRows = await db2.select().from(table)
+        let expected = backup.data[key as keyof typeof backup.data] as unknown[]
+        if (key === 'approvalRequests') {
+          // Natural-key remap fields exist only in the snapshot, not in the table.
+          expected = (expected as Record<string, unknown>[]).map(
+            ({ requesterUsername, deciderUsername, recommendationKey, ...row }) => {
+              expect(requesterUsername).toBeTruthy()
+              expect(deciderUsername).toBeTruthy()
+              expect(recommendationKey).toBeTruthy()
+              return row
+            },
+          )
+        }
         expect(JSON.parse(JSON.stringify(restoredRows)), key).toEqual(
-          JSON.parse(JSON.stringify(backup.data[key as keyof typeof backup.data])),
+          JSON.parse(JSON.stringify(expected)),
         )
         expect(restoredRows.length, key).toBeGreaterThan(0)
       }
@@ -441,6 +464,33 @@ describe('backup full-fidelity', () => {
 
       const [job] = await db2.select().from(schema.slskdJobs)
       expect(job).toMatchObject({ workKey: 'fid-wk-1', releaseTitle: 'Fidelity Album' })
+    } finally {
+      await close()
+      await close2()
+    }
+  })
+
+  it('streamed snapshot parses to the in-memory snapshot and restores to the same data', async () => {
+    const { db, close } = await makeTestDb()
+    const { db: db2, close: close2 } = await makeTestDb()
+    try {
+      await seedFullTables(db)
+      await db.insert(schema.users).values({ username: 'second-user', passwordHash: 'x' })
+      const options = { includeCaches: true } as const
+      const chunks: string[] = []
+      // Page size 1 forces every multi-row table across keyset pages.
+      await writeBackupSnapshot(db as never, (chunk) => chunks.push(chunk), options, 1)
+      const streamed = JSON.parse(chunks.join('')) as BackupFile
+      const expected = JSON.parse(
+        JSON.stringify(await createBackupSnapshot(db as never, options)),
+      ) as BackupFile
+
+      expect({ ...streamed, createdAt: '' }).toEqual({ ...expected, createdAt: '' })
+      expect(streamed.data.users).toHaveLength(2)
+
+      await restoreBackup(db2 as never, streamed, { force: true })
+      const restored = await createBackupSnapshot(db2 as never, options)
+      expect(JSON.parse(JSON.stringify(restored.data))).toEqual(expected.data)
     } finally {
       await close()
       await close2()

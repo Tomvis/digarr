@@ -15,6 +15,7 @@ const mockDeps = {
   },
   getUserById: vi.fn().mockResolvedValue({ isAdmin: true }),
   testTargetConnection: vi.fn().mockResolvedValue({ success: true, message: 'ok' }),
+  getSettings: vi.fn().mockResolvedValue({ lidarrUrl: 'http://lidarr:8686', lidarrApiKey: 'srv' }),
 }
 
 const { targetRoutes } = await import('@/server/routes/targets')
@@ -187,7 +188,7 @@ describe('target routes', () => {
         type: 'slskd',
         name: 'Assigned',
         userId: 2,
-        config: { lidarrTargetId: 12 },
+        config: { lidarrTargetId: 12, lidarrDownloadPath: '/downloads' },
       }),
     })
     expect(res.status).toBe(404)
@@ -209,7 +210,7 @@ describe('target routes', () => {
         type: 'slskd',
         name: 'Assigned',
         userId: 2,
-        config: { lidarrTargetId: 12 },
+        config: { lidarrTargetId: 12, lidarrDownloadPath: '/downloads' },
       }),
     })
     expect(res.status).toBe(201)
@@ -221,7 +222,12 @@ describe('target routes', () => {
       mockDeps.targetQueries.getTarget.mockImplementation(
         async (id: number) =>
           ({
-            71: { id: 71, type: 'slskd', userId: 1, config: { lidarrTargetId: 12 } },
+            71: {
+              id: 71,
+              type: 'slskd',
+              userId: 1,
+              config: { lidarrTargetId: 12, lidarrDownloadPath: '/downloads' },
+            },
             12: { id: 12, type: 'lidarr', userId: 1, enabled: true },
             13: { id: 13, type: 'lidarr', userId: 2, enabled: true },
           })[id] ?? null,
@@ -232,6 +238,52 @@ describe('target routes', () => {
         body: JSON.stringify(patch),
       })
       expect(res.status).toBe(404)
+      expect(mockDeps.targetQueries.updateTarget).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([undefined, '', '   '])(
+    'rejects creating a linked slskd target with missing download path: %j',
+    async (lidarrDownloadPath) => {
+      const res = await createTestApp().request('/api/v1/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'slskd',
+          name: 'Soulseek',
+          config: { lidarrTargetId: 12, lidarrDownloadPath },
+        }),
+      })
+      expect(res.status).toBe(400)
+      expect(res.headers.get('content-type')).toContain('application/problem+json')
+      expect(await res.json()).toMatchObject({
+        code: 'validation_failed',
+        detail: expect.stringContaining('Lidarr download path'),
+      })
+      expect(mockDeps.targetQueries.createTarget).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([{ name: 'Updated' }, { config: { lidarrDownloadPath: '   ' } }])(
+    'rejects patches that leave a linked slskd target without its download path: %j',
+    async (patch) => {
+      mockDeps.targetQueries.getTarget.mockResolvedValue({
+        id: 71,
+        type: 'slskd',
+        userId: 1,
+        config: { lidarrTargetId: 12 },
+      })
+      const res = await createTestApp().request('/api/v1/targets/71', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      expect(res.status).toBe(400)
+      expect(res.headers.get('content-type')).toContain('application/problem+json')
+      expect(await res.json()).toMatchObject({
+        code: 'validation_failed',
+        detail: expect.stringContaining('Lidarr download path'),
+      })
       expect(mockDeps.targetQueries.updateTarget).not.toHaveBeenCalled()
     },
   )
@@ -321,6 +373,32 @@ describe('target routes', () => {
     expect(remove.status).toBe(204)
   })
 
+  it.each([
+    ['server connection', { useServerConnection: true }, 'http://lidarr:8686', 'srv'],
+    ['separate instance', { url: 'http://other:8686', apiKey: 'own' }, 'http://other:8686', 'own'],
+  ])(
+    'resolves a linked Lidarr target (%s) before testing slskd',
+    async (_n, linkedConfig, url, apiKey) => {
+      mockDeps.targetQueries.getTarget.mockImplementation(async (id: number) =>
+        id === 1
+          ? {
+              id: 1,
+              userId: 1,
+              type: 'slskd',
+              config: { lidarrTargetId: 2, lidarrDownloadPath: '/dl' },
+            }
+          : { id: 2, userId: 1, type: 'lidarr', enabled: true, config: linkedConfig },
+      )
+      const res = await createTestApp().request('/api/v1/targets/1/test', { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect(mockDeps.testTargetConnection).toHaveBeenCalledWith(
+        'slskd',
+        expect.anything(),
+        expect.objectContaining({ url, apiKey }),
+      )
+    },
+  )
+
   it('denies non-admin mutations and testing for another user target', async () => {
     mockDeps.getUserById.mockResolvedValue({ isAdmin: false })
     mockDeps.targetQueries.getTarget.mockResolvedValue({ id: 1, userId: 1, type: 'lidarr' })
@@ -373,5 +451,32 @@ describe('target routes', () => {
         token: 'saved-token',
       },
     })
+  })
+
+  it.each([
+    [
+      'clears default IDs when the url changes',
+      { url: 'http://other:8686' },
+      { url: 'http://other:8686', apiKey: 'saved' },
+    ],
+    [
+      'keeps default IDs when the url is unchanged',
+      { url: 'http://lidarr:8686', apiKey: '***' },
+      { url: 'http://lidarr:8686', apiKey: 'saved', qualityProfileId: 2, rootFolderId: 3 },
+    ],
+  ])('PATCH a separate Lidarr instance %s', async (_name, patch, expected) => {
+    mockDeps.targetQueries.getTarget.mockResolvedValue({
+      id: 1,
+      userId: 1,
+      type: 'lidarr',
+      config: { url: 'http://lidarr:8686', apiKey: 'saved', qualityProfileId: 2, rootFolderId: 3 },
+    })
+    const res = await createTestApp().request('/api/v1/targets/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: patch }),
+    })
+    expect(res.status).toBe(204)
+    expect(mockDeps.targetQueries.updateTarget).toHaveBeenCalledWith(1, { config: expected })
   })
 })

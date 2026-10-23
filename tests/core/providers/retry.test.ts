@@ -109,6 +109,54 @@ describe('fetchWithRetry', () => {
     expect(message).toContain('[redacted]')
   })
 
+  test.each([
+    ['Authorization', 'Bearer plainkey123'],
+    ['x-goog-api-key', 'plainkey123'],
+  ])('redacts the exact %s value echoed by the provider', async (header, value) => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response('{"message":"Incorrect API key provided: plainkey123"}', { status: 401 }),
+    )
+    const err = await fetchWithRetry(
+      'https://example.com',
+      { headers: { [header]: value } },
+      { minTimeout: 1, retries: 1 },
+    ).catch((e: Error) => e)
+    expect((err as Error).message).toContain('client error 401')
+    expect((err as Error).message).not.toContain('plainkey123')
+  })
+
+  test('aborts a Retry-After wait when the caller signal fires', async () => {
+    fetchSpy.mockImplementation(
+      async () => new Response('slow down', { status: 429, headers: { 'Retry-After': '2' } }),
+    )
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 50)
+    const started = Date.now()
+    await expect(
+      fetchWithRetry('https://example.com', { signal: controller.signal }, { minTimeout: 1 }),
+    ).rejects.toThrow()
+    expect(Date.now() - started).toBeLessThan(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('caps an oversized Retry-After at 30s', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchSpy
+        .mockResolvedValueOnce(
+          new Response('slow down', { status: 429, headers: { 'Retry-After': '3600' } }),
+        )
+        .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+      const promise = fetchWithRetry('https://example.com', {}, { minTimeout: 1 })
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect((await promise).status).toBe(200)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('collapses whitespace and truncates long error bodies', async () => {
     const longBody = `line one\nline two   spaced\n${'x'.repeat(500)}`
     fetchSpy.mockResolvedValueOnce(new Response(longBody, { status: 400 }))
