@@ -1232,6 +1232,7 @@ export const routeCatalog: RouteSpec[] = [
     summary: "Owned and missing studio albums for an artist in the caller's library",
     description: 'Legacy-token authentication is rejected.',
     params: { artistMbid: { type: 'string', format: 'uuid' } },
+    errors: { '503': 'MusicBrainz unavailable; retry after Retry-After seconds.' },
   },
   {
     method: 'post',

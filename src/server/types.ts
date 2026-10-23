@@ -21,6 +21,8 @@ export type HonoEnv = {
     legacyTokenAuth?: boolean
     /** True when auth middleware determined no auth is configured (no users, no legacy token). */
     authSkipped?: boolean
+    /** Overrides the request logger's status-derived level (e.g. a 503 for an upstream outage). */
+    logLevel?: 'warn'
   }
 }
 

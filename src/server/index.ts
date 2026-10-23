@@ -15,6 +15,7 @@ import {
 import { getUserCredentialsById, linkOidcIdentity } from '@/db/queries/users'
 import { effectiveIsAdmin } from '@/server/middleware/admin-guard'
 import { VERSION } from '@/version'
+import { musicBrainzOutageRetryAfter } from './helpers/musicbrainz-outage'
 import { openapiDoc } from './helpers/openapi-doc'
 import { problem, statusTitle } from './helpers/problem'
 import { maintenanceMiddleware } from './maintenance'
@@ -108,6 +109,15 @@ export function createApp(deps: AppDependencies) {
       )
     }
     const msg = errMsg(err)
+    const retryAfter = musicBrainzOutageRetryAfter(err)
+    if (retryAfter !== null) {
+      // Upstream outage, not a regression: keep it out of error-level logs.
+      console.warn('[server] MusicBrainz unavailable:', msg)
+      c.set('logLevel', 'warn')
+      const res = problem(c, 'musicbrainz-unavailable', 'MusicBrainz unavailable', 503)
+      res.headers.set('Retry-After', String(retryAfter))
+      return res
+    }
     console.error('[server] unhandled error:', msg, err instanceof Error ? err.stack : '')
     return problem(c, 'internal-error', 'Internal Server Error', 500)
   })

@@ -14,6 +14,7 @@ vi.mock('@/core/clients/lidarr', () => ({
 }))
 
 import { createLidarrClient } from '@/core/clients/lidarr'
+import { MusicBrainzCircuitOpenError, MusicBrainzHttpError } from '@/core/clients/musicbrainz'
 
 const artistMbid = 'a74b1b7f-71a5-4011-9441-d0b5e4122711'
 
@@ -817,6 +818,69 @@ describe('GET /api/v1/library/album-coverage/:artistMbid', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual(coverage)
+  })
+})
+
+// MUSIC-175: MusicBrainz sheds load cluster-wide with 503s. That is an upstream
+// outage, not a digarr bug: answer 503 and log at warn, so a post-deploy error
+// watch does not read it as a regression.
+describe('album coverage when MusicBrainz is unavailable', () => {
+  function mountedApp(err: Error) {
+    return createApp(
+      makeDeps({
+        getUserCount: vi.fn(async () => 1),
+        getUserById: vi.fn(async () => ({
+          id: 1,
+          username: 'listener',
+          isAdmin: false,
+        })) as unknown as AppDependencies['getUserById'],
+        albumCoverage: { getCoverageForArtist: vi.fn().mockRejectedValue(err) },
+      }),
+    )
+  }
+
+  async function requestLogged(err: Error) {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const res = await authedRequest(
+        mountedApp(err),
+        `/api/v1/library/album-coverage/${artistMbid}`,
+      )
+      return { res, errors: error.mock.calls.map(String), warns: warn.mock.calls.map(String) }
+    } finally {
+      error.mockRestore()
+      warn.mockRestore()
+    }
+  }
+
+  it.each([503, 502, 429])('answers 503 at warn level for MusicBrainz HTTP %i', async (status) => {
+    const { res, errors, warns } = await requestLogged(
+      new MusicBrainzHttpError(status, '/release-group?artist=x'),
+    )
+
+    expect(res.status).toBe(503)
+    expect(res.headers.get('retry-after')).toBe('60')
+    expect(await res.json()).toMatchObject({ type: '/problems/musicbrainz-unavailable' })
+    expect(errors).toEqual([])
+    expect(warns.some((line) => line.includes('album-coverage') && line.includes('503'))).toBe(true)
+  })
+
+  it('answers 503 with the breaker cooldown as Retry-After', async () => {
+    const { res, errors } = await requestLogged(
+      new MusicBrainzCircuitOpenError(Date.now() + 120_000),
+    )
+
+    expect(res.status).toBe(503)
+    expect(Number(res.headers.get('retry-after'))).toBeGreaterThanOrEqual(119)
+    expect(errors).toEqual([])
+  })
+
+  it('still treats a MusicBrainz client error as a digarr bug', async () => {
+    const { res, errors } = await requestLogged(new MusicBrainzHttpError(400, '/release-group'))
+
+    expect(res.status).toBe(500)
+    expect(errors.length).toBeGreaterThan(0)
   })
 })
 

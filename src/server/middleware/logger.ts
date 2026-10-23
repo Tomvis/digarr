@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
+import type { HonoEnv } from '@/server/types'
 
 const LEVEL_COLORS = {
   error: '\x1b[31m',
@@ -29,7 +30,7 @@ function isStaticPath(path: string): boolean {
   )
 }
 
-export function requestLogger(): MiddlewareHandler {
+export function requestLogger(): MiddlewareHandler<HonoEnv> {
   return async (c, next) => {
     const path = c.req.path
     // Skip health probes and static file noise
@@ -45,7 +46,7 @@ export function requestLogger(): MiddlewareHandler {
 
     const duration = Date.now() - start
     const status = c.res.status
-    const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info'
+    const level = c.get('logLevel') ?? (status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info')
     const color = LEVEL_COLORS[level]
     const statusStr = `${color}${status}${RESET}`
     const durationStr =
