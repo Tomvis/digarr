@@ -50,7 +50,8 @@ import { isMaintenance, setMaintenance } from './core/ops/maintenance'
 import { runPreFlightCheck } from './core/ops/upgrade'
 import { analyze } from './core/pipeline/analyze'
 import { waitForGenreWarmers } from './core/pipeline/genre-backfill'
-import { type PipelineDeps, PipelineOrchestrator } from './core/pipeline/orchestrator'
+import { PipelineOrchestrator } from './core/pipeline/orchestrator'
+import { createScheduledPipelineRunner } from './core/pipeline/scheduled-run'
 import { type StoreDb, saveRecommendationChunk } from './core/pipeline/store'
 import { SubscriptionScheduler } from './core/pipeline/subscription-scheduler'
 import { createSavedPlaylistExportStore, pushSavedPlaylistToTargets } from './core/playlists/export'
@@ -671,44 +672,36 @@ const albumCoverage = createAlbumCoverageService({
   mbClient: createMusicBrainzClient(),
 })
 
+// Cron-triggered scan for one user: same per-user context as POST /api/v1/pipeline/run
+// (user connections, resolved preferences, auto-approve, job history).
+const runPipeline = createScheduledPipelineRunner({
+  orchestrator,
+  jobRecorder,
+  listUsers: () => listUsers(db),
+  buildPipelineDeps: async (userId) => {
+    if (!(await getSettings(db))) return null
+    const [{ pipelineDeps }, user] = await Promise.all([
+      buildDiscoveryModePipelineDeps(userId),
+      getUserById(db, userId),
+    ])
+    return { ...pipelineDeps, responseLocale: resolveSupportedLocale(user?.preferredLocale) }
+  },
+})
+
 /**
- * Cron entry point for the scheduled scan.
+ * Cron entry point for the scheduled scan (fork).
  *
- * There is exactly one scheduled job ('main-pipeline'), and it used to invoke
- * the pipeline with no userId, which fell back to the admin. Recommendations are
- * per-user, and `users_single_admin` allows only one admin, so on a multi-user
- * install every scheduled scan produced results for that one account and no
- * other user could ever get an automatic scan -- setting a schedule as a
- * non-admin either writes to a store the scheduler does not read, or re-registers
- * this same single slot and still runs as the admin.
- *
- * Run for every user instead, through orchestrator.enqueue rather than
- * orchestrator.run. run() throws 'Pipeline already running' when re-entered, so
- * looping over it would drop every user behind the first, and would lose the
- * whole scheduled sweep if a manual scan happened to be in flight when cron
- * fired. enqueue starts immediately when idle, queues per user otherwise, and
- * de-duplicates a user already running or already queued -- the orchestrator
- * then drains the queue one run at a time, which is the same path the UI uses.
+ * Upstream runs the single 'main-pipeline' job as the admin only. Recommendations
+ * are per-user and `users_single_admin` allows one admin, so on a multi-user
+ * install no other user would ever get an automatic scan. Run for every user
+ * instead; runPipeline goes through orchestrator.enqueue, which queues per user
+ * and de-duplicates a user already running or queued.
  */
 const runPipelineForAllUsers = async () => {
-  const currentSettings = await getSettings(db)
-  if (!currentSettings) return
   const users = await listUsers(db)
   for (const user of users) {
     try {
-      // Same per-user deps as a manual scan: the user's own preferences and
-      // listening connections, auto-approve, and a recorded job row. Global
-      // settings alone left scheduled scans with no listening sources at all.
-      const { pipelineDeps } = await buildDiscoveryModePipelineDeps(user.id)
-      const result = orchestrator.enqueue({
-        ...pipelineDeps,
-        userId: user.id,
-        jobRecorder,
-        trigger: 'scheduled',
-      } as PipelineDeps)
-      console.log(
-        `[scheduler] pipeline for user ${user.id}: ${result.status} (position ${result.position})`,
-      )
+      await runPipeline(user.id)
     } catch (err: unknown) {
       console.error(`[scheduler] Scheduled pipeline failed for user ${user.id}:`, errMsg(err))
     }

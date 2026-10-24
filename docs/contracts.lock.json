@@ -557,7 +557,7 @@
         "src/core/clients/audiomuse.ts": "6f436671d49438fb08a4ee052915bdcffce3f5bd759a1cbecbb391fa208ea1ec",
         "src/core/clients/bandcamp.ts": "7ca5e968ea34da9199108b0feff8d33d90752a721752fa9b5f6855bfb8e08729",
         "src/core/clients/deezer-user.ts": "cb4c0abf9263b2bed6b6bf8e5a9867ea49f62759bee3fb269971b182d5652f01",
-        "src/core/clients/deezer.ts": "8c7ca3e0f385c42d300b45d071ba8496ec9144f87932ea84c361f3ff1ebc0d32",
+        "src/core/clients/deezer.ts": "42d430f2c268c810cf5d2a08dc04bc41860bfbe7ad2c8cd2bb66441530ed2a55",
         "src/core/clients/discogs.ts": "7f7a7631fcc0be4847f8f3134099ff6006d0f233c794b1c153861f95f9561abe",
         "src/core/clients/emby.ts": "f550c15da83f7d8148ab24167d40da8fe68e174714b95bc1885eb93eafcc2135",
         "src/core/clients/fanart.ts": "d01e3b7138cdcc7b29c19e6f670678fbdca818c3b7eb63f75300da6849c5d1c1",
@@ -659,6 +659,7 @@
         "src/core/pipeline/orchestrator.ts": "74a28553567efaeeea5c4f7ca8f35e5b327c2854c7a1689df39d800ab5d27a29",
         "src/core/pipeline/recently-played.ts": "33f929141b31657945490f78417fc1d8067a77263c5c301bbc8790b31b2e5eca",
         "src/core/pipeline/resolve.ts": "02cbcb86b4375980a5cded31117ac77b41b45a995668abe901414fa97407cd8b",
+        "src/core/pipeline/scheduled-run.ts": "8a6c933e8f86261184e0fdd656997f6f0e2e176165f14ed3991bfd485abd8f81",
         "src/core/pipeline/score.ts": "53ff3e1f2d247b2cfc4ad0609e0e631642032432ac009abf9863810527cf34f1",
         "src/core/pipeline/store.ts": "5a83859bfe3ebd8b8128aecab11f167aaef885457d6ec82bb0f5301f5b45d535",
         "src/core/pipeline/subscription-scheduler.ts": "514568507b29df6401645387e80e0fdb63aa22f45a67c5b32939ef0f3d63ff8e",
@@ -677,8 +678,8 @@
         "src/core/playlists/strategies/types.ts": "efe670bc2f59e7df954c7a7fc90a127859b125ab0093931d3c39bff69401a50f",
         "src/core/playlists/strategies/weekly-digest.ts": "ff51e16426ef4ce4b28e19c5f8c453573adc8e067d86dd3025d52af1a81389d5",
         "src/core/playlists/strategy-deps.ts": "b94cbc2c5245d2f44ca31ffc420f708c07238cc4771530a55a943f0fcd9f261a",
-        "src/core/playlists/track-resolver.ts": "9967a869ccddbbed122c9417bc8b2a19e7da9b0a88d9761f178167ebc4de92a3",
-        "src/core/playlists/types.ts": "3cdf37257ad92fa5145cb189b1fff2a48219eff74b4458a1c1b65f32a7799a21",
+        "src/core/playlists/track-resolver.ts": "6e06655828a4f804a9fa99f5e6ef6ac3d5fc883345df72ccb4e7cea8324d7557",
+        "src/core/playlists/types.ts": "a4cdbe781bcb928a7e0845ef63568dc5d95a5871b6571c76f68de74bec444b6b",
         "src/core/plugins/audiomuse.ts": "5f4dcc3bb590d63a53a544432932b6a114645fde1c659863d8f77f0266f7a948",
         "src/core/plugins/discogs.ts": "f887ebc3ea8b68d10353eff256c118d926815a26fb8ab87cc34be177c2066e7e",
         "src/core/plugins/emby.ts": "ad73fab18f531878937b7cbbcbb2c0c8ff13aff42fece578bbaef560d0469600",
@@ -764,17 +765,17 @@
         "src/core/types.ts": "2199cb41bce4cf7253461dcc3a62df288e6eda26f9618186722ba71c4ae91730",
         "src/core/url-safety.ts": "b7e00702468a04821fe62905eef32e23ac228337e31c3a7e6527ee4dc73cffaf",
         "src/core/validation.ts": "d8d4ab1eaef3258a80b64a72b7d0f26d66dfcfbada07eb0aacfa012a7028224a",
-        "src/index.ts": "2c26341fb4a31f015b25a9ccec50ca700191a068f0b23a5c74668acaaaea10b6",
+        "src/index.ts": "4d1255e909d526bef9463c6cb980955292b61663a1173ba120feae8e5210dc28",
         "src/version.ts": "98cd5ddd0a4fe5557a0640df9cefbc1a4898cc6d70053edfa5eacf1822c1bc5e"
       },
-      "digest": "a33785f74e22797bc9cf0bd9250fe03577ffd52da12c5fb2ecd283df8cdb011c",
+      "digest": "4da59d7a946170de5e88b16d37261dac71294002fce2a34b854279f1df0cb6ad",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["docs/ARCHITECTURE.md", "CHANGELOG.md"],
-        "note": "Weekly Exploration feed documented in discovery recipes, recording identity sources and changelog",
+        "docs": ["CHANGELOG.md"],
+        "note": "Deezer audition resolution picks a dominant same-name artist, folds Unicode hyphens, and retries then surfaces quota errors.",
         "breaking": "none",
         "migration": "",
-        "digest": "a33785f74e22797bc9cf0bd9250fe03577ffd52da12c5fb2ecd283df8cdb011c"
+        "digest": "4da59d7a946170de5e88b16d37261dac71294002fce2a34b854279f1df0cb6ad"
       }
     },
     "deployment": {
@@ -810,18 +811,18 @@
         "deploy/k8s/namespace.yaml": "2fd1e21e38de3c11c972b51400af1000fa473949f36124444e1edccea17b98d7",
         "deploy/k8s/networkpolicy.yaml": "0f214331c3e2d941351f974a106f3b1f1983b04683ec1974e0ec77777fc12cc8",
         "deploy/k8s/poddisruptionbudget.yaml": "8aac8eca6bf9c96d743bb0f1e1f5eacbafa6da1ab899a187d581e4da8404019d",
-        "deploy/k8s/rendered.yaml": "a2e3c5d3f941a1091e0a0581f447c3688659c64758d8588f98f874c4e3cd73bd",
+        "deploy/k8s/rendered.yaml": "3627af8f0c257cde0861f8a0dfa9627b0b3a7862da5792bacab9b3057acb76af",
         "deploy/k8s/service.yaml": "c249f4a6056f586b7c34d9ade0dc1472078db8dd9a11a5c9c395ba981694d99c",
         "deploy/k8s/serviceaccount.yaml": "8a28cec502a939570c9b339f6c05a7027e6a209f38885d2ffeca2c7eac348809"
       },
-      "digest": "4d3967e67f28913506817e18a5d1a7bf16a126cc5b8a4a89bebf17bc8f6cbf81",
+      "digest": "38a4204a54f20cd2c895f4f77e9eed184c11a4fa2647780d8131a2bbbd81d9f7",
       "review": {
         "outcome": "no-impact",
         "docs": [],
-        "note": "The image copies only the PGlite runtime package the bundle leaves external and the server bundle is whitespace and syntax minified; ports, volumes, env vars, user and entrypoint are unchanged.",
+        "note": "Chart version/appVersion bump to 2.1.0 and regenerated rendered manifests only; deployment instructions unchanged, image digests sync after the release publishes",
         "breaking": "none",
         "migration": "",
-        "digest": "4d3967e67f28913506817e18a5d1a7bf16a126cc5b8a4a89bebf17bc8f6cbf81"
+        "digest": "38a4204a54f20cd2c895f4f77e9eed184c11a4fa2647780d8131a2bbbd81d9f7"
       }
     },
     "release": {
@@ -840,17 +841,17 @@
         ".github/workflows/release.yml": "8b31d8c84cd4c23450e234f78ac595ccef8bd93086be8acfd9dab0709d7db231",
         ".github/workflows/security.yml": "b7b2aeb688fcf24b7c50217bfc671d31916599de6f5cc5c970cf17a55cecba5d",
         ".github/workflows/stale.yml": "56d7610f63e1121b4ee30697f8948c698c2586d59c02f5239a174cafc8bddedc",
-        "package.json": "e175c84bf5412e1fa278e13bee103bde0e83ede29fd9305b59a934cfd5125193",
+        "package.json": "30949a7a664e14258d35bab11629cf75401b72dd363b23b2e33cdb4871d1e88e",
         "vite.config.ts": "b3276e48eb370c0e23a25b7d09f1848d12a4861933804f8330653b8e73df12e8"
       },
-      "digest": "1163d36d87f8e7812fb5efe9d8e8962dd0fda313e2f06af5384360e4400ac391",
+      "digest": "8c4a8780b6045fd61fae9d0be16e3bbd8e0e4b90c68b8262ff7b47f068e4d0e9",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["CHANGELOG.md"],
-        "note": "Vite output filenames use 10-char hashes once to bust immutable-cached assets; no release pins, channels, or version surfaces change.",
+        "docs": ["CHANGELOG.md", "docs/ROADMAP.md", "README.md"],
+        "note": "v2.1.0 release bump: changelog section with upgrade notes, roadmap current release, README banner and pins",
         "breaking": "none",
-        "migration": "",
-        "digest": "1163d36d87f8e7812fb5efe9d8e8962dd0fda313e2f06af5384360e4400ac391"
+        "migration": "Migrations 0055-0063 are additive or data backfills, applied automatically after the pre-migration backup; upgrade notes in CHANGELOG v2.1.0 and per-migration rollback notes in docs/OPERATIONS.md",
+        "digest": "8c4a8780b6045fd61fae9d0be16e3bbd8e0e4b90c68b8262ff7b47f068e4d0e9"
       }
     },
     "maintenance": {
