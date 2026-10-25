@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSongpickTarget, pickRootFolderPath } from '@/core/targets/songpick'
+import {
+  createSongpickTarget,
+  pickRootFolderPath,
+  songpickLidarrConnection,
+} from '@/core/targets/songpick'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -70,4 +74,44 @@ describe('pickRootFolderPath', () => {
   it('no pref gives undefined', () => expect(pickRootFolderPath(folders)).toBeUndefined())
   it('unknown id gives undefined', () => expect(pickRootFolderPath(folders, 9)).toBeUndefined())
   it('no folders gives undefined', () => expect(pickRootFolderPath([], 2)).toBeUndefined())
+})
+
+describe('songpickLidarrConnection', () => {
+  const settings = { lidarrUrl: 'http://lidarr:8686', lidarrApiKey: 'k' }
+
+  it('resolves a target linked to the server connection', () =>
+    expect(
+      songpickLidarrConnection(
+        [{ type: 'lidarr', enabled: true, config: { useServerConnection: true } }],
+        settings,
+      ),
+    ).toEqual({ url: 'http://lidarr:8686', apiKey: 'k', skipTlsVerify: false }))
+
+  it('resolves a separate instance from its own url and key', () =>
+    expect(
+      songpickLidarrConnection(
+        [{ type: 'lidarr', enabled: true, config: { url: 'http://other', apiKey: 'o' } }],
+        settings,
+      ),
+    ).toEqual({ url: 'http://other', apiKey: 'o', skipTlsVerify: false }))
+
+  it('skips disabled, non-Lidarr and unresolvable rows', () =>
+    expect(
+      songpickLidarrConnection(
+        [
+          { type: 'songpick', enabled: true, config: { url: 'http://sp' } },
+          { type: 'lidarr', enabled: false, config: { useServerConnection: true } },
+          { type: 'lidarr', enabled: true, config: {} },
+        ],
+        settings,
+      ),
+    ).toBeNull())
+
+  it('a linked target without a server connection resolves to nothing', () =>
+    expect(
+      songpickLidarrConnection(
+        [{ type: 'lidarr', enabled: true, config: { useServerConnection: true } }],
+        null,
+      ),
+    ).toBeNull())
 })

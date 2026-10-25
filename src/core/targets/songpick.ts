@@ -1,6 +1,11 @@
 import { createSongpickClient, SongpickError } from '@/core/clients/songpick'
 import type { ServiceTestResult } from '@/core/types'
 import { errMsg } from '@/core/validation'
+import {
+  type LidarrConnection,
+  type LidarrServerSettings,
+  resolveLidarrTargetConnection,
+} from './lidarr-connection'
 import type { DestinationTarget, TargetAddOptions, TrackTargetResult } from './types'
 
 export type SongpickTargetConfig = {
@@ -19,6 +24,22 @@ export function pickRootFolderPath(
   const wanted = override ?? userPref
   if (wanted == null || wanted === '') return undefined
   return folders.find((f) => f.id === Number(wanted))?.path
+}
+
+/**
+ * The Lidarr whose root folders songpick wants under: the user's first enabled Lidarr target
+ * that resolves, including one linked to the server connection (#994, no url/apiKey stored).
+ */
+export function songpickLidarrConnection(
+  rows: { type: string; enabled: boolean; config: Record<string, unknown> }[],
+  settings: LidarrServerSettings | null | undefined,
+): LidarrConnection | null {
+  for (const row of rows) {
+    if (row.type !== 'lidarr' || !row.enabled) continue
+    const connection = resolveLidarrTargetConnection(row.config, settings)
+    if (connection) return connection
+  }
+  return null
 }
 
 export function createSongpickTarget(id: number, cfg: SongpickTargetConfig): DestinationTarget {

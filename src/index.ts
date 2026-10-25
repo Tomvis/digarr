@@ -113,7 +113,11 @@ import { retryWaitingApprovals } from './core/targets/lidarr-retry-worker'
 import { createSavedPlaylistExportTarget } from './core/targets/saved-playlist-targets'
 import { createSlskdTarget } from './core/targets/slskd'
 import { updateSlskdRecommendationAction } from './core/targets/slskd-recommendation'
-import { createSongpickTarget, pickRootFolderPath } from './core/targets/songpick'
+import {
+  createSongpickTarget,
+  pickRootFolderPath,
+  songpickLidarrConnection,
+} from './core/targets/songpick'
 import { createSpotifyPlaylistTarget } from './core/targets/spotify-playlist'
 import { testTargetConnection } from './core/targets/test-connection'
 import type { DestinationTarget } from './core/targets/types'
@@ -866,23 +870,17 @@ async function getEnabledTargetsForResolvedUser(
           name: row.name,
           url: row.config.url as string,
           resolveRootFolderPath: async (rootFolderId) => {
-            const lidarrRow = rows.find(
-              (r) =>
-                r.type === 'lidarr' &&
-                r.enabled &&
-                typeof r.config?.url === 'string' &&
-                typeof r.config?.apiKey === 'string',
-            )
-            if (!lidarrRow) return undefined
+            const connection = songpickLidarrConnection(rows, settings)
+            if (!connection) return undefined
             const userPrefs = await resolveUserPreferences(
               db,
               settings?.preferences ?? null,
               userId,
             )
             const client = createLidarrClient(
-              lidarrRow.config.url as string,
-              lidarrRow.config.apiKey as string,
-              (lidarrRow.config.skipTlsVerify as boolean) ?? false,
+              connection.url,
+              connection.apiKey,
+              connection.skipTlsVerify,
             )
             return pickRootFolderPath(
               await client.getRootFolders(),
