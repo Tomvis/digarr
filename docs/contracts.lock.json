@@ -447,7 +447,7 @@
         "src/web/components/service-card.tsx": "3794ef7b29c4acc4521de23bd960af497d10aef280181182176e619c921156ad",
         "src/web/components/service-icons.tsx": "992cb94a89d6f75f346d346861f68330be2a69e2e26bc68a1e470273ba346aa4",
         "src/web/components/stat-card.tsx": "21ec088cabf923156445bea2f492714077d45e9231c57aa3a1c6e467355a201f",
-        "src/web/components/streaming-links.tsx": "f37c4ba234d8c8469da5903dae984c670ebdbb03630ecb55e025b9a18f111278",
+        "src/web/components/streaming-links.tsx": "55579aaa927f416eb30bcf9433f8bd851f351bb9490dac710da042aca2dc690d",
         "src/web/components/subscription-form.tsx": "62165ec6e944a02ab6f43d775f774c6bd55a958424ab2257199580564bef01d9",
         "src/web/components/subscription-presets.tsx": "3a033e7ad150601a70937d8cb9bae9612e1b9c47f2accb032d060e2918b9c93f",
         "src/web/components/swipe-card.tsx": "1a781f8b890869b94e7d21cdf1bf565567fed7a5543780f8ed7bb24ab59be0a7",
@@ -479,7 +479,7 @@
         "src/web/hooks/use-spotify-autoload.ts": "8bda2af616b5f01bc62114ee3c48c0df533b4dc60dc98ba3e973797f0a940511",
         "src/web/hooks/use-spotify-embed.ts": "7327425789266250fb45694f5755c76bac371eda96676190a56f8df3263391c0",
         "src/web/hooks/use-swipe.ts": "d17f0c75cd42e8d91e31585bcf7d3ed9e5fbe939093a030d25cf2ce41adef250",
-        "src/web/index.css": "b8085bf0a9a16b9a7424f93297dbbf6e008ee6a618163cd5f07e22216f540bfc",
+        "src/web/index.css": "c0962454f9269457a0fdb4b09efe98b1a42a3f99e6bd20f665988dbfbb13c892",
         "src/web/lib/api.ts": "1092447cc0018cf87763f8546825d14db8f13922e73e0bffcd9cef5f4e96468f",
         "src/web/lib/approval.ts": "0c9308835f714b2815ccde73e6a0286037b6d0ea65dfd3778738e81736f04f14",
         "src/web/lib/constants.ts": "caf03680f9edcca8f43ae1c6201e34a73c4a7a9f4a8a74f3c291eb043d7ef928",
@@ -538,14 +538,14 @@
         "src/web/spotify-embed-bridge.ts": "10e28d14cd6990afed56ac3fb5693546de6c0d4662fc338ff30ef356d37f3410",
         "src/web/vite-env.d.ts": "9c47195150631180578868a67de22d5f75a8373b8dbc89de0ce445d535b4de72"
       },
-      "digest": "8408b4032282c6bf056577c8c9c97cf8c5fbaa8ee1f4a96c1a0b82543c3710a6",
+      "digest": "9c4b9c0dfe6c33956e975c79afb7db4cc6f0baba3b7f596d730b0aee913f7a62",
       "review": {
         "outcome": "docs-updated",
-        "docs": ["CHANGELOG.md", "README.md"],
-        "note": "Favicon and installed-app icons use the new chip-and-record mark on an ink tile, apple-touch-icon points at a 180px PNG because iOS ignores SVG touch icons, the manifest lists separate any and maskable PNGs, and theme_color, background_color and the theme-color meta move from leftover tan, navy and blue to the default theme ground #0f0f0f. No routes, settings or app behavior change; the changelog records it.",
+        "docs": ["CHANGELOG.md"],
+        "note": "Iframes take color-scheme normal so the Spotify embed sits on the theme background instead of a white browser backdrop on dark themes, and the streaming-links embed drops its border. No routes, settings or behavior change; the changelog records it and the README dashboard screenshot is updated to match.",
         "breaking": "none",
         "migration": "",
-        "digest": "8408b4032282c6bf056577c8c9c97cf8c5fbaa8ee1f4a96c1a0b82543c3710a6"
+        "digest": "9c4b9c0dfe6c33956e975c79afb7db4cc6f0baba3b7f596d730b0aee913f7a62"
       }
     },
     "features": {
