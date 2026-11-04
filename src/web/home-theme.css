@@ -16,12 +16,12 @@
    rounded-lg surface that is padded or shadowed is taken to be a container (Card, dialogs);
    form controls are excluded (Input is rounded-md, but be explicit). */
 [data-theme^="home-"]
-.bg-surface.border.rounded-lg:is(.p-4, .p-5, .p-6, .p-8, .shadow-sm, .shadow-lg, .shadow-xl):not(
-  input,
-  select,
-  textarea,
-  button
-) {
+  .bg-surface.border.rounded-lg:is(.p-4, .p-5, .p-6, .p-8, .shadow-sm, .shadow-lg, .shadow-xl):not(
+    input,
+    select,
+    textarea,
+    button
+  ) {
   border-radius: 20px;
 }
 [data-theme="home-dark"] {
