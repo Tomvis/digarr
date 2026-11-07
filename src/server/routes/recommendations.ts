@@ -37,6 +37,7 @@ import { problem } from '@/server/helpers/problem'
 import { requireSessionUser, requireUser } from '@/server/helpers/require-user'
 import { idempotency } from '@/server/middleware/idempotency'
 import {
+  addArtistSchema,
   bulkRecommendationSchema,
   listRecommendationsQuerySchema,
   missingAlbumsSchema,
@@ -721,6 +722,60 @@ function createRecommendationRoutes(
   const router = new Hono<HonoEnv>()
   const bulkIdempotency = idempotency()
   const requests = deps.approvalRequests ?? approvalRequestQueries(deps.db)
+
+  // Fork (HERMES-55): add an artist the caller names, outside discovery. Same per-user
+  // Lidarr targets, defaults and add path as approving an artist recommendation; only
+  // Lidarr targets, so no slskd or playlist side effects. Request-only users must ask
+  // through a recommendation instead.
+  router.post('/api/v1/recommendations/add-artist', zJson(addArtistSchema), async (c) => {
+    const auth = requireSessionUser(c)
+    if (!auth.ok) return auth.response
+    const { mbid, name, monitorOption } = c.req.valid('json')
+    if (requiresApprovalRequest(await deps.getUserById(auth.userId), 0)) {
+      return problem(c, 'approval-request-required', 'Your account must request approvals', 403)
+    }
+    const targets = (await deps.getEnabledTargetsForUser(auth.userId)).filter(
+      (target) => target.type === 'lidarr' && target.capabilities.includes('addArtist'),
+    )
+    if (targets.length === 0) {
+      return problem(c, 'no-lidarr-targets', 'No enabled Lidarr targets', 400)
+    }
+    const artist = { mbid, name }
+    const addOptions = await buildAddOptions(deps, auth.userId, artist, {
+      monitorOption,
+      lidarrOptionsTargetId: resolveLidarrOptionsTargetId(targets, {}),
+    })
+    const result = await approveToTargets(
+      artist,
+      targets,
+      addOptions,
+      deps.jobRecorder,
+      auth.userId,
+    )
+    const targetActions = Object.fromEntries(
+      Object.entries(result.targetActions).map(([id, value]) => {
+        const action = value as NonNullable<TargetActionRecord> & { retry?: unknown }
+        // No recommendation row backs this add, so nothing would retry a waiting action.
+        const { retry: _retry, ...settled } =
+          action.status === 'waiting' ? { ...action, status: 'failed' as const } : action
+        return [
+          id,
+          { ...settled, ...(settled.error ? { error: conciseErrMsg(settled.error) } : {}) },
+        ]
+      }),
+    )
+    const success = targets.every((target) =>
+      isTargetSuccess(targetActions[target.id] as TargetActionRecord),
+    )
+    return c.json({
+      mbid,
+      name,
+      monitorOption,
+      success,
+      lidarrArtistId: result.lidarrArtistId ?? null,
+      targetActions,
+    })
+  })
 
   router.post('/api/v1/recommendations/missing-albums', zJson(missingAlbumsSchema), async (c) => {
     const auth = requireSessionUser(c)

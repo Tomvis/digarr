@@ -247,6 +247,46 @@ function createServer(deps: AppDependencies, c: Context<HonoEnv>, operations: Ho
       },
     )
   }
+  // Fork (HERMES-55): add a named artist to the caller's own Lidarr root and profiles.
+  tool(
+    'add_artist',
+    'Add an artist to Lidarr in your own library (your root folder and profiles), outside ' +
+      'discovery. Get the MusicBrainz ID from search_artists first. monitorOption decides ' +
+      'what gets grabbed: all = whole discography, popular = your most-played albums, ' +
+      'latest/first = one album, missing/existing = albums Lidarr already lists, new = future ' +
+      'releases only, none = add the artist without grabbing anything. Ask if unsure.',
+    {
+      mbid: z.uuid(),
+      name: z.string().trim().min(1).max(500),
+      monitorOption: z.enum([
+        'all',
+        'new',
+        'missing',
+        'existing',
+        'latest',
+        'first',
+        'none',
+        'popular',
+      ]),
+    },
+    false,
+    async (input) => {
+      const output = await dispatch('/api/v1/recommendations/add-artist', 'POST', input)
+      const actions = output.targetActions as Record<string, { status?: unknown }> | undefined
+      return {
+        mbid: output.mbid,
+        name: output.name,
+        monitorOption: output.monitorOption,
+        success: output.success,
+        lidarrArtistId: output.lidarrArtistId,
+        targets: Object.entries(actions ?? {}).map(([targetId, action]) => ({
+          id: targetId,
+          status: typeof action?.status === 'string' ? action.status : 'unknown',
+        })),
+      }
+    },
+    (output) => output.success !== true,
+  )
   tool(
     'run_scan',
     'Start or queue a scan using your configured connections and preferences.',

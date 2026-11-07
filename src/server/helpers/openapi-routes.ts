@@ -34,7 +34,11 @@ import {
   resetPlaylistExportSchema,
   updatePlaylistSchema,
 } from '@/server/schemas/playlists'
-import { bulkRecommendationSchema, missingAlbumsSchema } from '@/server/schemas/recommendations'
+import {
+  addArtistSchema,
+  bulkRecommendationSchema,
+  missingAlbumsSchema,
+} from '@/server/schemas/recommendations'
 import { notificationChannel, updateSettingsSchema } from '@/server/schemas/settings'
 import { setupCompleteSchema } from '@/server/schemas/setup'
 import {
@@ -590,6 +594,18 @@ const routeCatalog: RouteSpec[] = [
       '404': 'Artist not found.',
       '409': 'Selection no longer matches current coverage.',
       '503': 'Coverage lookup unavailable.',
+    },
+  },
+  {
+    method: 'post',
+    path: '/api/v1/recommendations/add-artist',
+    tag: 'Recommendations',
+    auth: 'user',
+    summary: "Add one artist to the caller's own Lidarr targets (fork)",
+    ...body(addArtistSchema),
+    errors: {
+      '400': 'No enabled Lidarr target.',
+      '403': 'The caller must request approvals.',
     },
   },
   {

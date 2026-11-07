@@ -438,6 +438,7 @@ The parser coerces rather than rejects most fields:
 | PATCH | `/api/v1/recommendations/:id` | Yes | Approve, reject, or revert a recommendation to `pending`. Reverting undoes an approval: it always reverts the row, and also removes the Lidarr artist digarr added when it can do so safely (see below) |
 | POST | `/api/v1/recommendations/bulk` | Yes | Bulk approve/reject (reject accepts an optional shared `reason` + `permanent` block; optional `Idempotency-Key`) |
 | POST | `/api/v1/recommendations/missing-albums` | Yes | Approve selected missing studio albums for an artist using the caller's album-capable targets |
+| POST | `/api/v1/recommendations/add-artist` | Yes | Add one artist by MBID to the caller's own Lidarr targets, outside discovery (fork) |
 | GET | `/api/v1/recommendations/counts` | Yes | Discover tab counts for the caller in one query: `{ all, pending, approved, rejected }` |
 | GET | `/api/v1/recommendations/feedback-summary` | Yes | Genre approval rates (top 20, at least 3 acted-on recommendations per genre), scoped to the calling user's own feedback |
 | GET | `/api/v1/recommendations/popular-albums/availability` | Yes | Credential availability for the popular-album approve option: Spotify token resolution succeeds and/or a Last.fm API key is stored. Does not probe album lookups; a subsequent lookup can still fail. Returns `{ available, spotify, lastfm }` (booleans). |
@@ -566,6 +567,13 @@ Revert response:
 Use `GET /api/v1/library/album-coverage/:artistMbid` to list the current user's `missing` albums first. Both operations accept sessions and personal API tokens and are available to non-admin users; legacy-token authentication is rejected. Write scope is required for the POST. The batch accepts 1-10,000 release-group MBIDs, matching the catalog lookup bound, and checks them against fresh coverage before acquisition. Duplicate IDs are processed once. Selection uses the same Gap-Fill rule: MusicBrainz primary type `Album`, with an explicit empty secondary-type array. Live, compilation and every other secondary type are excluded. Owned albums and groups outside this selection cannot be submitted.
 
 The batch calls the existing single-album approval path for each selection, using only the caller's enabled `addAlbum` targets and their defaults. Lidarr monitors and searches each chosen album; it never changes to whole-discography monitoring. It returns `200` with `{ results: [{ albumMbid, success, targetActions }], succeeded, failed }`. An album counts as successful only when all its attempted targets succeed. A target may report a queued acquisition; this does not establish download or import completion. Per-album failures remain visible, and later albums are still attempted. Successful remote work is retained when another album or target fails. Retrying an album retries its enabled album targets, including any that already succeeded. No compatible target is an error, not a successful empty batch.
+
+**POST /api/v1/recommendations/add-artist** (fork) body:
+```json
+{ "mbid": "9c9f1380-2516-4fc9-a3e6-f9f61941d090", "name": "Muse", "monitorOption": "all" }
+```
+
+Adds the artist to each of the caller's enabled Lidarr targets through the same path as approving an artist recommendation: that target's root folder, profiles, tags and new-item monitoring, with an existing Lidarr artist reused. No recommendation row is created, and slskd or playlist targets are never used. `monitorOption` is required (`all`, `new`, `missing`, `existing`, `latest`, `first`, `none`, `popular`); `selected` is not accepted. Sessions and personal API tokens with write scope; non-admins included. A request-only user gets `403`, and no enabled Lidarr target gets `400`. Returns `200` with `{ mbid, name, monitorOption, success, lidarrArtistId, targetActions }`; `success` is true only when every Lidarr target succeeded, and errors are redacted.
 
 ## Personal notification channels
 

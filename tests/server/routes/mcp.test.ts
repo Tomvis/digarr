@@ -611,6 +611,7 @@ describe('MCP endpoint', () => {
     expect(
       (await response.json()).result.tools.map((tool: { name: string }) => tool.name).sort(),
     ).toEqual([
+      'add_artist',
       'approve_recommendation',
       'block_recommendation',
       'get_job_status',
@@ -630,7 +631,7 @@ describe('MCP endpoint', () => {
     })
     try {
       await client.connect(transport)
-      expect((await client.listTools()).tools).toHaveLength(11)
+      expect((await client.listTools()).tools).toHaveLength(12)
       expect(
         (await client.callTool({ name: 'get_recommendation', arguments: { id: 1 } })).isError,
       ).not.toBe(true)

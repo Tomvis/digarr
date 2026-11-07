@@ -18,6 +18,23 @@ export const missingAlbumsSchema = z.object({
     .max(10_000),
 })
 
+// Fork (HERMES-55): add one artist by MBID to the caller's own Lidarr targets, no
+// recommendation row. 'selected' needs album IDs and is not offered here.
+export const addArtistSchema = z.object({
+  mbid: z.uuid().transform((id) => id.toLowerCase()),
+  name: z.string().trim().min(1).max(500),
+  monitorOption: z.enum([
+    'all',
+    'new',
+    'missing',
+    'existing',
+    'latest',
+    'first',
+    'none',
+    'popular',
+  ]),
+})
+
 export const recommendationStatusSchema = z.enum(['approved', 'rejected', 'pending'])
 export const approvalModeSchema = z.enum(['single_target', 'combined_lidarr_slskd'])
 export const monitorOptionSchema = z.enum([

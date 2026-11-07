@@ -37,6 +37,7 @@ A `read` token can initialize, list tools, and call read tools, even though MCP 
 | `approve_recommendation` | `id`; optional approval and target options from the REST approval API | Write |
 | `reject_recommendation` | `id`; optional `reason`, `reasonText` | Write |
 | `block_recommendation` | `id`; optional `reason`, `reasonText` | Write; permanent rejection |
+| `add_artist` | `mbid`, `name`, `monitorOption` | Write; fork: adds the artist to your own Lidarr targets (see [API](API.md#recommendations)) |
 | `run_scan` | None | Write |
 | `run_discovery_mode` | `modeId`; optional `settingsMode`, `rawUserSettings`, `normalizedSettings` | Write |
 | `get_scan_status` | None | Read |
