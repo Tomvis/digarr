@@ -646,13 +646,15 @@ export function createMusicBrainzClient(
   async function cachedRequest<T>(
     kind: MusicBrainzCacheKind,
     path: string,
-    { bypassCache = false }: { bypassCache?: boolean } = {},
+    { bypassCache = false, signal }: { bypassCache?: boolean; signal?: AbortSignal } = {},
   ): Promise<T> {
+    signal?.throwIfAborted()
     const hit = bypassCache ? null : await readCache(path)
+    signal?.throwIfAborted()
     if (hit?.status === 404) throw new MusicBrainzHttpError(404, path)
     if (hit) return hit.body as T
     try {
-      const body = await request<T>(path)
+      const body = await request<T>(path, signal)
       await writeCache(path, kind, { status: 200, body })
       return body
     } catch (err) {
@@ -663,13 +665,13 @@ export function createMusicBrainzClient(
     }
   }
 
-  async function fetchOnce(path: string): Promise<Response> {
+  async function fetchOnce(path: string, signal?: AbortSignal): Promise<Response> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 10_000)
     try {
       return await fetch(`${BASE_URL}${path}`, {
         headers: { 'User-Agent': USER_AGENT },
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
         // A fast mirror must not redirect requests onto the public rate-limited service.
         redirect: 'error',
       })
@@ -682,11 +684,12 @@ export function createMusicBrainzClient(
   // attempts OUTSIDE the rate-limited slot, and each attempt re-enqueues. This
   // stops one retrying request (e.g. during a 503 storm) from holding the single
   // concurrency slot and stalling all other MB traffic for its whole backoff.
-  async function request<T>(path: string): Promise<T> {
+  async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
     const cached = cachedResponse(path)
     if (cached !== undefined) return JSON.parse(cached) as T
     let lastErr: unknown
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      signal?.throwIfAborted()
       try {
         // Checked before anything else, including the cooldown wait: once the
         // breaker is armed, in-flight work must STOP re-queueing rather than
@@ -699,15 +702,18 @@ export function createMusicBrainzClient(
         // Observed before entering the gate, so the cooldown is spent outside
         // the single concurrency slot (see the comment above).
         await waitOutCooldown()
+        signal?.throwIfAborted()
         const res = (await queue.add(
           async () => {
             // The adaptive hold belongs INSIDE the slot: it is the rate gate, so
             // it must serialise with it. The retry backoff below stays outside.
             await applyAdaptiveHold()
-            return fetchOnce(path)
+            signal?.throwIfAborted()
+            return fetchOnce(path, signal)
           },
-          { priority },
+          { priority, signal },
         )) as Response
+        signal?.throwIfAborted()
 
         // Every response carries the live budget, including the ones that say
         // no. Record it before branching.
@@ -754,6 +760,7 @@ export function createMusicBrainzClient(
         await sleep(backoff)
         lastErr = new Error(`MusicBrainz HTTP ${res.status} for ${path}`)
       } catch (err) {
+        signal?.throwIfAborted()
         // Network/timeout errors are retryable. The final attempt rethrows.
         const retryable =
           err instanceof Error &&
@@ -790,7 +797,7 @@ export function createMusicBrainzClient(
   // bypassCache (forced library sync) skips the read but still stores the fresh result.
   function searchArtist(
     query: string,
-    options: { bypassCache?: boolean } = {},
+    options: { bypassCache?: boolean; signal?: AbortSignal } = {},
   ): Promise<MBSearchResult> {
     const params = new URLSearchParams({ query, fmt: 'json' })
     return cachedRequest<MBSearchResult>('artist-search', `/artist/?${params}`, options)
@@ -799,18 +806,23 @@ export function createMusicBrainzClient(
   async function getReleaseGroups(
     artistMbid: string,
     types: readonly string[] = DEFAULT_RELEASE_TYPES,
-    options: { bypassCache?: boolean } = {},
+    options: { bypassCache?: boolean; signal?: AbortSignal } = {},
   ): Promise<MBReleaseGroup[]> {
+    options.signal?.throwIfAborted()
     if (
       types.some(
         (type) => !DEFAULT_RELEASE_TYPES.includes(type as (typeof DEFAULT_RELEASE_TYPES)[number]),
       )
     ) {
-      return (await fetchReleaseGroups(artistMbid, types)).groups
+      return (await fetchReleaseGroups(artistMbid, types, options.signal)).groups
     }
     const groups = options.bypassCache
-      ? await refreshReleaseGroupCatalog(artistMbid)
-      : await cache.get(artistMbid, () => loadReleaseGroupCatalog(artistMbid))
+      ? await refreshReleaseGroupCatalog(artistMbid, options.signal)
+      : await cache.get(
+          artistMbid,
+          (signal) => loadReleaseGroupCatalog(artistMbid, signal),
+          options.signal,
+        )
     return types === DEFAULT_RELEASE_TYPES ||
       DEFAULT_RELEASE_TYPES.every((type) => types.includes(type))
       ? groups
@@ -821,20 +833,25 @@ export function createMusicBrainzClient(
 
   async function loadReleaseGroupCatalog(
     artistMbid: string,
+    signal?: AbortSignal,
   ): Promise<{ groups: MBReleaseGroup[]; cacheable: boolean; expiresAt?: number }> {
     const key = `release-groups:${artistMbid}`
     const hit = await readCache(key)
+    signal?.throwIfAborted()
     if (hit?.status === 200 && Array.isArray(hit.body)) {
       return { groups: hit.body as MBReleaseGroup[], cacheable: true, expiresAt: hit.expiresAt }
     }
-    const catalog = await fetchReleaseGroups(artistMbid, DEFAULT_RELEASE_TYPES)
+    const catalog = await fetchReleaseGroups(artistMbid, DEFAULT_RELEASE_TYPES, signal)
     if (catalog.cacheable)
       await writeCache(key, 'release-groups', { status: 200, body: catalog.groups })
     return catalog
   }
 
-  async function refreshReleaseGroupCatalog(artistMbid: string): Promise<MBReleaseGroup[]> {
-    const catalog = await fetchReleaseGroups(artistMbid, DEFAULT_RELEASE_TYPES)
+  async function refreshReleaseGroupCatalog(
+    artistMbid: string,
+    signal?: AbortSignal,
+  ): Promise<MBReleaseGroup[]> {
+    const catalog = await fetchReleaseGroups(artistMbid, DEFAULT_RELEASE_TYPES, signal)
     if (catalog.cacheable) {
       await writeCache(`release-groups:${artistMbid}`, 'release-groups', {
         status: 200,
@@ -848,6 +865,7 @@ export function createMusicBrainzClient(
   async function fetchReleaseGroups(
     artistMbid: string,
     types: readonly string[],
+    signal?: AbortSignal,
   ): Promise<{ groups: MBReleaseGroup[]; cacheable: boolean }> {
     const limit = 100
     const maxPages = 100
@@ -858,6 +876,7 @@ export function createMusicBrainzClient(
     let cacheable = true
 
     for (let page = 0; page < maxPages; page += 1) {
+      signal?.throwIfAborted()
       const params = new URLSearchParams({
         artist: artistMbid,
         type: types.join('|'),
@@ -877,7 +896,7 @@ export function createMusicBrainzClient(
           'first-release-date'?: string
           aliases?: unknown
         }>
-      }>(`/release-group?${params}`)
+      }>(`/release-group?${params}`, signal)
 
       for (const key of ['release-group-count', 'release-group-offset'] as const) {
         const value = data[key]
@@ -962,7 +981,11 @@ export function createMusicBrainzClient(
     )
   }
 
-  async function getRecordings(artistMbid: string, limit = 25): Promise<MBRecording[]> {
+  async function getRecordings(
+    artistMbid: string,
+    limit = 25,
+    signal?: AbortSignal,
+  ): Promise<MBRecording[]> {
     const params = new URLSearchParams({
       artist: artistMbid,
       fmt: 'json',
@@ -974,7 +997,7 @@ export function createMusicBrainzClient(
         title: string
         isrcs?: string[]
       }>
-    }>('recordings', `/recording?${params}`)
+    }>('recordings', `/recording?${params}`, { signal })
 
     return (data.recordings ?? []).map((recording) => ({
       id: recording.id,
