@@ -276,7 +276,11 @@ function buildLidarrConfig(
   const tags = instanceChanged ? [] : (config.tags ?? '').split(',').filter(Boolean).map(Number)
   // Not tied to one instance, so it survives a url/key or mode change.
   const monitorNewItems = config.monitorNewItems ? { monitorNewItems: config.monitorNewItems } : {}
-  if (useServerConnection) return { useServerConnection: true, tags, ...monitorNewItems }
+  // Unset means on; once toggled or stored it is sent so re-enabling clears a stored false.
+  const searchOnAdd =
+    config.searchOnAdd === undefined ? {} : { searchOnAdd: config.searchOnAdd !== 'false' }
+  if (useServerConnection)
+    return { useServerConnection: true, tags, ...monitorNewItems, ...searchOnAdd }
   const base = isEditing
     ? (buildTargetConfigPatch(targetType, config) ?? {})
     : normalizeTargetConfig(targetType.value, config)
@@ -285,7 +289,14 @@ function buildLidarrConfig(
     if (config[key]) defaults[key] = Number(config[key])
     else if (isEditing) defaults[key] = null
   }
-  return { ...base, ...defaults, tags, ...monitorNewItems, useServerConnection: false }
+  return {
+    ...base,
+    ...defaults,
+    tags,
+    ...monitorNewItems,
+    ...searchOnAdd,
+    useServerConnection: false,
+  }
 }
 
 // Lidarr's own default is `all`, so an unset target shows that.
@@ -317,6 +328,33 @@ function LidarrMonitorNewItems({
       </label>
       <p id={helpId} className="mt-1 text-xs text-muted">
         {t('settings.targetLidarrMonitorNewItemsHelp')}
+      </p>
+    </div>
+  )
+}
+
+function LidarrSearchOnAdd({
+  checked,
+  onChange,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  const { t } = useI18n()
+  const helpId = useId()
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm text-text">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          aria-describedby={helpId}
+        />
+        {t('settings.targetLidarrSearchOnAdd')}
+      </label>
+      <p id={helpId} className="mt-1 text-xs text-muted">
+        {t('settings.targetLidarrSearchOnAddHelp')}
       </p>
     </div>
   )
@@ -691,6 +729,15 @@ function AddTargetDialog({
             />
           )}
 
+          {isLidarr && (
+            <LidarrSearchOnAdd
+              checked={config.searchOnAdd !== 'false'}
+              onChange={(checked) =>
+                setConfig((previous) => ({ ...previous, searchOnAdd: String(checked) }))
+              }
+            />
+          )}
+
           {selectedType.value === 'slskd' && (
             <div className="rounded-md border border-border bg-bg/60 p-3 space-y-2">
               <p className="text-xs text-muted">{t('settings.slskdModeHelp')}</p>
@@ -761,6 +808,7 @@ export function TargetsTab() {
       const message =
         key === 'settings.slskdPathIncomplete' ||
         key === 'settings.slskdPathUnavailable' ||
+        key === 'settings.slskdLinkedLidarrUnavailable' ||
         key === 'settings.slskdPathOk'
           ? t(key)
           : result.message
